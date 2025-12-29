@@ -5,14 +5,21 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, CheckCircle, Upload, FileText, ArrowRight } from 'lucide-react';
+import { Loader2, CheckCircle, FileText, ArrowRight, AlertCircle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 
+interface ImportCounts {
+  mercadorias: number;
+  energia_agua: number;
+  fretes: number;
+}
+
 interface ImportResult {
   success: boolean;
-  count: number;
+  counts: ImportCounts;
+  totalRecords: number;
   filialCreated: boolean;
   cnpj: string;
   razaoSocial: string;
@@ -30,12 +37,20 @@ function formatCNPJ(cnpj: string): string {
   return cleaned.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
 }
 
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export default function ImportarEFD() {
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [selectedEmpresa, setSelectedEmpresa] = useState<string>('');
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { session } = useAuth();
   const navigate = useNavigate();
@@ -55,14 +70,16 @@ export default function ImportarEFD() {
     loadEmpresas();
   }, []);
 
-  const handleImportEFD = async (file: File) => {
-    if (!file || !selectedEmpresa || !session) return;
+  const handleImportEFD = async () => {
+    if (!selectedFile || !selectedEmpresa || !session) return;
 
     setImporting(true);
     setImportResult(null);
+    setImportError(null);
+    
     try {
       const formData = new FormData();
-      formData.append('file', file);
+      formData.append('file', selectedFile);
       formData.append('empresa_id', selectedEmpresa);
 
       const response = await supabase.functions.invoke('parse-efd', {
@@ -78,11 +95,25 @@ export default function ImportarEFD() {
         throw new Error(data.error);
       }
 
-      setImportResult(data);
+      // Map old format to new format for backwards compatibility
+      const result: ImportResult = {
+        success: data.success,
+        counts: data.counts || { mercadorias: data.count || 0, energia_agua: 0, fretes: 0 },
+        totalRecords: data.totalRecords ?? data.count ?? 0,
+        filialCreated: data.filialCreated,
+        cnpj: data.cnpj,
+        razaoSocial: data.razaoSocial,
+        message: data.message,
+      };
+
+      setImportResult(result);
+      setSelectedFile(null);
       toast.success('Arquivo EFD importado com sucesso!');
     } catch (error) {
       console.error('Error importing EFD:', error);
-      toast.error(error instanceof Error ? error.message : 'Erro ao importar arquivo EFD');
+      const errorMessage = error instanceof Error ? error.message : 'Erro ao importar arquivo EFD';
+      setImportError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setImporting(false);
       if (fileInputRef.current) {
@@ -91,20 +122,25 @@ export default function ImportarEFD() {
     }
   };
 
+  const handleFileSelect = (file: File) => {
+    if (!file.name.endsWith('.txt')) {
+      toast.error('Por favor, selecione um arquivo .txt');
+      return;
+    }
+    setSelectedFile(file);
+    setImportError(null);
+  };
+
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) handleImportEFD(file);
+    if (file) handleFileSelect(file);
   };
 
   const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     setIsDragOver(false);
     const file = event.dataTransfer.files?.[0];
-    if (file && file.name.endsWith('.txt')) {
-      handleImportEFD(file);
-    } else {
-      toast.error('Por favor, selecione um arquivo .txt');
-    }
+    if (file) handleFileSelect(file);
   };
 
   const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
@@ -118,6 +154,8 @@ export default function ImportarEFD() {
 
   const handleNewImport = () => {
     setImportResult(null);
+    setImportError(null);
+    setSelectedFile(null);
   };
 
   const handleGoToConfig = () => {
@@ -148,9 +186,23 @@ export default function ImportarEFD() {
                   <span className="text-muted-foreground">Razão Social</span>
                   <span className="font-medium text-foreground truncate max-w-[200px]">{importResult.razaoSocial}</span>
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Registros</span>
-                  <span className="font-medium text-foreground">{importResult.count} mercadorias</span>
+                <div className="border-t border-border pt-2 mt-2 space-y-1">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Mercadorias</span>
+                    <span className="font-medium text-foreground">{importResult.counts.mercadorias}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Energia/Água</span>
+                    <span className="font-medium text-foreground">{importResult.counts.energia_agua}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Fretes</span>
+                    <span className="font-medium text-foreground">{importResult.counts.fretes}</span>
+                  </div>
+                  <div className="flex justify-between text-sm font-semibold border-t border-border pt-1 mt-1">
+                    <span className="text-foreground">Total</span>
+                    <span className="text-foreground">{importResult.totalRecords}</span>
+                  </div>
                 </div>
                 {importResult.filialCreated && (
                   <div className="pt-2">
@@ -183,9 +235,16 @@ export default function ImportarEFD() {
             <div className="space-y-2">
               <h1 className="text-2xl font-semibold text-foreground">Importar EFD</h1>
               <p className="text-sm text-muted-foreground">
-                Importe arquivos EFD Contribuições para cadastrar mercadorias automaticamente
+                Importe arquivos EFD Contribuições para cadastrar mercadorias, energia/água e fretes
               </p>
             </div>
+
+            {importError && (
+              <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3 flex items-start gap-2 text-left">
+                <AlertCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+                <p className="text-sm text-destructive">{importError}</p>
+              </div>
+            )}
 
             <div className="space-y-2 text-left">
               <Label htmlFor="empresa">Empresa Destino</Label>
@@ -210,7 +269,7 @@ export default function ImportarEFD() {
                 ${importing ? 'pointer-events-none opacity-60' : ''}
                 ${!selectedEmpresa ? 'pointer-events-none opacity-40' : ''}
               `}
-              onClick={() => fileInputRef.current?.click()}
+              onClick={() => !selectedFile && fileInputRef.current?.click()}
               onDrop={handleDrop}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
@@ -233,6 +292,23 @@ export default function ImportarEFD() {
                       <p className="text-xs text-muted-foreground">Aguarde enquanto processamos os dados</p>
                     </div>
                   </>
+                ) : selectedFile ? (
+                  <>
+                    <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                      <FileText className="h-6 w-6 text-primary" />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium text-foreground">{selectedFile.name}</p>
+                      <p className="text-xs text-muted-foreground">{formatFileSize(selectedFile.size)}</p>
+                    </div>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={(e) => { e.stopPropagation(); setSelectedFile(null); }}
+                    >
+                      Remover
+                    </Button>
+                  </>
                 ) : (
                   <>
                     <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
@@ -248,6 +324,16 @@ export default function ImportarEFD() {
                 )}
               </div>
             </div>
+
+            {selectedFile && !importing && (
+              <Button 
+                onClick={handleImportEFD} 
+                className="w-full"
+                disabled={!selectedEmpresa}
+              >
+                Importar Arquivo
+              </Button>
+            )}
 
             <p className="text-xs text-muted-foreground">
               A filial será identificada automaticamente pelo CNPJ no arquivo

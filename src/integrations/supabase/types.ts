@@ -23,6 +23,7 @@ export type Database = {
           ibs_municipal: number
           id: string
           is_active: boolean | null
+          reduc_icms: number
           updated_at: string
         }
         Insert: {
@@ -33,6 +34,7 @@ export type Database = {
           ibs_municipal?: number
           id?: string
           is_active?: boolean | null
+          reduc_icms?: number
           updated_at?: string
         }
         Update: {
@@ -43,6 +45,7 @@ export type Database = {
           ibs_municipal?: number
           id?: string
           is_active?: boolean | null
+          reduc_icms?: number
           updated_at?: string
         }
         Relationships: []
