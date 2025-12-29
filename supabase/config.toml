@@ -1,1 +1,4 @@
 project_id = "kocbdudzkbvgxwdacdrk"
+
+[functions.onboarding-complete]
+verify_jwt = false
