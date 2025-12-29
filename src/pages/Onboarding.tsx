@@ -7,15 +7,12 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
-import { Building2, Users, Store, ArrowRight, Copy, Check } from 'lucide-react';
+import { Building2, Users, Store, ArrowRight, Copy, Check, FileText } from 'lucide-react';
 
 interface OnboardingData {
   tenantNome: string;
   grupoNome: string;
   empresaNome: string;
-  filialCnpj: string;
-  filialRazaoSocial: string;
-  filialNomeFantasia: string;
 }
 
 export default function Onboarding() {
@@ -27,9 +24,6 @@ export default function Onboarding() {
     tenantNome: '',
     grupoNome: '',
     empresaNome: '',
-    filialCnpj: '',
-    filialRazaoSocial: '',
-    filialNomeFantasia: '',
   });
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -44,16 +38,6 @@ export default function Onboarding() {
     navigator.clipboard.writeText(tenantId);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  };
-
-  const formatCNPJ = (value: string) => {
-    const cleaned = value.replace(/\D/g, '').slice(0, 14);
-    return cleaned.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
-  };
-
-  const handleCnpjChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const formatted = formatCNPJ(e.target.value);
-    setData({ ...data, filialCnpj: formatted });
   };
 
   const handleSubmit = async () => {
@@ -87,36 +71,18 @@ export default function Onboarding() {
       if (grupoError) throw grupoError;
 
       // 4. Create Empresa
-      const { data: empresa, error: empresaError } = await supabase
+      const { error: empresaError } = await supabase
         .from('empresas')
-        .insert({ grupo_id: grupo.id, nome: data.empresaNome })
-        .select()
-        .single();
+        .insert({ grupo_id: grupo.id, nome: data.empresaNome });
 
       if (empresaError) throw empresaError;
 
-      // 5. Create Filial
-      const { error: filialError } = await supabase
-        .from('filiais')
-        .insert({
-          empresa_id: empresa.id,
-          cnpj: data.filialCnpj.replace(/\D/g, ''),
-          razao_social: data.filialRazaoSocial,
-          nome_fantasia: data.filialNomeFantasia || null,
-        });
-
-      if (filialError) throw filialError;
-
       setTenantId(tenant.id);
-      setStep(5); // Success step
+      setStep(4); // Success step
       toast.success('Cadastro realizado com sucesso!');
     } catch (error: any) {
       console.error('Error:', error);
-      if (error.message?.includes('duplicate')) {
-        toast.error('Este CNPJ já está cadastrado');
-      } else {
-        toast.error('Erro ao cadastrar. Tente novamente.');
-      }
+      toast.error('Erro ao cadastrar. Tente novamente.');
     } finally {
       setLoading(false);
     }
@@ -130,11 +96,6 @@ export default function Onboarding() {
         return data.grupoNome.trim().length >= 2;
       case 3:
         return data.empresaNome.trim().length >= 2;
-      case 4:
-        return (
-          data.filialCnpj.replace(/\D/g, '').length === 14 &&
-          data.filialRazaoSocial.trim().length >= 2
-        );
       default:
         return false;
     }
@@ -151,7 +112,7 @@ export default function Onboarding() {
                   <div className="p-2 bg-primary/10 rounded-lg">
                     <Building2 className="h-5 w-5 text-primary" />
                   </div>
-                  <span className="text-sm text-muted-foreground">Passo 1 de 4</span>
+                  <span className="text-sm text-muted-foreground">Passo 1 de 3</span>
                 </div>
                 <CardTitle className="text-xl">Crie seu Ambiente</CardTitle>
                 <CardDescription>
@@ -190,7 +151,7 @@ export default function Onboarding() {
                   <div className="p-2 bg-primary/10 rounded-lg">
                     <Users className="h-5 w-5 text-primary" />
                   </div>
-                  <span className="text-sm text-muted-foreground">Passo 2 de 4</span>
+                  <span className="text-sm text-muted-foreground">Passo 2 de 3</span>
                 </div>
                 <CardTitle className="text-xl">Grupo de Empresas</CardTitle>
                 <CardDescription>
@@ -231,7 +192,7 @@ export default function Onboarding() {
                   <div className="p-2 bg-primary/10 rounded-lg">
                     <Store className="h-5 w-5 text-primary" />
                   </div>
-                  <span className="text-sm text-muted-foreground">Passo 3 de 4</span>
+                  <span className="text-sm text-muted-foreground">Passo 3 de 3</span>
                 </div>
                 <CardTitle className="text-xl">Empresa</CardTitle>
                 <CardDescription>
@@ -254,65 +215,6 @@ export default function Onboarding() {
                   </Button>
                   <Button
                     className="flex-1"
-                    onClick={() => setStep(4)}
-                    disabled={!canProceed()}
-                  >
-                    Continuar
-                    <ArrowRight className="h-4 w-4 ml-2" />
-                  </Button>
-                </div>
-              </CardContent>
-            </>
-          )}
-
-          {step === 4 && (
-            <>
-              <CardHeader className="space-y-1">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="p-2 bg-primary/10 rounded-lg">
-                    <Building2 className="h-5 w-5 text-primary" />
-                  </div>
-                  <span className="text-sm text-muted-foreground">Passo 4 de 4</span>
-                </div>
-                <CardTitle className="text-xl">Filial / Estabelecimento</CardTitle>
-                <CardDescription>
-                  Cadastre a filial com o CNPJ para importar arquivos EFD.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="filialCnpj">CNPJ</Label>
-                  <Input
-                    id="filialCnpj"
-                    placeholder="00.000.000/0000-00"
-                    value={data.filialCnpj}
-                    onChange={handleCnpjChange}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="filialRazaoSocial">Razão Social</Label>
-                  <Input
-                    id="filialRazaoSocial"
-                    placeholder="Nome jurídico da empresa"
-                    value={data.filialRazaoSocial}
-                    onChange={(e) => setData({ ...data, filialRazaoSocial: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="filialNomeFantasia">Nome Fantasia (opcional)</Label>
-                  <Input
-                    id="filialNomeFantasia"
-                    placeholder="Nome comercial"
-                    value={data.filialNomeFantasia}
-                    onChange={(e) => setData({ ...data, filialNomeFantasia: e.target.value })}
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <Button variant="outline" onClick={() => setStep(3)}>
-                    Voltar
-                  </Button>
-                  <Button
-                    className="flex-1"
                     onClick={handleSubmit}
                     disabled={!canProceed() || loading}
                   >
@@ -323,7 +225,7 @@ export default function Onboarding() {
             </>
           )}
 
-          {step === 5 && (
+          {step === 4 && (
             <>
               <CardHeader className="space-y-1 text-center">
                 <div className="flex justify-center mb-4">
@@ -355,8 +257,22 @@ export default function Onboarding() {
                     Use este código para compartilhar o ambiente com outros usuários.
                   </p>
                 </div>
-                <Button className="w-full" onClick={() => navigate('/')}>
-                  Acessar o Sistema
+
+                <div className="p-4 bg-primary/5 rounded-lg border border-primary/20">
+                  <div className="flex items-start gap-3">
+                    <FileText className="h-5 w-5 text-primary mt-0.5" />
+                    <div>
+                      <p className="text-sm font-medium">Próximo Passo</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Acesse a tela de <strong>Mercadorias</strong> e importe seu arquivo EFD. 
+                        O sistema criará automaticamente a Filial/Estabelecimento com base no CNPJ do arquivo.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <Button className="w-full" onClick={() => navigate('/mercadorias')}>
+                  Ir para Mercadorias
                   <ArrowRight className="h-4 w-4 ml-2" />
                 </Button>
               </CardContent>

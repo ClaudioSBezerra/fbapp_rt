@@ -1,6 +1,4 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-
-// Note: This function now uses filial_id instead of tenant_id
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -20,9 +18,17 @@ interface ParsedMercadoria {
   ipi: number;
 }
 
-function parseEfdContent(content: string): ParsedMercadoria[] {
+interface EfdHeader {
+  cnpj: string;
+  razaoSocial: string;
+  periodoInicio: string;
+  periodoFim: string;
+}
+
+function parseEfdContent(content: string): { header: EfdHeader | null; mercadorias: ParsedMercadoria[] } {
   const lines = content.split("\n");
   const mercadorias: ParsedMercadoria[] = [];
+  let header: EfdHeader | null = null;
 
   let currentPeriod = "";
   let currentMercadoria: Partial<ParsedMercadoria> | null = null;
@@ -33,13 +39,29 @@ function parseEfdContent(content: string): ParsedMercadoria[] {
 
     const registro = fields[1];
 
-    // Registro 0000 - Abertura do arquivo (contém período)
-    if (registro === "0000" && fields.length > 6) {
-      const dtIni = fields[3]; // DDMMYYYY
+    // Registro 0000 - Abertura do arquivo (contém período e dados do estabelecimento)
+    // Layout: |0000|COD_VER|TIPO_ESCRIT|IND_SIT_ESP|NUM_REC_ANT|DT_INI|DT_FIN|NOME|CNPJ|UF|COD_MUN|...
+    // Índices: 1=REG, 2=COD_VER, 3=TIPO, 4=IND_SIT, 5=NUM_REC, 6=DT_INI, 7=DT_FIN, 8=NOME, 9=CNPJ
+    if (registro === "0000" && fields.length > 9) {
+      const dtIni = fields[6]; // DDMMYYYY
+      const dtFin = fields[7]; // DDMMYYYY
+      const nome = fields[8];
+      const cnpj = fields[9]?.replace(/\D/g, "");
+
       if (dtIni && dtIni.length === 8) {
         const month = dtIni.substring(2, 4);
         const year = dtIni.substring(4, 8);
         currentPeriod = `${year}-${month}-01`;
+      }
+
+      if (cnpj && cnpj.length === 14) {
+        header = {
+          cnpj,
+          razaoSocial: nome || "Estabelecimento",
+          periodoInicio: dtIni || "",
+          periodoFim: dtFin || "",
+        };
+        console.log(`Extracted header from 0000: CNPJ=${cnpj}, Nome=${nome}`);
       }
     }
 
@@ -136,7 +158,7 @@ function parseEfdContent(content: string): ParsedMercadoria[] {
   }
 
   console.log(`Parsed ${mercadorias.length} mercadorias from EFD file`);
-  return mercadorias;
+  return { header, mercadorias };
 }
 
 serve(async (req) => {
@@ -172,7 +194,7 @@ serve(async (req) => {
 
     const formData = await req.formData();
     const file = formData.get("file") as File;
-    const tenantId = formData.get("tenant_id") as string;
+    const empresaId = formData.get("empresa_id") as string;
 
     if (!file) {
       return new Response(
@@ -181,14 +203,29 @@ serve(async (req) => {
       );
     }
 
-    if (!tenantId) {
+    if (!empresaId) {
       return new Response(
-        JSON.stringify({ error: "No tenant_id provided" }),
+        JSON.stringify({ error: "No empresa_id provided" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Verify user has access to tenant
+    // Verify user has access to empresa (through grupo -> tenant)
+    const { data: empresa, error: empresaError } = await supabase
+      .from("empresas")
+      .select("id, grupo_id, grupos_empresas!inner(tenant_id)")
+      .eq("id", empresaId)
+      .single();
+
+    if (empresaError || !empresa) {
+      console.error("Empresa error:", empresaError);
+      return new Response(
+        JSON.stringify({ error: "Empresa not found" }),
+        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const tenantId = (empresa.grupos_empresas as any).tenant_id;
     const { data: hasAccess } = await supabase.rpc("has_tenant_access", {
       _tenant_id: tenantId,
       _user_id: user.id,
@@ -196,7 +233,7 @@ serve(async (req) => {
 
     if (!hasAccess) {
       return new Response(
-        JSON.stringify({ error: "Access denied to this tenant" }),
+        JSON.stringify({ error: "Access denied to this empresa" }),
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -204,25 +241,83 @@ serve(async (req) => {
     const content = await file.text();
     console.log(`Processing EFD file: ${file.name}, size: ${content.length} bytes`);
 
-    const mercadorias = parseEfdContent(content);
+    const { header, mercadorias } = parseEfdContent(content);
 
-    if (mercadorias.length === 0) {
+    if (!header || !header.cnpj) {
       return new Response(
-        JSON.stringify({ error: "No valid records found in EFD file", count: 0 }),
+        JSON.stringify({ error: "Could not extract CNPJ from EFD file (Registro 0000)" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Insert mercadorias
+    console.log(`Header extracted: CNPJ=${header.cnpj}, Nome=${header.razaoSocial}`);
+
+    // Check if filial exists for this empresa + CNPJ
+    let filialId: string;
+    let filialCreated = false;
+
+    const { data: existingFilial } = await supabase
+      .from("filiais")
+      .select("id")
+      .eq("empresa_id", empresaId)
+      .eq("cnpj", header.cnpj)
+      .maybeSingle();
+
+    if (existingFilial) {
+      filialId = existingFilial.id;
+      console.log(`Using existing filial: ${filialId}`);
+    } else {
+      // Create new filial
+      const { data: newFilial, error: createError } = await supabase
+        .from("filiais")
+        .insert({
+          empresa_id: empresaId,
+          cnpj: header.cnpj,
+          razao_social: header.razaoSocial,
+          nome_fantasia: null,
+        })
+        .select()
+        .single();
+
+      if (createError) {
+        console.error("Error creating filial:", createError);
+        return new Response(
+          JSON.stringify({ error: "Failed to create filial: " + createError.message }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      filialId = newFilial.id;
+      filialCreated = true;
+      console.log(`Created new filial: ${filialId}`);
+    }
+
+    if (mercadorias.length === 0) {
+      return new Response(
+        JSON.stringify({
+          success: true,
+          count: 0,
+          filialId,
+          filialCreated,
+          cnpj: header.cnpj,
+          razaoSocial: header.razaoSocial,
+          message: filialCreated
+            ? `Filial criada (CNPJ: ${header.cnpj}), mas nenhum registro de mercadoria encontrado no arquivo.`
+            : `Nenhum registro de mercadoria encontrado no arquivo.`,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Insert mercadorias with filial_id
     const insertData = mercadorias.map((m) => ({
       ...m,
-      tenant_id: tenantId,
+      filial_id: filialId,
     }));
 
-    const { error: insertError, count } = await supabase
+    const { error: insertError } = await supabase
       .from("mercadorias")
-      .insert(insertData)
-      .select();
+      .insert(insertData);
 
     if (insertError) {
       console.error("Insert error:", insertError);
@@ -232,13 +327,23 @@ serve(async (req) => {
       );
     }
 
-    console.log(`Successfully inserted ${mercadorias.length} mercadorias`);
+    console.log(`Successfully inserted ${mercadorias.length} mercadorias for filial ${filialId}`);
+
+    const formatCNPJ = (cnpj: string) => {
+      return cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
+    };
 
     return new Response(
       JSON.stringify({
         success: true,
         count: mercadorias.length,
-        message: `Importados ${mercadorias.length} registros com sucesso`,
+        filialId,
+        filialCreated,
+        cnpj: header.cnpj,
+        razaoSocial: header.razaoSocial,
+        message: filialCreated
+          ? `Filial criada automaticamente (CNPJ: ${formatCNPJ(header.cnpj)}). Importados ${mercadorias.length} registros.`
+          : `Importados ${mercadorias.length} registros para ${header.razaoSocial} (CNPJ: ${formatCNPJ(header.cnpj)}).`,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
