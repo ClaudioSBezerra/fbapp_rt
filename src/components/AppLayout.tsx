@@ -1,15 +1,11 @@
-import { ReactNode, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/components/AppSidebar';
 import { Skeleton } from '@/components/ui/skeleton';
 
-interface AppLayoutProps {
-  children: ReactNode;
-}
-
-export function AppLayout({ children }: AppLayoutProps) {
+export default function AppLayout() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
 
@@ -44,7 +40,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             <SidebarTrigger className="mr-4" />
           </header>
           <div className="flex-1 p-6 overflow-auto">
-            {children}
+            <Outlet />
           </div>
         </main>
       </div>
