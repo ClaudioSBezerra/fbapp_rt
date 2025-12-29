@@ -79,6 +79,51 @@ export type Database = {
           },
         ]
       }
+      energia_agua: {
+        Row: {
+          cnpj_fornecedor: string | null
+          cofins: number
+          created_at: string
+          descricao: string | null
+          filial_id: string
+          id: string
+          mes_ano: string
+          pis: number
+          tipo_operacao: string
+          tipo_servico: string
+          updated_at: string
+          valor: number
+        }
+        Insert: {
+          cnpj_fornecedor?: string | null
+          cofins?: number
+          created_at?: string
+          descricao?: string | null
+          filial_id: string
+          id?: string
+          mes_ano: string
+          pis?: number
+          tipo_operacao: string
+          tipo_servico: string
+          updated_at?: string
+          valor?: number
+        }
+        Update: {
+          cnpj_fornecedor?: string | null
+          cofins?: number
+          created_at?: string
+          descricao?: string | null
+          filial_id?: string
+          id?: string
+          mes_ano?: string
+          pis?: number
+          tipo_operacao?: string
+          tipo_servico?: string
+          updated_at?: string
+          valor?: number
+        }
+        Relationships: []
+      }
       filiais: {
         Row: {
           cnpj: string
@@ -116,6 +161,51 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      fretes: {
+        Row: {
+          cnpj_transportadora: string | null
+          cofins: number
+          created_at: string
+          descricao: string | null
+          filial_id: string
+          id: string
+          mes_ano: string
+          ncm: string | null
+          pis: number
+          tipo: string
+          updated_at: string
+          valor: number
+        }
+        Insert: {
+          cnpj_transportadora?: string | null
+          cofins?: number
+          created_at?: string
+          descricao?: string | null
+          filial_id: string
+          id?: string
+          mes_ano: string
+          ncm?: string | null
+          pis?: number
+          tipo: string
+          updated_at?: string
+          valor?: number
+        }
+        Update: {
+          cnpj_transportadora?: string | null
+          cofins?: number
+          created_at?: string
+          descricao?: string | null
+          filial_id?: string
+          id?: string
+          mes_ano?: string
+          ncm?: string | null
+          pis?: number
+          tipo?: string
+          updated_at?: string
+          valor?: number
+        }
+        Relationships: []
       }
       grupos_empresas: {
         Row: {
