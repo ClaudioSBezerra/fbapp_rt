@@ -12,6 +12,8 @@ import Mercadorias from "./pages/Mercadorias";
 import Aliquotas from "./pages/Aliquotas";
 import Empresas from "./pages/Empresas";
 import Configuracoes from "./pages/Configuracoes";
+import EnergiaAgua from "./pages/EnergiaAgua";
+import Fretes from "./pages/Fretes";
 import NotFound from "./pages/NotFound";
 import AppLayout from "./components/AppLayout";
 
@@ -29,11 +31,13 @@ const App = () => (
             <Route path="/auth" element={<Auth />} />
             <Route path="/onboarding" element={<Onboarding />} />
             <Route element={<AppLayout />}>
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/mercadorias" element={<Mercadorias />} />
-              <Route path="/aliquotas" element={<Aliquotas />} />
-              <Route path="/empresas" element={<Empresas />} />
               <Route path="/configuracoes" element={<Configuracoes />} />
+              <Route path="/empresas" element={<Empresas />} />
+              <Route path="/aliquotas" element={<Aliquotas />} />
+              <Route path="/mercadorias" element={<Mercadorias />} />
+              <Route path="/energia-agua" element={<EnergiaAgua />} />
+              <Route path="/fretes" element={<Fretes />} />
+              <Route path="/dashboard" element={<Dashboard />} />
             </Route>
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />

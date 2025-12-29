@@ -5,7 +5,8 @@ import {
   Calculator, 
   Building2,
   LogOut,
-  ChevronLeft
+  Zap,
+  Truck
 } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { useAuth } from '@/hooks/useAuth';
@@ -21,18 +22,19 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarTrigger,
   useSidebar,
 } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
 import { TrendingUp } from 'lucide-react';
 
 const menuItems = [
-  { title: 'Dashboard', url: '/', icon: LayoutDashboard },
-  { title: 'Mercadorias', url: '/mercadorias', icon: Package },
-  { title: 'Alíquotas', url: '/aliquotas', icon: Calculator },
-  { title: 'Empresas', url: '/empresas', icon: Building2 },
   { title: 'Configurações', url: '/configuracoes', icon: Settings },
+  { title: 'Empresas', url: '/empresas', icon: Building2 },
+  { title: 'Alíquotas', url: '/aliquotas', icon: Calculator },
+  { title: 'Mercadorias', url: '/mercadorias', icon: Package },
+  { title: 'Energia e Água', url: '/energia-agua', icon: Zap },
+  { title: 'Fretes', url: '/fretes', icon: Truck },
+  { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard },
 ];
 
 export function AppSidebar() {
