@@ -89,6 +89,7 @@ export type Database = {
           created_at: string
           descricao: string | null
           filial_id: string
+          icms: number
           id: string
           mes_ano: string
           pis: number
@@ -103,6 +104,7 @@ export type Database = {
           created_at?: string
           descricao?: string | null
           filial_id: string
+          icms?: number
           id?: string
           mes_ano: string
           pis?: number
@@ -117,6 +119,7 @@ export type Database = {
           created_at?: string
           descricao?: string | null
           filial_id?: string
+          icms?: number
           id?: string
           mes_ano?: string
           pis?: number
@@ -172,6 +175,7 @@ export type Database = {
           created_at: string
           descricao: string | null
           filial_id: string
+          icms: number
           id: string
           mes_ano: string
           ncm: string | null
@@ -186,6 +190,7 @@ export type Database = {
           created_at?: string
           descricao?: string | null
           filial_id: string
+          icms?: number
           id?: string
           mes_ano: string
           ncm?: string | null
@@ -200,6 +205,7 @@ export type Database = {
           created_at?: string
           descricao?: string | null
           filial_id?: string
+          icms?: number
           id?: string
           mes_ano?: string
           ncm?: string | null
