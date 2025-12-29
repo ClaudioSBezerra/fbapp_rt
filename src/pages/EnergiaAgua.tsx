@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, ArrowDownRight, ArrowUpRight, Zap, Droplets } from 'lucide-react';
+import { Plus, ArrowDownRight, ArrowUpRight, Zap, Filter } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
@@ -22,6 +22,7 @@ interface EnergiaAguaItem {
   valor: number;
   pis: number;
   cofins: number;
+  icms: number;
   descricao: string | null;
   filial_id: string;
 }
@@ -38,6 +39,17 @@ interface Aliquota {
   ibs_estadual: number;
   ibs_municipal: number;
   cbs: number;
+  reduc_icms: number;
+}
+
+interface AggregatedRow {
+  filial_id: string;
+  filial_nome: string;
+  mes_ano: string;
+  valor: number;
+  pis: number;
+  cofins: number;
+  icms: number;
 }
 
 function formatCurrency(value: number): string {
@@ -57,10 +69,8 @@ function formatCNPJ(cnpj: string): string {
   return cleaned.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
 }
 
-function calculateIbsCbs(valor: number, aliquota: Aliquota | null): number {
-  if (!aliquota) return 0;
-  const totalAliquota = (aliquota.ibs_estadual + aliquota.ibs_municipal + aliquota.cbs) / 100;
-  return valor * totalAliquota;
+function getYearFromMesAno(mesAno: string): number {
+  return new Date(mesAno).getFullYear();
 }
 
 export default function EnergiaAgua() {
@@ -72,6 +82,10 @@ export default function EnergiaAgua() {
   const [submitting, setSubmitting] = useState(false);
   const [selectedFilial, setSelectedFilial] = useState<string>('');
   const { user } = useAuth();
+
+  // Filters
+  const [filterFilial, setFilterFilial] = useState<string>('all');
+  const [filterMesAno, setFilterMesAno] = useState<string>('all');
 
   const [newItem, setNewItem] = useState({
     tipo_operacao: 'credito',
@@ -89,7 +103,7 @@ export default function EnergiaAgua() {
       try {
         const { data: aliquotasData } = await supabase
           .from('aliquotas')
-          .select('ano, ibs_estadual, ibs_municipal, cbs')
+          .select('ano, ibs_estadual, ibs_municipal, cbs, reduc_icms')
           .order('ano');
 
         if (aliquotasData) setAliquotas(aliquotasData);
@@ -121,6 +135,58 @@ export default function EnergiaAgua() {
 
     fetchData();
   }, [user]);
+
+  // Get unique mes_ano options
+  const mesAnoOptions = useMemo(() => {
+    const unique = [...new Set(items.map(i => i.mes_ano))];
+    return unique.sort((a, b) => b.localeCompare(a));
+  }, [items]);
+
+  // Filter items
+  const filteredItems = useMemo(() => {
+    return items.filter(i => {
+      if (filterFilial !== 'all' && i.filial_id !== filterFilial) return false;
+      if (filterMesAno !== 'all' && i.mes_ano !== filterMesAno) return false;
+      return true;
+    });
+  }, [items, filterFilial, filterMesAno]);
+
+  // Aggregate data by filial + mes_ano
+  const aggregateData = (data: EnergiaAguaItem[]): AggregatedRow[] => {
+    const grouped: Record<string, AggregatedRow> = {};
+    
+    data.forEach(item => {
+      const key = `${item.filial_id}_${item.mes_ano}`;
+      if (!grouped[key]) {
+        const filial = filiais.find(f => f.id === item.filial_id);
+        grouped[key] = {
+          filial_id: item.filial_id,
+          filial_nome: filial?.nome_fantasia || filial?.razao_social || 'Filial',
+          mes_ano: item.mes_ano,
+          valor: 0,
+          pis: 0,
+          cofins: 0,
+          icms: 0,
+        };
+      }
+      grouped[key].valor += item.valor;
+      grouped[key].pis += item.pis;
+      grouped[key].cofins += item.cofins;
+      grouped[key].icms += item.icms || 0;
+    });
+
+    return Object.values(grouped).sort((a, b) => b.mes_ano.localeCompare(a.mes_ano));
+  };
+
+  const creditosAgregados = useMemo(() => 
+    aggregateData(filteredItems.filter(i => i.tipo_operacao === 'credito')), 
+    [filteredItems, filiais]
+  );
+
+  const debitosAgregados = useMemo(() => 
+    aggregateData(filteredItems.filter(i => i.tipo_operacao === 'debito')), 
+    [filteredItems, filiais]
+  );
 
   const handleNewItem = async () => {
     if (!selectedFilial) {
@@ -171,18 +237,12 @@ export default function EnergiaAgua() {
     }
   };
 
-  const currentYear = new Date().getFullYear();
-  const aliquotaAtual = aliquotas.find((a) => a.ano === currentYear) || aliquotas[0];
-
-  const creditos = items.filter((i) => i.tipo_operacao === 'credito');
-  const debitos = items.filter((i) => i.tipo_operacao === 'debito');
-
-  const totalCreditos = creditos.reduce((acc, i) => acc + i.pis + i.cofins, 0);
-  const totalDebitos = debitos.reduce((acc, i) => acc + i.pis + i.cofins, 0);
+  const totalCreditos = filteredItems.filter((i) => i.tipo_operacao === 'credito').reduce((acc, i) => acc + i.pis + i.cofins, 0);
+  const totalDebitos = filteredItems.filter((i) => i.tipo_operacao === 'debito').reduce((acc, i) => acc + i.pis + i.cofins, 0);
 
   const hasFiliais = filiais.length > 0;
 
-  const renderTable = (data: EnergiaAguaItem[]) => {
+  const renderTable = (data: AggregatedRow[], tipo: 'credito' | 'debito') => {
     if (data.length === 0) {
       return (
         <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -200,45 +260,39 @@ export default function EnergiaAgua() {
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead>Filial</TableHead>
               <TableHead>Mês/Ano</TableHead>
-              <TableHead>Tipo</TableHead>
-              <TableHead>CNPJ Fornecedor</TableHead>
               <TableHead className="text-right">Valor</TableHead>
+              <TableHead className="text-right">ICMS</TableHead>
+              <TableHead className="text-right">ICMS Projetado</TableHead>
               <TableHead className="text-right text-pis-cofins">PIS+COFINS</TableHead>
-              <TableHead className="text-right text-ibs-cbs">IBS+CBS</TableHead>
+              <TableHead className="text-right text-ibs-cbs">IBS Projetado</TableHead>
+              <TableHead className="text-right text-ibs-cbs">CBS Projetado</TableHead>
               <TableHead className="text-right">Diferença</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {data.map((item) => {
-              const pisCofins = item.pis + item.cofins;
-              const ibsCbs = calculateIbsCbs(item.valor, aliquotaAtual);
-              const diferenca = ibsCbs - pisCofins;
+            {data.map((row, index) => {
+              const year = getYearFromMesAno(row.mes_ano);
+              const aliquota = aliquotas.find((a) => a.ano === year) || aliquotas[0];
+              
+              const vlIcms = row.icms;
+              const vlIcmsProjetado = aliquota ? vlIcms * (1 - (aliquota.reduc_icms / 100)) : vlIcms;
+              const vlPisCofins = row.pis + row.cofins;
+              const vlIbsProjetado = aliquota ? row.valor * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
+              const vlCbsProjetado = aliquota ? row.valor * (aliquota.cbs / 100) : 0;
+              const diferenca = (vlIbsProjetado + vlCbsProjetado) - vlPisCofins;
 
               return (
-                <TableRow key={item.id}>
-                  <TableCell>{formatDate(item.mes_ano)}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className="gap-1">
-                      {item.tipo_servico === 'energia' ? (
-                        <><Zap className="h-3 w-3" /> Energia</>
-                      ) : (
-                        <><Droplets className="h-3 w-3" /> Água</>
-                      )}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {item.cnpj_fornecedor ? formatCNPJ(item.cnpj_fornecedor) : '-'}
-                  </TableCell>
-                  <TableCell className="text-right font-mono">
-                    {formatCurrency(item.valor)}
-                  </TableCell>
-                  <TableCell className="text-right font-mono text-pis-cofins">
-                    {formatCurrency(pisCofins)}
-                  </TableCell>
-                  <TableCell className="text-right font-mono text-ibs-cbs">
-                    {formatCurrency(ibsCbs)}
-                  </TableCell>
+                <TableRow key={`${row.filial_id}-${row.mes_ano}-${index}`}>
+                  <TableCell className="font-medium">{row.filial_nome}</TableCell>
+                  <TableCell>{formatDate(row.mes_ano)}</TableCell>
+                  <TableCell className="text-right font-mono">{formatCurrency(row.valor)}</TableCell>
+                  <TableCell className="text-right font-mono">{formatCurrency(vlIcms)}</TableCell>
+                  <TableCell className="text-right font-mono">{formatCurrency(vlIcmsProjetado)}</TableCell>
+                  <TableCell className="text-right font-mono text-pis-cofins">{formatCurrency(vlPisCofins)}</TableCell>
+                  <TableCell className="text-right font-mono text-ibs-cbs">{formatCurrency(vlIbsProjetado)}</TableCell>
+                  <TableCell className="text-right font-mono text-ibs-cbs">{formatCurrency(vlCbsProjetado)}</TableCell>
                   <TableCell className="text-right">
                     <Badge
                       variant={diferenca > 0 ? 'destructive' : diferenca < 0 ? 'default' : 'secondary'}
@@ -263,7 +317,7 @@ export default function EnergiaAgua() {
         <div>
           <h1 className="text-2xl font-bold text-foreground">Energia e Água</h1>
           <p className="text-muted-foreground">
-            Comparativo PIS+COFINS vs IBS+CBS para energia e água
+            Comparativo PIS+COFINS vs IBS+CBS agregado por Filial e Mês
           </p>
         </div>
         <Button size="sm" onClick={() => setDialogOpen(true)} disabled={!hasFiliais}>
@@ -271,6 +325,50 @@ export default function EnergiaAgua() {
           Nova Entrada
         </Button>
       </div>
+
+      {/* Filters */}
+      <Card className="border-border/50">
+        <CardContent className="pt-4">
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="flex items-center gap-2">
+              <Filter className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-medium">Filtros:</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Label className="text-sm">Filial:</Label>
+              <Select value={filterFilial} onValueChange={setFilterFilial}>
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue placeholder="Todas" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas</SelectItem>
+                  {filiais.map((filial) => (
+                    <SelectItem key={filial.id} value={filial.id}>
+                      {filial.nome_fantasia || filial.razao_social}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2">
+              <Label className="text-sm">Mês/Ano:</Label>
+              <Select value={filterMesAno} onValueChange={setFilterMesAno}>
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue placeholder="Todos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  {mesAnoOptions.map((mesAno) => (
+                    <SelectItem key={mesAno} value={mesAno}>
+                      {formatDate(mesAno)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 md:grid-cols-2">
         <Card className="border-border/50">
@@ -309,9 +407,9 @@ export default function EnergiaAgua() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle>Registros</CardTitle>
+                <CardTitle>Registros Agregados</CardTitle>
                 <CardDescription>
-                  Visualize créditos e débitos de energia e água
+                  Visualize créditos e débitos de energia e água agregados por Filial e Mês/Ano
                 </CardDescription>
               </div>
               <TabsList>
@@ -325,14 +423,14 @@ export default function EnergiaAgua() {
               {loading ? (
                 <div className="py-12 text-center text-muted-foreground">Carregando...</div>
               ) : (
-                renderTable(creditos)
+                renderTable(creditosAgregados, 'credito')
               )}
             </TabsContent>
             <TabsContent value="debitos" className="mt-0">
               {loading ? (
                 <div className="py-12 text-center text-muted-foreground">Carregando...</div>
               ) : (
-                renderTable(debitos)
+                renderTable(debitosAgregados, 'debito')
               )}
             </TabsContent>
           </CardContent>

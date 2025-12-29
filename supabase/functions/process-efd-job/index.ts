@@ -110,7 +110,7 @@ function processLine(
 
     case "C100":
       blockType = "c100";
-      if (fields.length > 11) {
+      if (fields.length > 25) {
         const indOper = fields[2];
         const tipo = indOper === "0" ? "entrada" : "saida";
         const valorDoc = parseNumber(fields[11]);
@@ -126,8 +126,8 @@ function processLine(
               valor: valorDoc,
               pis: parseNumber(fields[23]),
               cofins: parseNumber(fields[25]),
-              icms: 0,
-              ipi: 0,
+              icms: parseNumber(fields[20]),
+              ipi: parseNumber(fields[21]),
             },
           };
         }
@@ -136,7 +136,7 @@ function processLine(
 
     case "C500":
       blockType = "c500";
-      if (fields.length > 10) {
+      if (fields.length > 18) {
         const indOper = fields[2];
         const tipoOperacao = indOper === "0" ? "credito" : "debito";
         const codMod = fields[5] || "";
@@ -158,6 +158,7 @@ function processLine(
               valor: valorDoc,
               pis: parseNumber(fields[16]),
               cofins: parseNumber(fields[18]),
+              icms: parseNumber(fields[13]),
             },
           };
         }
@@ -166,7 +167,7 @@ function processLine(
 
     case "C600":
       blockType = "c600";
-      if (fields.length > 7) {
+      if (fields.length > 16) {
         const valorDoc = parseNumber(fields[7]);
         
         if (valorDoc > 0) {
@@ -180,7 +181,7 @@ function processLine(
               valor: valorDoc,
               pis: parseNumber(fields[15]),
               cofins: parseNumber(fields[16]),
-              icms: 0,
+              icms: parseNumber(fields[12]),
               ipi: 0,
             },
           };
@@ -190,7 +191,7 @@ function processLine(
 
     case "D100":
       blockType = "d100";
-      if (fields.length > 14) {
+      if (fields.length > 26) {
         const indOper = fields[2];
         const tipo = indOper === "0" ? "entrada" : "saida";
         const cnpjTransportadora = fields[5]?.replace(/\D/g, "") || null;
@@ -208,6 +209,7 @@ function processLine(
               valor: valorDoc,
               pis: parseNumber(fields[24]),
               cofins: parseNumber(fields[26]),
+              icms: parseNumber(fields[23]),
             },
           };
         }
@@ -216,7 +218,7 @@ function processLine(
 
     case "D500":
       blockType = "d500";
-      if (fields.length > 11) {
+      if (fields.length > 19) {
         const indOper = fields[2];
         const tipo = indOper === "0" ? "entrada" : "saida";
         const cnpjFornecedor = fields[4]?.replace(/\D/g, "") || null;
@@ -234,6 +236,7 @@ function processLine(
               valor: valorDoc,
               pis: parseNumber(fields[17]),
               cofins: parseNumber(fields[19]),
+              icms: parseNumber(fields[14]),
             },
           };
         }

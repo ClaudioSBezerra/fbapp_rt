@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, ArrowUpRight, ArrowDownRight, Building2 } from 'lucide-react';
+import { Plus, ArrowUpRight, ArrowDownRight, Building2, Filter } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
@@ -22,6 +22,7 @@ interface Mercadoria {
   valor: number;
   pis: number;
   cofins: number;
+  icms: number;
   filial_id: string;
 }
 
@@ -30,6 +31,7 @@ interface Aliquota {
   ibs_estadual: number;
   ibs_municipal: number;
   cbs: number;
+  reduc_icms: number;
 }
 
 interface Filial {
@@ -37,6 +39,16 @@ interface Filial {
   cnpj: string;
   razao_social: string;
   nome_fantasia: string | null;
+}
+
+interface AggregatedRow {
+  filial_id: string;
+  filial_nome: string;
+  mes_ano: string;
+  valor: number;
+  pis: number;
+  cofins: number;
+  icms: number;
 }
 
 function formatCurrency(value: number): string {
@@ -53,24 +65,18 @@ function formatCNPJ(cnpj: string): string {
   return cleaned.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
 }
 
-function calculateIbsCbs(valor: number, aliquota: Aliquota | null): number {
-  if (!aliquota) return 0;
-  const totalAliquota = (aliquota.ibs_estadual + aliquota.ibs_municipal + aliquota.cbs) / 100;
-  return valor * totalAliquota;
+function getYearFromMesAno(mesAno: string): number {
+  return new Date(mesAno).getFullYear();
 }
 
 interface MercadoriasTableProps {
-  mercadorias: Mercadoria[];
+  data: AggregatedRow[];
   aliquotas: Aliquota[];
   tipo: 'entrada' | 'saida';
 }
 
-function MercadoriasTable({ mercadorias, aliquotas, tipo }: MercadoriasTableProps) {
-  const filtered = mercadorias.filter((m) => m.tipo === tipo);
-  const currentYear = new Date().getFullYear();
-  const aliquotaAtual = aliquotas.find((a) => a.ano === currentYear) || aliquotas[0];
-
-  if (filtered.length === 0) {
+function MercadoriasTable({ data, aliquotas, tipo }: MercadoriasTableProps) {
+  if (data.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center">
         {tipo === 'entrada' ? (
@@ -93,33 +99,39 @@ function MercadoriasTable({ mercadorias, aliquotas, tipo }: MercadoriasTableProp
       <Table>
         <TableHeader>
           <TableRow>
+            <TableHead>Filial</TableHead>
             <TableHead>Mês/Ano</TableHead>
-            <TableHead>NCM</TableHead>
-            <TableHead>Descrição</TableHead>
             <TableHead className="text-right">Valor</TableHead>
+            <TableHead className="text-right">ICMS</TableHead>
+            <TableHead className="text-right">ICMS Projetado</TableHead>
             <TableHead className="text-right text-pis-cofins">PIS+COFINS</TableHead>
-            <TableHead className="text-right text-ibs-cbs">IBS+CBS</TableHead>
+            <TableHead className="text-right text-ibs-cbs">IBS Projetado</TableHead>
+            <TableHead className="text-right text-ibs-cbs">CBS Projetado</TableHead>
             <TableHead className="text-right">Diferença</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {filtered.map((m) => {
-            const pisCofins = m.pis + m.cofins;
-            const ibsCbs = calculateIbsCbs(m.valor, aliquotaAtual);
-            const diferenca = ibsCbs - pisCofins;
+          {data.map((row, index) => {
+            const year = getYearFromMesAno(row.mes_ano);
+            const aliquota = aliquotas.find((a) => a.ano === year) || aliquotas[0];
+            
+            const vlIcms = row.icms;
+            const vlIcmsProjetado = aliquota ? vlIcms * (1 - (aliquota.reduc_icms / 100)) : vlIcms;
+            const vlPisCofins = row.pis + row.cofins;
+            const vlIbsProjetado = aliquota ? row.valor * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
+            const vlCbsProjetado = aliquota ? row.valor * (aliquota.cbs / 100) : 0;
+            const diferenca = (vlIbsProjetado + vlCbsProjetado) - vlPisCofins;
 
             return (
-              <TableRow key={m.id}>
-                <TableCell>{formatDate(m.mes_ano)}</TableCell>
-                <TableCell>
-                  <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
-                    {m.ncm || '-'}
-                  </code>
-                </TableCell>
-                <TableCell className="max-w-[200px] truncate">{m.descricao || '-'}</TableCell>
-                <TableCell className="text-right font-mono">{formatCurrency(m.valor)}</TableCell>
-                <TableCell className="text-right font-mono text-pis-cofins">{formatCurrency(pisCofins)}</TableCell>
-                <TableCell className="text-right font-mono text-ibs-cbs">{formatCurrency(ibsCbs)}</TableCell>
+              <TableRow key={`${row.filial_id}-${row.mes_ano}-${index}`}>
+                <TableCell className="font-medium">{row.filial_nome}</TableCell>
+                <TableCell>{formatDate(row.mes_ano)}</TableCell>
+                <TableCell className="text-right font-mono">{formatCurrency(row.valor)}</TableCell>
+                <TableCell className="text-right font-mono">{formatCurrency(vlIcms)}</TableCell>
+                <TableCell className="text-right font-mono">{formatCurrency(vlIcmsProjetado)}</TableCell>
+                <TableCell className="text-right font-mono text-pis-cofins">{formatCurrency(vlPisCofins)}</TableCell>
+                <TableCell className="text-right font-mono text-ibs-cbs">{formatCurrency(vlIbsProjetado)}</TableCell>
+                <TableCell className="text-right font-mono text-ibs-cbs">{formatCurrency(vlCbsProjetado)}</TableCell>
                 <TableCell className="text-right">
                   <Badge
                     variant={diferenca > 0 ? 'destructive' : diferenca < 0 ? 'default' : 'secondary'}
@@ -147,6 +159,10 @@ export default function Mercadorias() {
   const [submitting, setSubmitting] = useState(false);
   const { user } = useAuth();
 
+  // Filters
+  const [filterFilial, setFilterFilial] = useState<string>('all');
+  const [filterMesAno, setFilterMesAno] = useState<string>('all');
+
   const [newMercadoria, setNewMercadoria] = useState({
     tipo: 'entrada',
     mes_ano: new Date().toISOString().slice(0, 7),
@@ -162,13 +178,13 @@ export default function Mercadorias() {
       try {
         const { data: aliquotasData } = await supabase
           .from('aliquotas')
-          .select('ano, ibs_estadual, ibs_municipal, cbs')
+          .select('ano, ibs_estadual, ibs_municipal, cbs, reduc_icms')
           .order('ano');
         if (aliquotasData) setAliquotas(aliquotasData);
 
         const { data: mercadoriasData } = await supabase
           .from('mercadorias')
-          .select('id, tipo, mes_ano, ncm, descricao, valor, pis, cofins, filial_id')
+          .select('id, tipo, mes_ano, ncm, descricao, valor, pis, cofins, icms, filial_id')
           .order('mes_ano', { ascending: false });
         if (mercadoriasData) setMercadorias(mercadoriasData);
 
@@ -190,6 +206,58 @@ export default function Mercadorias() {
     }
     fetchData();
   }, [user]);
+
+  // Get unique mes_ano options
+  const mesAnoOptions = useMemo(() => {
+    const unique = [...new Set(mercadorias.map(m => m.mes_ano))];
+    return unique.sort((a, b) => b.localeCompare(a));
+  }, [mercadorias]);
+
+  // Aggregate data by filial + mes_ano
+  const aggregateData = (items: Mercadoria[]): AggregatedRow[] => {
+    const grouped: Record<string, AggregatedRow> = {};
+    
+    items.forEach(item => {
+      const key = `${item.filial_id}_${item.mes_ano}`;
+      if (!grouped[key]) {
+        const filial = filiais.find(f => f.id === item.filial_id);
+        grouped[key] = {
+          filial_id: item.filial_id,
+          filial_nome: filial?.nome_fantasia || filial?.razao_social || 'Filial',
+          mes_ano: item.mes_ano,
+          valor: 0,
+          pis: 0,
+          cofins: 0,
+          icms: 0,
+        };
+      }
+      grouped[key].valor += item.valor;
+      grouped[key].pis += item.pis;
+      grouped[key].cofins += item.cofins;
+      grouped[key].icms += item.icms || 0;
+    });
+
+    return Object.values(grouped).sort((a, b) => b.mes_ano.localeCompare(a.mes_ano));
+  };
+
+  // Filter and aggregate
+  const filteredMercadorias = useMemo(() => {
+    return mercadorias.filter(m => {
+      if (filterFilial !== 'all' && m.filial_id !== filterFilial) return false;
+      if (filterMesAno !== 'all' && m.mes_ano !== filterMesAno) return false;
+      return true;
+    });
+  }, [mercadorias, filterFilial, filterMesAno]);
+
+  const entradasAgregadas = useMemo(() => 
+    aggregateData(filteredMercadorias.filter(m => m.tipo === 'entrada')), 
+    [filteredMercadorias, filiais]
+  );
+
+  const saidasAgregadas = useMemo(() => 
+    aggregateData(filteredMercadorias.filter(m => m.tipo === 'saida')), 
+    [filteredMercadorias, filiais]
+  );
 
   const handleNewMercadoria = async () => {
     if (!selectedFilial) {
@@ -216,7 +284,7 @@ export default function Mercadorias() {
 
       const { data: mercadoriasData } = await supabase
         .from('mercadorias')
-        .select('id, tipo, mes_ano, ncm, descricao, valor, pis, cofins, filial_id')
+        .select('id, tipo, mes_ano, ncm, descricao, valor, pis, cofins, icms, filial_id')
         .order('mes_ano', { ascending: false });
       if (mercadoriasData) setMercadorias(mercadoriasData);
     } catch (error) {
@@ -227,8 +295,8 @@ export default function Mercadorias() {
     }
   };
 
-  const totalEntradas = mercadorias.filter((m) => m.tipo === 'entrada').reduce((acc, m) => acc + m.pis + m.cofins, 0);
-  const totalSaidas = mercadorias.filter((m) => m.tipo === 'saida').reduce((acc, m) => acc + m.pis + m.cofins, 0);
+  const totalEntradasPisCofins = filteredMercadorias.filter((m) => m.tipo === 'entrada').reduce((acc, m) => acc + m.pis + m.cofins, 0);
+  const totalSaidasPisCofins = filteredMercadorias.filter((m) => m.tipo === 'saida').reduce((acc, m) => acc + m.pis + m.cofins, 0);
   const hasFiliais = filiais.length > 0;
 
   return (
@@ -236,7 +304,7 @@ export default function Mercadorias() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Painel de Mercadorias</h1>
-          <p className="text-muted-foreground">Comparativo PIS+COFINS vs IBS+CBS por operação</p>
+          <p className="text-muted-foreground">Comparativo PIS+COFINS vs IBS+CBS agregado por Filial e Mês</p>
         </div>
         <Button size="sm" onClick={() => setNewDialogOpen(true)} disabled={!hasFiliais}>
           <Plus className="h-4 w-4 mr-2" />
@@ -260,6 +328,50 @@ export default function Mercadorias() {
         </Card>
       )}
 
+      {/* Filters */}
+      <Card className="border-border/50">
+        <CardContent className="pt-4">
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="flex items-center gap-2">
+              <Filter className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-medium">Filtros:</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Label className="text-sm">Filial:</Label>
+              <Select value={filterFilial} onValueChange={setFilterFilial}>
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue placeholder="Todas" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas</SelectItem>
+                  {filiais.map((filial) => (
+                    <SelectItem key={filial.id} value={filial.id}>
+                      {filial.nome_fantasia || filial.razao_social}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2">
+              <Label className="text-sm">Mês/Ano:</Label>
+              <Select value={filterMesAno} onValueChange={setFilterMesAno}>
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue placeholder="Todos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  {mesAnoOptions.map((mesAno) => (
+                    <SelectItem key={mesAno} value={mesAno}>
+                      {formatDate(mesAno)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="grid gap-4 md:grid-cols-2">
         <Card className="border-border/50">
           <CardHeader className="pb-2">
@@ -268,7 +380,7 @@ export default function Mercadorias() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold text-pis-cofins">{formatCurrency(totalEntradas)}</p>
+            <p className="text-2xl font-bold text-pis-cofins">{formatCurrency(totalEntradasPisCofins)}</p>
             <p className="text-xs text-muted-foreground">PIS+COFINS acumulado</p>
           </CardContent>
         </Card>
@@ -279,7 +391,7 @@ export default function Mercadorias() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold text-pis-cofins">{formatCurrency(totalSaidas)}</p>
+            <p className="text-2xl font-bold text-pis-cofins">{formatCurrency(totalSaidasPisCofins)}</p>
             <p className="text-xs text-muted-foreground">PIS+COFINS acumulado</p>
           </CardContent>
         </Card>
@@ -290,8 +402,8 @@ export default function Mercadorias() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle>Operações</CardTitle>
-                <CardDescription>Visualize entradas e saídas com comparativo tributário</CardDescription>
+                <CardTitle>Operações Agregadas</CardTitle>
+                <CardDescription>Visualize entradas e saídas agregadas por Filial e Mês/Ano</CardDescription>
               </div>
               <TabsList>
                 <TabsTrigger value="entradas">Entradas</TabsTrigger>
@@ -301,10 +413,10 @@ export default function Mercadorias() {
           </CardHeader>
           <CardContent>
             <TabsContent value="entradas" className="mt-0">
-              {loading ? <div className="py-12 text-center text-muted-foreground">Carregando...</div> : <MercadoriasTable mercadorias={mercadorias} aliquotas={aliquotas} tipo="entrada" />}
+              {loading ? <div className="py-12 text-center text-muted-foreground">Carregando...</div> : <MercadoriasTable data={entradasAgregadas} aliquotas={aliquotas} tipo="entrada" />}
             </TabsContent>
             <TabsContent value="saidas" className="mt-0">
-              {loading ? <div className="py-12 text-center text-muted-foreground">Carregando...</div> : <MercadoriasTable mercadorias={mercadorias} aliquotas={aliquotas} tipo="saida" />}
+              {loading ? <div className="py-12 text-center text-muted-foreground">Carregando...</div> : <MercadoriasTable data={saidasAgregadas} aliquotas={aliquotas} tipo="saida" />}
             </TabsContent>
           </CardContent>
         </Tabs>
