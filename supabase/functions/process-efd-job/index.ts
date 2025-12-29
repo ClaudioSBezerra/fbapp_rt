@@ -49,10 +49,19 @@ function getPeriodFromHeader(fields: string[]): string {
   return "";
 }
 
+// Test limit: only import 100 C100 records from first filial
+const C100_LIMIT_FIRST_FILIAL = 100;
+
+interface C100LimitContext {
+  firstFilialCNPJ: string | null;
+  c100CountFirstFilial: number;
+}
+
 function processLine(
   line: string,
-  context: ProcessingContext
-): { record: ParsedRecord | null; context: ProcessingContext } {
+  context: ProcessingContext,
+  c100Limit?: C100LimitContext
+): { record: ParsedRecord | null; context: ProcessingContext; c100Record?: { table: "mercadorias"; data: Record<string, any> } } {
   if (!VALID_PREFIXES.some(p => line.startsWith(p))) {
     return { record: null, context };
   }
@@ -81,28 +90,7 @@ function processLine(
       break;
 
     case "C100":
-      if (fields.length > 11) {
-        const indOper = fields[2];
-        const tipo = indOper === "0" ? "entrada" : "saida";
-        const valorDoc = parseNumber(fields[11]);
-        
-        if (valorDoc > 0) {
-          record = {
-            table: "mercadorias",
-            data: {
-              tipo,
-              mes_ano: context.currentPeriod,
-              ncm: null,
-              descricao: `NF-e ${fields[8] || ""}`.trim().substring(0, 200) || "NF-e",
-              valor: valorDoc,
-              pis: parseNumber(fields[23]),
-              cofins: parseNumber(fields[25]),
-              icms: 0,
-              ipi: 0,
-            },
-          };
-        }
-      }
+      // C100 handled separately with limits
       break;
 
     case "C500":
@@ -335,7 +323,56 @@ serve(async (req) => {
     let lastProgressUpdate = 0;
     let estimatedTotalLines = Math.ceil(job.file_size / 200); // Rough estimate: ~200 bytes per line
 
+    // C100 limit control for testing
+    let firstFilialCNPJ: string | null = null;
+    let c100CountFirstFilial = 0;
+
     console.log(`Job ${jobId}: Estimated total lines: ${estimatedTotalLines}`);
+
+    // Helper to process C100 with limits
+    const processC100WithLimit = (line: string, ctx: ProcessingContext): ParsedRecord | null => {
+      const fields = line.split("|");
+      if (fields.length <= 11) return null;
+
+      // Only import C100 from first filial, up to limit
+      if (firstFilialCNPJ === null) {
+        firstFilialCNPJ = ctx.currentCNPJ;
+        console.log(`Job ${jobId}: First filial CNPJ = ${firstFilialCNPJ}`);
+      }
+
+      // Skip C100 from other filiais
+      if (ctx.currentCNPJ !== firstFilialCNPJ) {
+        return null;
+      }
+
+      // Check limit for first filial
+      if (c100CountFirstFilial >= C100_LIMIT_FIRST_FILIAL) {
+        return null;
+      }
+
+      const indOper = fields[2];
+      const tipo = indOper === "0" ? "entrada" : "saida";
+      const valorDoc = parseNumber(fields[11]);
+      
+      if (valorDoc > 0) {
+        c100CountFirstFilial++;
+        return {
+          table: "mercadorias",
+          data: {
+            tipo,
+            mes_ano: ctx.currentPeriod,
+            ncm: null,
+            descricao: `NF-e ${fields[8] || ""}`.trim().substring(0, 200) || "NF-e",
+            valor: valorDoc,
+            pis: parseNumber(fields[23]),
+            cofins: parseNumber(fields[25]),
+            icms: 0,
+            ipi: 0,
+          },
+        };
+      }
+      return null;
+    };
 
     while (true) {
       const { done, value } = await reader.read();
@@ -343,10 +380,20 @@ serve(async (req) => {
       if (done) {
         // Process remaining buffer
         if (buffer.trim()) {
-          const result = processLine(buffer.trim(), context);
+          const trimmedLine = buffer.trim();
+          const result = processLine(trimmedLine, context);
           context = result.context;
           
-          if (result.record) {
+          // Check for C100 separately
+          if (trimmedLine.startsWith("|C100|")) {
+            const c100Record = processC100WithLimit(trimmedLine, context);
+            if (c100Record) {
+              batches[c100Record.table].push({
+                ...c100Record.data,
+                filial_id: job.filial_id,
+              });
+            }
+          } else if (result.record) {
             const { table, data } = result.record;
             batches[table].push({
               ...data,
@@ -369,7 +416,34 @@ serve(async (req) => {
         const result = processLine(trimmedLine, context);
         context = result.context;
 
-        if (result.record) {
+        // Check for C100 separately with limit
+        if (trimmedLine.startsWith("|C100|")) {
+          const c100Record = processC100WithLimit(trimmedLine, context);
+          if (c100Record) {
+            batches[c100Record.table].push({
+              ...c100Record.data,
+              filial_id: job.filial_id,
+            });
+
+            if (batches[c100Record.table].length >= BATCH_SIZE) {
+              const err = await flushBatch(c100Record.table);
+              if (err) {
+                await supabase
+                  .from("import_jobs")
+                  .update({ 
+                    status: "failed", 
+                    error_message: `Failed to insert ${c100Record.table}: ${err}`,
+                    progress: Math.min(95, Math.round((linesProcessed / estimatedTotalLines) * 100)),
+                    total_lines: linesProcessed,
+                    counts,
+                    completed_at: new Date().toISOString() 
+                  })
+                  .eq("id", jobId);
+                throw new Error(`Insert error: ${err}`);
+              }
+            }
+          }
+        } else if (result.record) {
           const { table, data } = result.record;
           batches[table].push({
             ...data,
@@ -425,6 +499,10 @@ serve(async (req) => {
         }
       }
     }
+
+    // Log C100 limit info
+    console.log(`Job ${jobId}: C100 limit applied - first filial (${firstFilialCNPJ}): ${c100CountFirstFilial} records imported (limit: ${C100_LIMIT_FIRST_FILIAL})`);
+
 
     // Final flush
     const flushErr = await flushAllBatches();
