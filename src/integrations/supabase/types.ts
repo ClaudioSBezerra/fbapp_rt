@@ -242,6 +242,78 @@ export type Database = {
           },
         ]
       }
+      import_jobs: {
+        Row: {
+          completed_at: string | null
+          counts: Json
+          created_at: string
+          empresa_id: string
+          error_message: string | null
+          file_name: string
+          file_path: string
+          file_size: number
+          filial_id: string | null
+          id: string
+          progress: number
+          started_at: string | null
+          status: string
+          total_lines: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          counts?: Json
+          created_at?: string
+          empresa_id: string
+          error_message?: string | null
+          file_name: string
+          file_path: string
+          file_size?: number
+          filial_id?: string | null
+          id?: string
+          progress?: number
+          started_at?: string | null
+          status?: string
+          total_lines?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          counts?: Json
+          created_at?: string
+          empresa_id?: string
+          error_message?: string | null
+          file_name?: string
+          file_path?: string
+          file_size?: number
+          filial_id?: string | null
+          id?: string
+          progress?: number
+          started_at?: string | null
+          status?: string
+          total_lines?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "import_jobs_empresa_id_fkey"
+            columns: ["empresa_id"]
+            isOneToOne: false
+            referencedRelation: "empresas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "import_jobs_filial_id_fkey"
+            columns: ["filial_id"]
+            isOneToOne: false
+            referencedRelation: "filiais"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       mercadorias: {
         Row: {
           cofins: number

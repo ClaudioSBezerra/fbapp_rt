@@ -5,3 +5,9 @@ verify_jwt = false
 
 [functions.parse-efd]
 verify_jwt = false
+
+[functions.process-efd-job]
+verify_jwt = false
+
+[functions.send-import-email]
+verify_jwt = false
