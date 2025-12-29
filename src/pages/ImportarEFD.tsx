@@ -1,12 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, CheckCircle, Upload, FileText } from 'lucide-react';
+import { Loader2, CheckCircle, Upload, FileText, ArrowRight } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
@@ -36,6 +35,7 @@ export default function ImportarEFD() {
   const [selectedEmpresa, setSelectedEmpresa] = useState<string>('');
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { session } = useAuth();
   const navigate = useNavigate();
@@ -55,8 +55,7 @@ export default function ImportarEFD() {
     loadEmpresas();
   }, []);
 
-  const handleImportEFD = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+  const handleImportEFD = async (file: File) => {
     if (!file || !selectedEmpresa || !session) return;
 
     setImporting(true);
@@ -81,11 +80,6 @@ export default function ImportarEFD() {
 
       setImportResult(data);
       toast.success('Arquivo EFD importado com sucesso!');
-      
-      // Redirect to Configurações after 2 seconds
-      setTimeout(() => {
-        navigate('/configuracoes');
-      }, 2000);
     } catch (error) {
       console.error('Error importing EFD:', error);
       toast.error(error instanceof Error ? error.message : 'Erro ao importar arquivo EFD');
@@ -97,33 +91,103 @@ export default function ImportarEFD() {
     }
   };
 
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) handleImportEFD(file);
+  };
+
+  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsDragOver(false);
+    const file = event.dataTransfer.files?.[0];
+    if (file && file.name.endsWith('.txt')) {
+      handleImportEFD(file);
+    } else {
+      toast.error('Por favor, selecione um arquivo .txt');
+    }
+  };
+
+  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragOver(false);
+  };
+
   const handleNewImport = () => {
     setImportResult(null);
   };
 
-  return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-foreground">Importar EFD</h1>
-        <p className="text-muted-foreground mt-1">
-          Importe arquivos EFD Contribuições para cadastrar mercadorias automaticamente
-        </p>
-      </div>
+  const handleGoToConfig = () => {
+    navigate('/configuracoes');
+  };
 
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Upload className="h-5 w-5" />
-              Upload de Arquivo
-            </CardTitle>
-            <CardDescription>
-              Selecione a empresa destino e o arquivo TXT da EFD Contribuições. 
-              A filial será criada automaticamente com base no CNPJ do arquivo.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+  if (importResult) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Card className="w-full max-w-md">
+          <CardContent className="pt-8 pb-6 px-6">
+            <div className="text-center space-y-6">
+              <div className="mx-auto w-16 h-16 rounded-full bg-positive/10 flex items-center justify-center">
+                <CheckCircle className="h-8 w-8 text-positive" />
+              </div>
+              
+              <div className="space-y-2">
+                <h2 className="text-xl font-semibold text-foreground">Importação Concluída</h2>
+                <p className="text-sm text-muted-foreground">{importResult.message}</p>
+              </div>
+
+              <div className="bg-muted/50 rounded-lg p-4 text-left space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">CNPJ</span>
+                  <span className="font-medium text-foreground">{formatCNPJ(importResult.cnpj)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Razão Social</span>
+                  <span className="font-medium text-foreground truncate max-w-[200px]">{importResult.razaoSocial}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Registros</span>
+                  <span className="font-medium text-foreground">{importResult.count} mercadorias</span>
+                </div>
+                {importResult.filialCreated && (
+                  <div className="pt-2">
+                    <Badge variant="secondary" className="w-full justify-center">Nova filial criada</Badge>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <Button onClick={handleGoToConfig} className="w-full">
+                  Ir para Configurações
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+                <Button variant="ghost" onClick={handleNewImport} className="w-full">
+                  Importar outro arquivo
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center justify-center min-h-[60vh]">
+      <Card className="w-full max-w-md">
+        <CardContent className="pt-8 pb-6 px-6">
+          <div className="text-center space-y-6">
             <div className="space-y-2">
+              <h1 className="text-2xl font-semibold text-foreground">Importar EFD</h1>
+              <p className="text-sm text-muted-foreground">
+                Importe arquivos EFD Contribuições para cadastrar mercadorias automaticamente
+              </p>
+            </div>
+
+            <div className="space-y-2 text-left">
               <Label htmlFor="empresa">Empresa Destino</Label>
               <Select value={selectedEmpresa} onValueChange={setSelectedEmpresa} disabled={importing}>
                 <SelectTrigger>
@@ -137,76 +201,60 @@ export default function ImportarEFD() {
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">
-                A filial será identificada pelo CNPJ no arquivo EFD.
-              </p>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="file">Arquivo EFD (TXT)</Label>
-              <Input
+
+            <div
+              className={`
+                relative border-2 border-dashed rounded-lg p-8 transition-colors cursor-pointer
+                ${isDragOver ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50 hover:bg-muted/50'}
+                ${importing ? 'pointer-events-none opacity-60' : ''}
+                ${!selectedEmpresa ? 'pointer-events-none opacity-40' : ''}
+              `}
+              onClick={() => fileInputRef.current?.click()}
+              onDrop={handleDrop}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+            >
+              <input
                 ref={fileInputRef}
-                id="file"
                 type="file"
                 accept=".txt"
-                onChange={handleImportEFD}
+                onChange={handleFileChange}
+                className="hidden"
                 disabled={importing || !selectedEmpresa}
               />
-            </div>
-            {importing && (
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <span>Importando arquivo...</span>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              Resultado da Importação
-            </CardTitle>
-            <CardDescription>
-              Informações sobre o último arquivo importado
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {importResult ? (
-              <div className="space-y-4">
-                <div className={`p-4 rounded-lg ${importResult.filialCreated ? 'bg-positive/10 border border-positive/20' : 'bg-muted'}`}>
-                  <div className="flex items-start gap-3">
-                    <CheckCircle className={`h-5 w-5 mt-0.5 ${importResult.filialCreated ? 'text-positive' : 'text-primary'}`} />
+              
+              <div className="flex flex-col items-center gap-3">
+                {importing ? (
+                  <>
+                    <Loader2 className="h-10 w-10 text-primary animate-spin" />
                     <div className="space-y-1">
-                      <p className="font-medium text-sm">{importResult.message}</p>
-                      <div className="text-xs text-muted-foreground space-y-0.5">
-                        <p><strong>CNPJ:</strong> {formatCNPJ(importResult.cnpj)}</p>
-                        <p><strong>Razão Social:</strong> {importResult.razaoSocial}</p>
-                        <p><strong>Registros:</strong> {importResult.count} mercadorias importadas</p>
-                        {importResult.filialCreated && (
-                          <Badge variant="secondary" className="mt-2">Nova filial criada</Badge>
-                        )}
-                      </div>
+                      <p className="text-sm font-medium text-foreground">Importando arquivo...</p>
+                      <p className="text-xs text-muted-foreground">Aguarde enquanto processamos os dados</p>
                     </div>
-                  </div>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  Redirecionando para Configurações...
-                </p>
-                <Button variant="outline" onClick={handleNewImport}>
-                  Importar outro arquivo
-                </Button>
+                  </>
+                ) : (
+                  <>
+                    <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
+                      <FileText className="h-6 w-6 text-muted-foreground" />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium text-foreground">
+                        Arraste o arquivo ou clique para selecionar
+                      </p>
+                      <p className="text-xs text-muted-foreground">Aceita arquivos .txt (EFD Contribuições)</p>
+                    </div>
+                  </>
+                )}
               </div>
-            ) : (
-              <div className="text-center py-8 text-muted-foreground">
-                <FileText className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                <p>Nenhum arquivo importado ainda</p>
-                <p className="text-xs mt-1">Selecione um arquivo TXT para começar</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              A filial será identificada automaticamente pelo CNPJ no arquivo
+            </p>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
