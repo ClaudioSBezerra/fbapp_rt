@@ -45,44 +45,32 @@ export default function Onboarding() {
     setLoading(true);
 
     try {
-      // 1. Create Tenant
-      const { data: tenant, error: tenantError } = await supabase
-        .from('tenants')
-        .insert({ nome: data.tenantNome })
-        .select()
-        .single();
+      // Chama a Edge Function transacional para criar tudo de uma vez
+      const { data: result, error } = await supabase.functions.invoke('onboarding-complete', {
+        body: {
+          tenantNome: data.tenantNome,
+          grupoNome: data.grupoNome,
+          empresaNome: data.empresaNome
+        }
+      });
 
-      if (tenantError) throw tenantError;
+      if (error) {
+        console.error('Edge function error:', error);
+        throw new Error(error.message || 'Erro na comunicação com o servidor');
+      }
 
-      // 2. Link user to tenant
-      const { error: linkError } = await supabase
-        .from('user_tenants')
-        .insert({ user_id: user.id, tenant_id: tenant.id });
+      if (!result?.success) {
+        console.error('Onboarding failed:', result);
+        throw new Error(result?.error || 'Erro ao processar cadastro');
+      }
 
-      if (linkError) throw linkError;
-
-      // 3. Create Grupo de Empresas
-      const { data: grupo, error: grupoError } = await supabase
-        .from('grupos_empresas')
-        .insert({ tenant_id: tenant.id, nome: data.grupoNome })
-        .select()
-        .single();
-
-      if (grupoError) throw grupoError;
-
-      // 4. Create Empresa
-      const { error: empresaError } = await supabase
-        .from('empresas')
-        .insert({ grupo_id: grupo.id, nome: data.empresaNome });
-
-      if (empresaError) throw empresaError;
-
-      setTenantId(tenant.id);
+      setTenantId(result.tenant_id);
       setStep(4); // Success step
       toast.success('Cadastro realizado com sucesso!');
     } catch (error: any) {
       console.error('Error:', error);
-      toast.error('Erro ao cadastrar. Tente novamente.');
+      const errorMessage = error?.message || 'Erro ao cadastrar. Tente novamente.';
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
