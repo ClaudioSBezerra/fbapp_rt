@@ -239,21 +239,31 @@ export default function EnergiaAgua() {
 
   const totaisCreditos = useMemo(() => {
     const creditos = filteredItems.filter((i) => i.tipo_operacao === 'credito');
-    return {
-      valor: creditos.reduce((acc, i) => acc + i.valor, 0),
-      icms: creditos.reduce((acc, i) => acc + (i.icms || 0), 0),
-      pisCofins: creditos.reduce((acc, i) => acc + i.pis + i.cofins, 0),
-    };
-  }, [filteredItems]);
+    const valor = creditos.reduce((acc, i) => acc + i.valor, 0);
+    const icms = creditos.reduce((acc, i) => acc + (i.icms || 0), 0);
+    const pisCofins = creditos.reduce((acc, i) => acc + i.pis + i.cofins, 0);
+    
+    const aliquota = aliquotas[0];
+    const icmsProjetado = aliquota ? icms * (1 - (aliquota.reduc_icms / 100)) : icms;
+    const ibsProjetado = aliquota ? valor * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
+    const cbsProjetado = aliquota ? valor * (aliquota.cbs / 100) : 0;
+    
+    return { valor, icms, pisCofins, icmsProjetado, ibsProjetado, cbsProjetado };
+  }, [filteredItems, aliquotas]);
 
   const totaisDebitos = useMemo(() => {
     const debitos = filteredItems.filter((i) => i.tipo_operacao === 'debito');
-    return {
-      valor: debitos.reduce((acc, i) => acc + i.valor, 0),
-      icms: debitos.reduce((acc, i) => acc + (i.icms || 0), 0),
-      pisCofins: debitos.reduce((acc, i) => acc + i.pis + i.cofins, 0),
-    };
-  }, [filteredItems]);
+    const valor = debitos.reduce((acc, i) => acc + i.valor, 0);
+    const icms = debitos.reduce((acc, i) => acc + (i.icms || 0), 0);
+    const pisCofins = debitos.reduce((acc, i) => acc + i.pis + i.cofins, 0);
+    
+    const aliquota = aliquotas[0];
+    const icmsProjetado = aliquota ? icms * (1 - (aliquota.reduc_icms / 100)) : icms;
+    const ibsProjetado = aliquota ? valor * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
+    const cbsProjetado = aliquota ? valor * (aliquota.cbs / 100) : 0;
+    
+    return { valor, icms, pisCofins, icmsProjetado, ibsProjetado, cbsProjetado };
+  }, [filteredItems, aliquotas]);
 
   const hasFiliais = filiais.length > 0;
 
@@ -403,8 +413,20 @@ export default function EnergiaAgua() {
               <span className="text-lg font-bold">{formatCurrency(totaisCreditos.icms)}</span>
             </div>
             <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">ICMS Projetado:</span>
+              <span className="text-lg font-bold">{formatCurrency(totaisCreditos.icmsProjetado)}</span>
+            </div>
+            <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">PIS+COFINS:</span>
               <span className="text-lg font-bold text-pis-cofins">{formatCurrency(totaisCreditos.pisCofins)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">IBS Projetado:</span>
+              <span className="text-lg font-bold text-ibs-cbs">{formatCurrency(totaisCreditos.ibsProjetado)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">CBS Projetado:</span>
+              <span className="text-lg font-bold text-ibs-cbs">{formatCurrency(totaisCreditos.cbsProjetado)}</span>
             </div>
           </CardContent>
         </Card>
@@ -426,8 +448,20 @@ export default function EnergiaAgua() {
               <span className="text-lg font-bold">{formatCurrency(totaisDebitos.icms)}</span>
             </div>
             <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">ICMS Projetado:</span>
+              <span className="text-lg font-bold">{formatCurrency(totaisDebitos.icmsProjetado)}</span>
+            </div>
+            <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">PIS+COFINS:</span>
               <span className="text-lg font-bold text-pis-cofins">{formatCurrency(totaisDebitos.pisCofins)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">IBS Projetado:</span>
+              <span className="text-lg font-bold text-ibs-cbs">{formatCurrency(totaisDebitos.ibsProjetado)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">CBS Projetado:</span>
+              <span className="text-lg font-bold text-ibs-cbs">{formatCurrency(totaisDebitos.cbsProjetado)}</span>
             </div>
           </CardContent>
         </Card>
