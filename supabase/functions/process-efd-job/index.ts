@@ -300,30 +300,48 @@ serve(async (req) => {
       .update({ status: "processing", started_at: new Date().toISOString() })
       .eq("id", jobId);
 
-    console.log(`Job ${jobId}: Downloading file from ${job.file_path}`);
+    console.log(`Job ${jobId}: Creating signed URL for ${job.file_path}`);
 
-    // Download file from storage
-    const { data: fileData, error: downloadError } = await supabase.storage
+    // Create signed URL for streaming (valid for 1 hour)
+    const { data: signedUrlData, error: signedUrlError } = await supabase.storage
       .from("efd-files")
-      .download(job.file_path);
+      .createSignedUrl(job.file_path, 3600);
 
-    if (downloadError || !fileData) {
-      console.error("Download error:", downloadError);
+    if (signedUrlError || !signedUrlData?.signedUrl) {
+      console.error("Signed URL error:", signedUrlError);
       await supabase
         .from("import_jobs")
         .update({ 
           status: "failed", 
-          error_message: "Failed to download file: " + (downloadError?.message || "Unknown error"),
+          error_message: "Failed to create signed URL: " + (signedUrlError?.message || "Unknown error"),
           completed_at: new Date().toISOString() 
         })
         .eq("id", jobId);
       return new Response(
-        JSON.stringify({ error: "Failed to download file" }),
+        JSON.stringify({ error: "Failed to create signed URL" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    console.log(`Job ${jobId}: File downloaded, starting streaming processing`);
+    // Fetch file as stream - does NOT load entire file into memory
+    const fetchResponse = await fetch(signedUrlData.signedUrl);
+    if (!fetchResponse.ok || !fetchResponse.body) {
+      console.error("Fetch error:", fetchResponse.status, fetchResponse.statusText);
+      await supabase
+        .from("import_jobs")
+        .update({ 
+          status: "failed", 
+          error_message: `Failed to fetch file: ${fetchResponse.status} ${fetchResponse.statusText}`,
+          completed_at: new Date().toISOString() 
+        })
+        .eq("id", jobId);
+      return new Response(
+        JSON.stringify({ error: "Failed to fetch file" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    console.log(`Job ${jobId}: Stream connected, starting processing`);
 
     // STREAMING PROCESSING - read file chunk by chunk
     const batches: BatchBuffers = {
@@ -366,9 +384,8 @@ serve(async (req) => {
       return null;
     };
 
-    // Stream processing using TextDecoderStream
-    const stream = fileData.stream();
-    const reader = stream.pipeThrough(new TextDecoderStream()).getReader();
+    // Stream processing using TextDecoderStream - reads chunks without loading entire file
+    const reader = fetchResponse.body.pipeThrough(new TextDecoderStream()).getReader();
     
     let buffer = "";
     let linesProcessed = 0;

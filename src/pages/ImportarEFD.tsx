@@ -461,8 +461,8 @@ export default function ImportarEFD() {
               return (
                 <div key={job.id} className="border rounded-lg p-4 space-y-3">
                   <div className="flex items-start justify-between">
-                    <div className="space-y-1">
-                      <p className="font-medium text-foreground">{job.file_name}</p>
+                    <div className="space-y-1 min-w-0 flex-1">
+                      <p className="font-medium text-foreground truncate max-w-[200px] sm:max-w-xs" title={job.file_name}>{job.file_name}</p>
                       <p className="text-xs text-muted-foreground">
                         {formatFileSize(job.file_size)} • Iniciado em {formatDate(job.created_at)}
                       </p>
@@ -529,8 +529,8 @@ export default function ImportarEFD() {
                 return (
                   <div key={job.id} className="border rounded-lg p-4">
                     <div className="flex items-start justify-between mb-2">
-                      <div className="space-y-1">
-                        <p className="font-medium text-foreground">{job.file_name}</p>
+                      <div className="space-y-1 min-w-0 flex-1">
+                        <p className="font-medium text-foreground truncate max-w-[200px] sm:max-w-xs" title={job.file_name}>{job.file_name}</p>
                         <p className="text-xs text-muted-foreground">
                           {formatFileSize(job.file_size)} • {formatDate(job.created_at)}
                         </p>
