@@ -138,20 +138,22 @@ function processLine(
       blockType = "c500";
       if (fields.length > 10) {
         const indOper = fields[2];
-        const tipoOperacao = indOper === "0" ? "entrada" : "saida";
+        const tipoOperacao = indOper === "0" ? "credito" : "debito";
         const codMod = fields[5] || "";
-        const tipoServico = codMod === "06" ? "energia" : codMod === "29" ? "agua" : "outros";
+        // Only process energia (06) or agua (29), ignore other codes
+        const tipoServico = codMod === "06" ? "energia" : codMod === "29" ? "agua" : null;
         const cnpjFornecedor = fields[4]?.replace(/\D/g, "") || null;
         const valorDoc = parseNumber(fields[10]);
 
-        if (valorDoc > 0) {
+        // Only create record if valid tipo_servico and valor > 0
+        if (valorDoc > 0 && tipoServico !== null) {
           record = {
             table: "energia_agua",
             data: {
               tipo_operacao: tipoOperacao,
               tipo_servico: tipoServico,
               cnpj_fornecedor: cnpjFornecedor,
-              descricao: `${tipoServico === "energia" ? "Energia Elétrica" : tipoServico === "agua" ? "Água" : "Serviço"} - ${fields[7] || ""}`.trim().substring(0, 200),
+              descricao: `${tipoServico === "energia" ? "Energia Elétrica" : "Água"} - ${fields[7] || ""}`.trim().substring(0, 200),
               mes_ano: context.currentPeriod,
               valor: valorDoc,
               pis: parseNumber(fields[16]),
