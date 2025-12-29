@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.send-import-email]
 verify_jwt = false
+
+[functions.cancel-import-job]
+verify_jwt = false

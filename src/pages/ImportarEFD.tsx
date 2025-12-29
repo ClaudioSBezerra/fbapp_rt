@@ -25,7 +25,7 @@ interface ImportJob {
   file_path: string;
   file_name: string;
   file_size: number;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
   progress: number;
   total_lines: number;
   counts: ImportCounts;
@@ -72,6 +72,8 @@ function getStatusInfo(status: ImportJob['status']) {
       return { label: 'Concluído', color: 'bg-positive/10 text-positive', icon: CheckCircle };
     case 'failed':
       return { label: 'Falhou', color: 'bg-destructive/10 text-destructive', icon: XCircle };
+    case 'cancelled':
+      return { label: 'Cancelado', color: 'bg-warning/10 text-warning', icon: XCircle };
   }
 }
 
@@ -281,8 +283,30 @@ export default function ImportarEFD() {
     toast.info('Para reprocessar, faça upload do arquivo novamente.');
   };
 
+  const handleCancelJob = async (jobId: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('cancel-import-job', {
+        body: { job_id: jobId },
+      });
+
+      if (error) {
+        throw new Error(error.message || 'Erro ao cancelar importação');
+      }
+
+      if (data?.error) {
+        throw new Error(data.error);
+      }
+
+      toast.success('Importação cancelada com sucesso.');
+    } catch (error) {
+      console.error('Error cancelling job:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Erro ao cancelar importação';
+      toast.error(errorMessage);
+    }
+  };
+
   const activeJobs = jobs.filter(j => j.status === 'pending' || j.status === 'processing');
-  const completedJobs = jobs.filter(j => j.status === 'completed' || j.status === 'failed');
+  const completedJobs = jobs.filter(j => j.status === 'completed' || j.status === 'failed' || j.status === 'cancelled');
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
@@ -442,6 +466,16 @@ export default function ImportarEFD() {
                       <span>Fretes: {job.counts.fretes}</span>
                     </div>
                   )}
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleCancelJob(job.id)}
+                    className="mt-2 text-destructive hover:text-destructive"
+                  >
+                    <XCircle className="h-4 w-4 mr-1" />
+                    Cancelar
+                  </Button>
                 </div>
               );
             })}

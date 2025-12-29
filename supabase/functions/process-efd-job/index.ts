@@ -248,6 +248,15 @@ serve(async (req) => {
       );
     }
 
+    // Check if job was cancelled before starting
+    if (job.status === "cancelled") {
+      console.log(`Job ${jobId}: Already cancelled, skipping processing`);
+      return new Response(
+        JSON.stringify({ success: false, message: "Job was cancelled" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // Update job status to processing
     await supabase
       .from("import_jobs")
@@ -388,8 +397,24 @@ serve(async (req) => {
 
         linesProcessed++;
 
-        // Update progress periodically
+        // Update progress periodically and check for cancellation
         if (linesProcessed - lastProgressUpdate >= PROGRESS_UPDATE_INTERVAL) {
+          // Check if job was cancelled
+          const { data: currentJob } = await supabase
+            .from("import_jobs")
+            .select("status")
+            .eq("id", jobId)
+            .single();
+
+          if (currentJob?.status === "cancelled") {
+            console.log(`Job ${jobId}: Cancelled by user, stopping processing`);
+            reader.cancel();
+            return new Response(
+              JSON.stringify({ success: false, message: "Job was cancelled by user" }),
+              { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          }
+
           const progress = Math.min(95, Math.round((linesProcessed / estimatedTotalLines) * 100));
           await supabase
             .from("import_jobs")
