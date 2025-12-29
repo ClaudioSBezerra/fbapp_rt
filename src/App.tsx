@@ -14,6 +14,7 @@ import Empresas from "./pages/Empresas";
 import Configuracoes from "./pages/Configuracoes";
 import EnergiaAgua from "./pages/EnergiaAgua";
 import Fretes from "./pages/Fretes";
+import ImportarEFD from "./pages/ImportarEFD";
 import NotFound from "./pages/NotFound";
 import AppLayout from "./components/AppLayout";
 
@@ -38,6 +39,7 @@ const App = () => (
               <Route path="/energia-agua" element={<EnergiaAgua />} />
               <Route path="/fretes" element={<Fretes />} />
               <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/importar-efd" element={<ImportarEFD />} />
             </Route>
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />

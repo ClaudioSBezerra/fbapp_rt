@@ -6,7 +6,8 @@ import {
   Building2,
   LogOut,
   Zap,
-  Truck
+  Truck,
+  Upload
 } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { useAuth } from '@/hooks/useAuth';
@@ -35,6 +36,7 @@ const menuItems = [
   { title: 'Energia e Água', url: '/energia-agua', icon: Zap },
   { title: 'Fretes', url: '/fretes', icon: Truck },
   { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard },
+  { title: 'Importar EFD', url: '/importar-efd', icon: Upload },
 ];
 
 export function AppSidebar() {
