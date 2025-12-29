@@ -6,8 +6,6 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB
-
 interface EfdHeader {
   cnpj: string;
   razaoSocial: string;
@@ -29,49 +27,6 @@ function parseHeaderLine(fields: string[]): EfdHeader | null {
       periodoFim: dtFin || "",
     };
   }
-  return null;
-}
-
-async function extractHeader(file: File): Promise<EfdHeader | null> {
-  const reader = file.stream()
-    .pipeThrough(new TextDecoderStream())
-    .getReader();
-
-  let buffer = "";
-  let linesRead = 0;
-  const MAX_HEADER_LINES = 100;
-
-  try {
-    while (linesRead < MAX_HEADER_LINES) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += value;
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-
-      for (const line of lines) {
-        if (line.startsWith("|0000|")) {
-          const fields = line.split("|");
-          if (fields.length > 9) {
-            await reader.cancel();
-            return parseHeaderLine(fields);
-          }
-        }
-        linesRead++;
-        if (linesRead >= MAX_HEADER_LINES) break;
-      }
-    }
-  } catch (e) {
-    console.error("Error extracting header:", e);
-  } finally {
-    try {
-      await reader.cancel();
-    } catch {
-      // Reader already closed
-    }
-  }
-
   return null;
 }
 
@@ -109,14 +64,13 @@ serve(async (req) => {
       );
     }
 
-    // Get file and empresa_id from FormData
-    const formData = await req.formData();
-    const file = formData.get("file") as File;
-    const empresaId = formData.get("empresa_id") as string;
+    // Get metadata from JSON body (file already uploaded by frontend)
+    const body = await req.json();
+    const { empresa_id: empresaId, file_path: filePath, file_name: fileName, file_size: fileSize } = body;
 
-    if (!file) {
+    if (!filePath) {
       return new Response(
-        JSON.stringify({ error: "No file provided" }),
+        JSON.stringify({ error: "No file_path provided" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -128,14 +82,7 @@ serve(async (req) => {
       );
     }
 
-    if (file.size > MAX_FILE_SIZE) {
-      return new Response(
-        JSON.stringify({ error: `Arquivo muito grande. Máximo: ${MAX_FILE_SIZE / 1024 / 1024}MB` }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    console.log(`Received EFD file: ${file.name}, size: ${file.size} bytes`);
+    console.log(`Received EFD metadata: path=${filePath}, name=${fileName}, size=${fileSize}`);
 
     // Verify user access to empresa
     const { data: empresa, error: empresaError } = await supabase
@@ -146,6 +93,8 @@ serve(async (req) => {
 
     if (empresaError || !empresa) {
       console.error("Empresa error:", empresaError);
+      // Clean up uploaded file
+      await supabase.storage.from("efd-files").remove([filePath]);
       return new Response(
         JSON.stringify({ error: "Empresa not found" }),
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -159,16 +108,48 @@ serve(async (req) => {
     });
 
     if (!hasAccess) {
+      // Clean up uploaded file
+      await supabase.storage.from("efd-files").remove([filePath]);
       return new Response(
         JSON.stringify({ error: "Access denied to this empresa" }),
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Extract header to validate file
-    const header = await extractHeader(file);
+    // Extract header from file (stream only first few KB to extract header)
+    console.log(`Extracting header from file: ${filePath}`);
+    
+    const { data: fileData, error: downloadError } = await supabase.storage
+      .from("efd-files")
+      .download(filePath);
+
+    if (downloadError || !fileData) {
+      console.error("Download error:", downloadError);
+      await supabase.storage.from("efd-files").remove([filePath]);
+      return new Response(
+        JSON.stringify({ error: "Failed to download file for header extraction" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Read only first 8KB to extract header (not entire file)
+    const firstChunk = fileData.slice(0, 8192);
+    const text = await firstChunk.text();
+    const lines = text.split("\n");
+    
+    let header: EfdHeader | null = null;
+    for (const line of lines) {
+      if (line.startsWith("|0000|")) {
+        const fields = line.split("|");
+        if (fields.length > 9) {
+          header = parseHeaderLine(fields);
+          break;
+        }
+      }
+    }
 
     if (!header || !header.cnpj) {
+      await supabase.storage.from("efd-files").remove([filePath]);
       return new Response(
         JSON.stringify({ error: "Could not extract CNPJ from EFD file (Registro 0000)" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -205,6 +186,7 @@ serve(async (req) => {
 
       if (createError) {
         console.error("Error creating filial:", createError);
+        await supabase.storage.from("efd-files").remove([filePath]);
         return new Response(
           JSON.stringify({ error: "Failed to create filial: " + createError.message }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -216,28 +198,6 @@ serve(async (req) => {
       console.log(`Created new filial: ${filialId}`);
     }
 
-    // Upload file to Storage
-    const timestamp = Date.now();
-    const filePath = `${user.id}/${timestamp}_${file.name}`;
-    
-    const fileArrayBuffer = await file.arrayBuffer();
-    const { error: uploadError } = await supabase.storage
-      .from("efd-files")
-      .upload(filePath, fileArrayBuffer, {
-        contentType: "text/plain",
-        upsert: false,
-      });
-
-    if (uploadError) {
-      console.error("Upload error:", uploadError);
-      return new Response(
-        JSON.stringify({ error: "Failed to upload file: " + uploadError.message }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    console.log(`File uploaded to: ${filePath}`);
-
     // Create import job
     const { data: job, error: jobError } = await supabase
       .from("import_jobs")
@@ -246,8 +206,8 @@ serve(async (req) => {
         empresa_id: empresaId,
         filial_id: filialId,
         file_path: filePath,
-        file_name: file.name,
-        file_size: file.size,
+        file_name: fileName,
+        file_size: fileSize || 0,
         status: "pending",
         progress: 0,
         total_lines: 0,
@@ -258,7 +218,6 @@ serve(async (req) => {
 
     if (jobError) {
       console.error("Job creation error:", jobError);
-      // Clean up uploaded file
       await supabase.storage.from("efd-files").remove([filePath]);
       return new Response(
         JSON.stringify({ error: "Failed to create import job: " + jobError.message }),

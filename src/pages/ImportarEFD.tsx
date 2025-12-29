@@ -79,6 +79,7 @@ export default function ImportarEFD() {
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [selectedEmpresa, setSelectedEmpresa] = useState<string>('');
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<string>('');
   const [isDragOver, setIsDragOver] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [jobs, setJobs] = useState<ImportJob[]>([]);
@@ -183,22 +184,47 @@ export default function ImportarEFD() {
     if (!selectedFile || !selectedEmpresa || !session) return;
 
     setUploading(true);
+    setUploadProgress('Enviando arquivo para o storage...');
     
     try {
-      const formData = new FormData();
-      formData.append('file', selectedFile);
-      formData.append('empresa_id', selectedEmpresa);
+      // Step 1: Upload file directly to Storage
+      const timestamp = Date.now();
+      const filePath = `${session.user.id}/${timestamp}_${selectedFile.name}`;
+      
+      const { error: uploadError } = await supabase.storage
+        .from('efd-files')
+        .upload(filePath, selectedFile, {
+          contentType: 'text/plain',
+          upsert: false,
+        });
 
+      if (uploadError) {
+        throw new Error(`Erro ao enviar arquivo: ${uploadError.message}`);
+      }
+
+      console.log('File uploaded to storage:', filePath);
+      setUploadProgress('Iniciando processamento...');
+
+      // Step 2: Call parse-efd with metadata only (no file in body)
       const response = await supabase.functions.invoke('parse-efd', {
-        body: formData,
+        body: {
+          empresa_id: selectedEmpresa,
+          file_path: filePath,
+          file_name: selectedFile.name,
+          file_size: selectedFile.size,
+        },
       });
 
       if (response.error) {
+        // Clean up uploaded file on error
+        await supabase.storage.from('efd-files').remove([filePath]);
         throw new Error(response.error.message || 'Erro ao iniciar importação');
       }
 
       const data = response.data;
       if (data.error) {
+        // Clean up uploaded file on error
+        await supabase.storage.from('efd-files').remove([filePath]);
         throw new Error(data.error);
       }
 
@@ -210,6 +236,7 @@ export default function ImportarEFD() {
       toast.error(errorMessage);
     } finally {
       setUploading(false);
+      setUploadProgress('');
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
@@ -220,6 +247,10 @@ export default function ImportarEFD() {
     if (!file.name.endsWith('.txt')) {
       toast.error('Por favor, selecione um arquivo .txt');
       return;
+    }
+    // Warn for very large files
+    if (file.size > 500 * 1024 * 1024) {
+      toast.warning('Arquivo muito grande (>500MB). O upload pode demorar.');
     }
     setSelectedFile(file);
   };
@@ -311,7 +342,7 @@ export default function ImportarEFD() {
                 <>
                   <Loader2 className="h-10 w-10 text-primary animate-spin" />
                   <div className="space-y-1 text-center">
-                    <p className="text-sm font-medium text-foreground">Enviando arquivo...</p>
+                    <p className="text-sm font-medium text-foreground">{uploadProgress || 'Enviando...'}</p>
                     <p className="text-xs text-muted-foreground">O processamento continuará em background</p>
                   </div>
                 </>
@@ -466,28 +497,15 @@ export default function ImportarEFD() {
                           </div>
                         </div>
                         <div className="text-center mt-2 pt-2 border-t border-border">
-                          <span className="text-sm text-positive font-medium">
-                            {totalRecords.toLocaleString('pt-BR')} registros importados
-                          </span>
+                          <p className="text-sm font-medium text-foreground">{totalRecords} registros importados</p>
                         </div>
                       </div>
                     )}
 
-                    {job.status === 'failed' && (
-                      <div className="bg-destructive/10 rounded-lg p-3 mt-3">
-                        <div className="flex items-start gap-2">
-                          <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
-                          <p className="text-sm text-destructive">{job.error_message || 'Erro desconhecido'}</p>
-                        </div>
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          className="mt-2"
-                          onClick={() => handleRetryJob(job.id)}
-                        >
-                          <RefreshCw className="h-4 w-4 mr-1" />
-                          Tentar Novamente
-                        </Button>
+                    {job.status === 'failed' && job.error_message && (
+                      <div className="bg-destructive/10 rounded-lg p-3 mt-3 flex items-start gap-2">
+                        <AlertCircle className="h-4 w-4 text-destructive mt-0.5 flex-shrink-0" />
+                        <p className="text-sm text-destructive">{job.error_message}</p>
                       </div>
                     )}
                   </div>
@@ -501,10 +519,10 @@ export default function ImportarEFD() {
       {/* Empty State */}
       {jobs.length === 0 && (
         <Card>
-          <CardContent className="py-8 text-center">
+          <CardContent className="py-12 text-center">
             <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
             <p className="text-muted-foreground">
-              Nenhuma importação realizada ainda. Faça upload de um arquivo EFD para começar.
+              Nenhuma importação encontrada. Faça upload de um arquivo EFD para começar.
             </p>
           </CardContent>
         </Card>

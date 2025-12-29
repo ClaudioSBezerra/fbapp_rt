@@ -7,7 +7,7 @@ const corsHeaders = {
 };
 
 const BATCH_SIZE = 500;
-const PROGRESS_UPDATE_INTERVAL = 10000; // Update progress every 10k lines
+const PROGRESS_UPDATE_INTERVAL = 5000; // Update progress every 5k lines
 
 // Only process these record types
 const VALID_PREFIXES = ["|0000|", "|C010|", "|C100|", "|C500|", "|C600|", "|D010|", "|D100|", "|D500|"];
@@ -277,15 +277,9 @@ serve(async (req) => {
       );
     }
 
-    console.log(`Job ${jobId}: File downloaded, starting processing`);
+    console.log(`Job ${jobId}: File downloaded, starting streaming processing`);
 
-    // Process file
-    const text = await fileData.text();
-    const lines = text.split("\n");
-    const totalLines = lines.length;
-
-    console.log(`Job ${jobId}: Total lines to process: ${totalLines}`);
-
+    // STREAMING PROCESSING - read file chunk by chunk
     const batches: BatchBuffers = {
       mercadorias: [],
       energia_agua: [],
@@ -323,48 +317,87 @@ serve(async (req) => {
       return null;
     };
 
+    // Stream processing using TextDecoderStream
+    const stream = fileData.stream();
+    const reader = stream.pipeThrough(new TextDecoderStream()).getReader();
+    
+    let buffer = "";
+    let linesProcessed = 0;
     let lastProgressUpdate = 0;
+    let estimatedTotalLines = Math.ceil(job.file_size / 200); // Rough estimate: ~200 bytes per line
 
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const result = processLine(line, context);
-      context = result.context;
+    console.log(`Job ${jobId}: Estimated total lines: ${estimatedTotalLines}`);
 
-      if (result.record) {
-        const { table, data } = result.record;
-        batches[table].push({
-          ...data,
-          filial_id: job.filial_id,
-        });
-
-        if (batches[table].length >= BATCH_SIZE) {
-          const err = await flushBatch(table);
-          if (err) {
-            await supabase
-              .from("import_jobs")
-              .update({ 
-                status: "failed", 
-                error_message: `Failed to insert ${table}: ${err}`,
-                progress: Math.round((i / totalLines) * 100),
-                total_lines: totalLines,
-                counts,
-                completed_at: new Date().toISOString() 
-              })
-              .eq("id", jobId);
-            throw new Error(`Insert error: ${err}`);
+    while (true) {
+      const { done, value } = await reader.read();
+      
+      if (done) {
+        // Process remaining buffer
+        if (buffer.trim()) {
+          const result = processLine(buffer.trim(), context);
+          context = result.context;
+          
+          if (result.record) {
+            const { table, data } = result.record;
+            batches[table].push({
+              ...data,
+              filial_id: job.filial_id,
+            });
           }
+          linesProcessed++;
         }
+        break;
       }
 
-      // Update progress periodically
-      if (i - lastProgressUpdate >= PROGRESS_UPDATE_INTERVAL) {
-        const progress = Math.round((i / totalLines) * 100);
-        await supabase
-          .from("import_jobs")
-          .update({ progress, total_lines: totalLines, counts })
-          .eq("id", jobId);
-        lastProgressUpdate = i;
-        console.log(`Job ${jobId}: Progress ${progress}% (${i}/${totalLines} lines)`);
+      buffer += value;
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || ""; // Keep incomplete line in buffer
+
+      for (const line of lines) {
+        const trimmedLine = line.trim();
+        if (!trimmedLine) continue;
+
+        const result = processLine(trimmedLine, context);
+        context = result.context;
+
+        if (result.record) {
+          const { table, data } = result.record;
+          batches[table].push({
+            ...data,
+            filial_id: job.filial_id,
+          });
+
+          if (batches[table].length >= BATCH_SIZE) {
+            const err = await flushBatch(table);
+            if (err) {
+              await supabase
+                .from("import_jobs")
+                .update({ 
+                  status: "failed", 
+                  error_message: `Failed to insert ${table}: ${err}`,
+                  progress: Math.min(95, Math.round((linesProcessed / estimatedTotalLines) * 100)),
+                  total_lines: linesProcessed,
+                  counts,
+                  completed_at: new Date().toISOString() 
+                })
+                .eq("id", jobId);
+              throw new Error(`Insert error: ${err}`);
+            }
+          }
+        }
+
+        linesProcessed++;
+
+        // Update progress periodically
+        if (linesProcessed - lastProgressUpdate >= PROGRESS_UPDATE_INTERVAL) {
+          const progress = Math.min(95, Math.round((linesProcessed / estimatedTotalLines) * 100));
+          await supabase
+            .from("import_jobs")
+            .update({ progress, total_lines: linesProcessed, counts })
+            .eq("id", jobId);
+          lastProgressUpdate = linesProcessed;
+          console.log(`Job ${jobId}: Progress ${progress}% (${linesProcessed} lines, mercadorias: ${counts.mercadorias}, energia_agua: ${counts.energia_agua}, fretes: ${counts.fretes})`);
+        }
       }
     }
 
@@ -377,7 +410,7 @@ serve(async (req) => {
           status: "failed", 
           error_message: `Final flush error: ${flushErr}`,
           progress: 100,
-          total_lines: totalLines,
+          total_lines: linesProcessed,
           counts,
           completed_at: new Date().toISOString() 
         })
@@ -386,7 +419,7 @@ serve(async (req) => {
     }
 
     const totalRecords = counts.mercadorias + counts.energia_agua + counts.fretes;
-    console.log(`Job ${jobId}: Completed! Total records: ${totalRecords}`);
+    console.log(`Job ${jobId}: Completed! Total lines: ${linesProcessed}, Total records: ${totalRecords}`);
 
     // Update job as completed
     await supabase
@@ -394,7 +427,7 @@ serve(async (req) => {
       .update({ 
         status: "completed", 
         progress: 100,
-        total_lines: totalLines,
+        total_lines: linesProcessed,
         counts,
         completed_at: new Date().toISOString() 
       })
