@@ -55,7 +55,7 @@ export default function Auth() {
           }
         } else {
           toast.success('Conta criada com sucesso!');
-          navigate('/');
+          navigate('/onboarding');
         }
       }
     } catch (err) {
