@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, CheckCircle, FileText, ArrowRight, AlertCircle } from 'lucide-react';
+import { Progress } from '@/components/ui/progress';
+import { Loader2, CheckCircle, FileText, ArrowRight, AlertCircle, Upload, Clock, XCircle, RefreshCw } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
@@ -16,14 +17,22 @@ interface ImportCounts {
   fretes: number;
 }
 
-interface ImportResult {
-  success: boolean;
+interface ImportJob {
+  id: string;
+  user_id: string;
+  empresa_id: string;
+  filial_id: string | null;
+  file_path: string;
+  file_name: string;
+  file_size: number;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  progress: number;
+  total_lines: number;
   counts: ImportCounts;
-  totalRecords: number;
-  filialCreated: boolean;
-  cnpj: string;
-  razaoSocial: string;
-  message: string;
+  error_message: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
 }
 
 interface Empresa {
@@ -43,18 +52,41 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function formatDate(dateStr: string): string {
+  return new Date(dateStr).toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function getStatusInfo(status: ImportJob['status']) {
+  switch (status) {
+    case 'pending':
+      return { label: 'Aguardando', color: 'bg-muted text-muted-foreground', icon: Clock };
+    case 'processing':
+      return { label: 'Processando', color: 'bg-primary/10 text-primary', icon: Loader2 };
+    case 'completed':
+      return { label: 'Concluído', color: 'bg-positive/10 text-positive', icon: CheckCircle };
+    case 'failed':
+      return { label: 'Falhou', color: 'bg-destructive/10 text-destructive', icon: XCircle };
+  }
+}
+
 export default function ImportarEFD() {
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [selectedEmpresa, setSelectedEmpresa] = useState<string>('');
-  const [importing, setImporting] = useState(false);
-  const [importResult, setImportResult] = useState<ImportResult | null>(null);
-  const [importError, setImportError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [jobs, setJobs] = useState<ImportJob[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { session } = useAuth();
   const navigate = useNavigate();
 
+  // Load empresas
   useEffect(() => {
     const loadEmpresas = async () => {
       const { data: empresasData } = await supabase
@@ -70,12 +102,87 @@ export default function ImportarEFD() {
     loadEmpresas();
   }, []);
 
-  const handleImportEFD = async () => {
+  // Load existing jobs and subscribe to realtime updates
+  useEffect(() => {
+    if (!session?.user?.id) return;
+
+    const loadJobs = async () => {
+      const { data } = await supabase
+        .from('import_jobs')
+        .select('*')
+        .eq('user_id', session.user.id)
+        .order('created_at', { ascending: false })
+        .limit(10);
+      
+      if (data) {
+        setJobs(data.map(job => ({
+          ...job,
+          counts: (job.counts as unknown) as ImportCounts,
+          status: job.status as ImportJob['status'],
+        })));
+      }
+    };
+
+    loadJobs();
+
+    // Subscribe to realtime updates
+    const channel = supabase
+      .channel('import-jobs-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'import_jobs',
+          filter: `user_id=eq.${session.user.id}`,
+        },
+        (payload) => {
+          console.log('Realtime update:', payload);
+          
+          if (payload.eventType === 'INSERT') {
+            const newJob = payload.new as any;
+            setJobs(prev => [{
+              ...newJob,
+              counts: (newJob.counts || { mercadorias: 0, energia_agua: 0, fretes: 0 }) as ImportCounts,
+              status: newJob.status as ImportJob['status'],
+            }, ...prev].slice(0, 10));
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedJob = payload.new as any;
+            setJobs(prev => prev.map(job => 
+              job.id === updatedJob.id 
+                ? {
+                    ...updatedJob,
+                    counts: (updatedJob.counts || { mercadorias: 0, energia_agua: 0, fretes: 0 }) as ImportCounts,
+                    status: updatedJob.status as ImportJob['status'],
+                  }
+                : job
+            ));
+            
+            // Show toast on completion
+            if (updatedJob.status === 'completed') {
+              const counts = updatedJob.counts as ImportCounts;
+              const total = counts.mercadorias + counts.energia_agua + counts.fretes;
+              toast.success(`Importação concluída! ${total} registros importados.`);
+            } else if (updatedJob.status === 'failed') {
+              toast.error(`Importação falhou: ${updatedJob.error_message || 'Erro desconhecido'}`);
+            }
+          } else if (payload.eventType === 'DELETE') {
+            const deletedId = (payload.old as any).id;
+            setJobs(prev => prev.filter(job => job.id !== deletedId));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [session?.user?.id]);
+
+  const handleStartImport = async () => {
     if (!selectedFile || !selectedEmpresa || !session) return;
 
-    setImporting(true);
-    setImportResult(null);
-    setImportError(null);
+    setUploading(true);
     
     try {
       const formData = new FormData();
@@ -87,7 +194,7 @@ export default function ImportarEFD() {
       });
 
       if (response.error) {
-        throw new Error(response.error.message || 'Erro ao importar arquivo');
+        throw new Error(response.error.message || 'Erro ao iniciar importação');
       }
 
       const data = response.data;
@@ -95,27 +202,14 @@ export default function ImportarEFD() {
         throw new Error(data.error);
       }
 
-      // Map old format to new format for backwards compatibility
-      const result: ImportResult = {
-        success: data.success,
-        counts: data.counts || { mercadorias: data.count || 0, energia_agua: 0, fretes: 0 },
-        totalRecords: data.totalRecords ?? data.count ?? 0,
-        filialCreated: data.filialCreated,
-        cnpj: data.cnpj,
-        razaoSocial: data.razaoSocial,
-        message: data.message,
-      };
-
-      setImportResult(result);
       setSelectedFile(null);
-      toast.success('Arquivo EFD importado com sucesso!');
+      toast.success('Importação iniciada! Acompanhe o progresso abaixo.');
     } catch (error) {
-      console.error('Error importing EFD:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Erro ao importar arquivo EFD';
-      setImportError(errorMessage);
+      console.error('Error starting import:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Erro ao iniciar importação';
       toast.error(errorMessage);
     } finally {
-      setImporting(false);
+      setUploading(false);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
@@ -128,7 +222,6 @@ export default function ImportarEFD() {
       return;
     }
     setSelectedFile(file);
-    setImportError(null);
   };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -152,195 +245,270 @@ export default function ImportarEFD() {
     setIsDragOver(false);
   };
 
-  const handleNewImport = () => {
-    setImportResult(null);
-    setImportError(null);
-    setSelectedFile(null);
+  const handleRetryJob = async (jobId: string) => {
+    // For now, just show a message - full retry would require re-uploading the file
+    toast.info('Para reprocessar, faça upload do arquivo novamente.');
   };
 
-  const handleGoToConfig = () => {
-    navigate('/configuracoes');
-  };
+  const activeJobs = jobs.filter(j => j.status === 'pending' || j.status === 'processing');
+  const completedJobs = jobs.filter(j => j.status === 'completed' || j.status === 'failed');
 
-  if (importResult) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Card className="w-full max-w-md">
-          <CardContent className="pt-8 pb-6 px-6">
-            <div className="text-center space-y-6">
-              <div className="mx-auto w-16 h-16 rounded-full bg-positive/10 flex items-center justify-center">
-                <CheckCircle className="h-8 w-8 text-positive" />
-              </div>
+  return (
+    <div className="space-y-6 max-w-4xl mx-auto">
+      {/* Upload Card */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Upload className="h-5 w-5" />
+            Importar EFD
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Importe arquivos EFD Contribuições para cadastrar mercadorias, energia/água e fretes.
+            Arquivos grandes são processados em background.
+          </p>
+
+          <div className="space-y-2">
+            <Label htmlFor="empresa">Empresa Destino</Label>
+            <Select value={selectedEmpresa} onValueChange={setSelectedEmpresa} disabled={uploading}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione a empresa" />
+              </SelectTrigger>
+              <SelectContent>
+                {empresas.map((empresa) => (
+                  <SelectItem key={empresa.id} value={empresa.id}>
+                    {empresa.nome}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div
+            className={`
+              relative border-2 border-dashed rounded-lg p-8 transition-colors cursor-pointer
+              ${isDragOver ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50 hover:bg-muted/50'}
+              ${uploading ? 'pointer-events-none opacity-60' : ''}
+              ${!selectedEmpresa ? 'pointer-events-none opacity-40' : ''}
+            `}
+            onClick={() => !selectedFile && fileInputRef.current?.click()}
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".txt"
+              onChange={handleFileChange}
+              className="hidden"
+              disabled={uploading || !selectedEmpresa}
+            />
+            
+            <div className="flex flex-col items-center gap-3">
+              {uploading ? (
+                <>
+                  <Loader2 className="h-10 w-10 text-primary animate-spin" />
+                  <div className="space-y-1 text-center">
+                    <p className="text-sm font-medium text-foreground">Enviando arquivo...</p>
+                    <p className="text-xs text-muted-foreground">O processamento continuará em background</p>
+                  </div>
+                </>
+              ) : selectedFile ? (
+                <>
+                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                    <FileText className="h-6 w-6 text-primary" />
+                  </div>
+                  <div className="space-y-1 text-center">
+                    <p className="text-sm font-medium text-foreground">{selectedFile.name}</p>
+                    <p className="text-xs text-muted-foreground">{formatFileSize(selectedFile.size)}</p>
+                  </div>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={(e) => { e.stopPropagation(); setSelectedFile(null); }}
+                  >
+                    Remover
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
+                    <FileText className="h-6 w-6 text-muted-foreground" />
+                  </div>
+                  <div className="space-y-1 text-center">
+                    <p className="text-sm font-medium text-foreground">
+                      Arraste o arquivo ou clique para selecionar
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Aceita arquivos .txt (EFD Contribuições) - até 500MB
+                    </p>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          {selectedFile && !uploading && (
+            <Button 
+              onClick={handleStartImport} 
+              className="w-full"
+              disabled={!selectedEmpresa}
+            >
+              Iniciar Importação
+            </Button>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Active Jobs */}
+      {activeJobs.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              Importações em Andamento
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {activeJobs.map((job) => {
+              const statusInfo = getStatusInfo(job.status);
+              const StatusIcon = statusInfo.icon;
               
-              <div className="space-y-2">
-                <h2 className="text-xl font-semibold text-foreground">Importação Concluída</h2>
-                <p className="text-sm text-muted-foreground">{importResult.message}</p>
-              </div>
+              return (
+                <div key={job.id} className="border rounded-lg p-4 space-y-3">
+                  <div className="flex items-start justify-between">
+                    <div className="space-y-1">
+                      <p className="font-medium text-foreground">{job.file_name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {formatFileSize(job.file_size)} • Iniciado em {formatDate(job.created_at)}
+                      </p>
+                    </div>
+                    <Badge className={statusInfo.color}>
+                      <StatusIcon className={`h-3 w-3 mr-1 ${job.status === 'processing' ? 'animate-spin' : ''}`} />
+                      {statusInfo.label}
+                    </Badge>
+                  </div>
+                  
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>Progresso</span>
+                      <span>{job.progress}%</span>
+                    </div>
+                    <Progress value={job.progress} className="h-2" />
+                    {job.total_lines > 0 && (
+                      <p className="text-xs text-muted-foreground text-right">
+                        {job.total_lines.toLocaleString('pt-BR')} linhas
+                      </p>
+                    )}
+                  </div>
 
-              <div className="bg-muted/50 rounded-lg p-4 text-left space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">CNPJ</span>
-                  <span className="font-medium text-foreground">{formatCNPJ(importResult.cnpj)}</span>
+                  {job.status === 'processing' && (
+                    <div className="flex gap-4 text-xs text-muted-foreground">
+                      <span>Mercadorias: {job.counts.mercadorias}</span>
+                      <span>Energia/Água: {job.counts.energia_agua}</span>
+                      <span>Fretes: {job.counts.fretes}</span>
+                    </div>
+                  )}
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Razão Social</span>
-                  <span className="font-medium text-foreground truncate max-w-[200px]">{importResult.razaoSocial}</span>
-                </div>
-                <div className="border-t border-border pt-2 mt-2 space-y-1">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Mercadorias</span>
-                    <span className="font-medium text-foreground">{importResult.counts.mercadorias}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Energia/Água</span>
-                    <span className="font-medium text-foreground">{importResult.counts.energia_agua}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Fretes</span>
-                    <span className="font-medium text-foreground">{importResult.counts.fretes}</span>
-                  </div>
-                  <div className="flex justify-between text-sm font-semibold border-t border-border pt-1 mt-1">
-                    <span className="text-foreground">Total</span>
-                    <span className="text-foreground">{importResult.totalRecords}</span>
-                  </div>
-                </div>
-                {importResult.filialCreated && (
-                  <div className="pt-2">
-                    <Badge variant="secondary" className="w-full justify-center">Nova filial criada</Badge>
-                  </div>
-                )}
-              </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
 
-              <div className="flex flex-col gap-2">
-                <Button onClick={handleGoToConfig} className="w-full">
-                  Ir para Configurações
-                  <ArrowRight className="ml-2 h-4 w-4" />
-                </Button>
-                <Button variant="ghost" onClick={handleNewImport} className="w-full">
-                  Importar outro arquivo
-                </Button>
-              </div>
+      {/* Completed Jobs */}
+      {completedJobs.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <CheckCircle className="h-5 w-5 text-positive" />
+              Histórico de Importações
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {completedJobs.map((job) => {
+                const statusInfo = getStatusInfo(job.status);
+                const StatusIcon = statusInfo.icon;
+                const totalRecords = job.counts.mercadorias + job.counts.energia_agua + job.counts.fretes;
+                
+                return (
+                  <div key={job.id} className="border rounded-lg p-4">
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="space-y-1">
+                        <p className="font-medium text-foreground">{job.file_name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {formatFileSize(job.file_size)} • {formatDate(job.created_at)}
+                        </p>
+                      </div>
+                      <Badge className={statusInfo.color}>
+                        <StatusIcon className="h-3 w-3 mr-1" />
+                        {statusInfo.label}
+                      </Badge>
+                    </div>
+
+                    {job.status === 'completed' && (
+                      <div className="bg-muted/50 rounded-lg p-3 mt-3">
+                        <div className="grid grid-cols-3 gap-4 text-center">
+                          <div>
+                            <p className="text-lg font-semibold text-foreground">{job.counts.mercadorias}</p>
+                            <p className="text-xs text-muted-foreground">Mercadorias</p>
+                          </div>
+                          <div>
+                            <p className="text-lg font-semibold text-foreground">{job.counts.energia_agua}</p>
+                            <p className="text-xs text-muted-foreground">Energia/Água</p>
+                          </div>
+                          <div>
+                            <p className="text-lg font-semibold text-foreground">{job.counts.fretes}</p>
+                            <p className="text-xs text-muted-foreground">Fretes</p>
+                          </div>
+                        </div>
+                        <div className="text-center mt-2 pt-2 border-t border-border">
+                          <span className="text-sm text-positive font-medium">
+                            {totalRecords.toLocaleString('pt-BR')} registros importados
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {job.status === 'failed' && (
+                      <div className="bg-destructive/10 rounded-lg p-3 mt-3">
+                        <div className="flex items-start gap-2">
+                          <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+                          <p className="text-sm text-destructive">{job.error_message || 'Erro desconhecido'}</p>
+                        </div>
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="mt-2"
+                          onClick={() => handleRetryJob(job.id)}
+                        >
+                          <RefreshCw className="h-4 w-4 mr-1" />
+                          Tentar Novamente
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </CardContent>
         </Card>
-      </div>
-    );
-  }
+      )}
 
-  return (
-    <div className="flex items-center justify-center min-h-[60vh]">
-      <Card className="w-full max-w-md">
-        <CardContent className="pt-8 pb-6 px-6">
-          <div className="text-center space-y-6">
-            <div className="space-y-2">
-              <h1 className="text-2xl font-semibold text-foreground">Importar EFD</h1>
-              <p className="text-sm text-muted-foreground">
-                Importe arquivos EFD Contribuições para cadastrar mercadorias, energia/água e fretes
-              </p>
-            </div>
-
-            {importError && (
-              <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3 flex items-start gap-2 text-left">
-                <AlertCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
-                <p className="text-sm text-destructive">{importError}</p>
-              </div>
-            )}
-
-            <div className="space-y-2 text-left">
-              <Label htmlFor="empresa">Empresa Destino</Label>
-              <Select value={selectedEmpresa} onValueChange={setSelectedEmpresa} disabled={importing}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione a empresa" />
-                </SelectTrigger>
-                <SelectContent>
-                  {empresas.map((empresa) => (
-                    <SelectItem key={empresa.id} value={empresa.id}>
-                      {empresa.nome}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div
-              className={`
-                relative border-2 border-dashed rounded-lg p-8 transition-colors cursor-pointer
-                ${isDragOver ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50 hover:bg-muted/50'}
-                ${importing ? 'pointer-events-none opacity-60' : ''}
-                ${!selectedEmpresa ? 'pointer-events-none opacity-40' : ''}
-              `}
-              onClick={() => !selectedFile && fileInputRef.current?.click()}
-              onDrop={handleDrop}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-            >
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".txt"
-                onChange={handleFileChange}
-                className="hidden"
-                disabled={importing || !selectedEmpresa}
-              />
-              
-              <div className="flex flex-col items-center gap-3">
-                {importing ? (
-                  <>
-                    <Loader2 className="h-10 w-10 text-primary animate-spin" />
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium text-foreground">Importando arquivo...</p>
-                      <p className="text-xs text-muted-foreground">Aguarde enquanto processamos os dados</p>
-                    </div>
-                  </>
-                ) : selectedFile ? (
-                  <>
-                    <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                      <FileText className="h-6 w-6 text-primary" />
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium text-foreground">{selectedFile.name}</p>
-                      <p className="text-xs text-muted-foreground">{formatFileSize(selectedFile.size)}</p>
-                    </div>
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      onClick={(e) => { e.stopPropagation(); setSelectedFile(null); }}
-                    >
-                      Remover
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
-                      <FileText className="h-6 w-6 text-muted-foreground" />
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium text-foreground">
-                        Arraste o arquivo ou clique para selecionar
-                      </p>
-                      <p className="text-xs text-muted-foreground">Aceita arquivos .txt (EFD Contribuições)</p>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-
-            {selectedFile && !importing && (
-              <Button 
-                onClick={handleImportEFD} 
-                className="w-full"
-                disabled={!selectedEmpresa}
-              >
-                Importar Arquivo
-              </Button>
-            )}
-
-            <p className="text-xs text-muted-foreground">
-              A filial será identificada automaticamente pelo CNPJ no arquivo
+      {/* Empty State */}
+      {jobs.length === 0 && (
+        <Card>
+          <CardContent className="py-8 text-center">
+            <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+            <p className="text-muted-foreground">
+              Nenhuma importação realizada ainda. Faça upload de um arquivo EFD para começar.
             </p>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
