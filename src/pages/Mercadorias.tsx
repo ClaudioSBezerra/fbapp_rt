@@ -300,21 +300,31 @@ export default function Mercadorias() {
 
   const totaisEntradas = useMemo(() => {
     const entradas = filteredMercadorias.filter((m) => m.tipo === 'entrada');
-    return {
-      valor: entradas.reduce((acc, m) => acc + m.valor, 0),
-      icms: entradas.reduce((acc, m) => acc + (m.icms || 0), 0),
-      pisCofins: entradas.reduce((acc, m) => acc + m.pis + m.cofins, 0),
-    };
-  }, [filteredMercadorias]);
+    const valor = entradas.reduce((acc, m) => acc + m.valor, 0);
+    const icms = entradas.reduce((acc, m) => acc + (m.icms || 0), 0);
+    const pisCofins = entradas.reduce((acc, m) => acc + m.pis + m.cofins, 0);
+    
+    const aliquota = aliquotas[0];
+    const icmsProjetado = aliquota ? icms * (1 - (aliquota.reduc_icms / 100)) : icms;
+    const ibsProjetado = aliquota ? valor * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
+    const cbsProjetado = aliquota ? valor * (aliquota.cbs / 100) : 0;
+    
+    return { valor, icms, pisCofins, icmsProjetado, ibsProjetado, cbsProjetado };
+  }, [filteredMercadorias, aliquotas]);
 
   const totaisSaidas = useMemo(() => {
     const saidas = filteredMercadorias.filter((m) => m.tipo === 'saida');
-    return {
-      valor: saidas.reduce((acc, m) => acc + m.valor, 0),
-      icms: saidas.reduce((acc, m) => acc + (m.icms || 0), 0),
-      pisCofins: saidas.reduce((acc, m) => acc + m.pis + m.cofins, 0),
-    };
-  }, [filteredMercadorias]);
+    const valor = saidas.reduce((acc, m) => acc + m.valor, 0);
+    const icms = saidas.reduce((acc, m) => acc + (m.icms || 0), 0);
+    const pisCofins = saidas.reduce((acc, m) => acc + m.pis + m.cofins, 0);
+    
+    const aliquota = aliquotas[0];
+    const icmsProjetado = aliquota ? icms * (1 - (aliquota.reduc_icms / 100)) : icms;
+    const ibsProjetado = aliquota ? valor * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
+    const cbsProjetado = aliquota ? valor * (aliquota.cbs / 100) : 0;
+    
+    return { valor, icms, pisCofins, icmsProjetado, ibsProjetado, cbsProjetado };
+  }, [filteredMercadorias, aliquotas]);
   const hasFiliais = filiais.length > 0;
 
   const handleClearDatabase = async () => {
@@ -441,8 +451,20 @@ export default function Mercadorias() {
               <span className="text-lg font-bold">{formatCurrency(totaisEntradas.icms)}</span>
             </div>
             <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">ICMS Projetado:</span>
+              <span className="text-lg font-bold">{formatCurrency(totaisEntradas.icmsProjetado)}</span>
+            </div>
+            <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">PIS+COFINS:</span>
               <span className="text-lg font-bold text-pis-cofins">{formatCurrency(totaisEntradas.pisCofins)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">IBS Projetado:</span>
+              <span className="text-lg font-bold text-ibs-cbs">{formatCurrency(totaisEntradas.ibsProjetado)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">CBS Projetado:</span>
+              <span className="text-lg font-bold text-ibs-cbs">{formatCurrency(totaisEntradas.cbsProjetado)}</span>
             </div>
           </CardContent>
         </Card>
@@ -462,8 +484,20 @@ export default function Mercadorias() {
               <span className="text-lg font-bold">{formatCurrency(totaisSaidas.icms)}</span>
             </div>
             <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">ICMS Projetado:</span>
+              <span className="text-lg font-bold">{formatCurrency(totaisSaidas.icmsProjetado)}</span>
+            </div>
+            <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">PIS+COFINS:</span>
               <span className="text-lg font-bold text-pis-cofins">{formatCurrency(totaisSaidas.pisCofins)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">IBS Projetado:</span>
+              <span className="text-lg font-bold text-ibs-cbs">{formatCurrency(totaisSaidas.ibsProjetado)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">CBS Projetado:</span>
+              <span className="text-lg font-bold text-ibs-cbs">{formatCurrency(totaisSaidas.cbsProjetado)}</span>
             </div>
           </CardContent>
         </Card>
