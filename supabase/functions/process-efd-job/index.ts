@@ -109,11 +109,13 @@ function processLine(
       break;
 
     case "C100":
+      // Layout EFD ICMS/IPI - C100 (após split com índice 0 vazio):
+      // 2=IND_OPER, 8=NUM_DOC, 12=VL_DOC, 22=VL_ICMS, 25=VL_IPI, 26=VL_PIS, 27=VL_COFINS
       blockType = "c100";
-      if (fields.length > 25) {
+      if (fields.length > 27) {
         const indOper = fields[2];
         const tipo = indOper === "0" ? "entrada" : "saida";
-        const valorDoc = parseNumber(fields[11]);
+        const valorDoc = parseNumber(fields[12]); // Campo 12: VL_DOC
         
         if (valorDoc > 0) {
           record = {
@@ -124,10 +126,10 @@ function processLine(
               ncm: null,
               descricao: `NF-e ${fields[8] || ""}`.trim().substring(0, 200) || "NF-e",
               valor: valorDoc,
-              pis: parseNumber(fields[23]),
-              cofins: parseNumber(fields[25]),
-              icms: parseNumber(fields[20]),
-              ipi: parseNumber(fields[21]),
+              pis: parseNumber(fields[26]),    // Campo 26: VL_PIS
+              cofins: parseNumber(fields[27]), // Campo 27: VL_COFINS
+              icms: parseNumber(fields[22]),   // Campo 22: VL_ICMS
+              ipi: parseNumber(fields[25]),    // Campo 25: VL_IPI
             },
           };
         }
@@ -135,6 +137,8 @@ function processLine(
       break;
 
     case "C500":
+      // Layout EFD ICMS/IPI - C500 (Energia/Água):
+      // 2=IND_OPER, 4=COD_PART, 5=COD_MOD, 7=SER, 10=VL_DOC, 13=VL_ICMS, 16=VL_PIS, 18=VL_COFINS
       blockType = "c500";
       if (fields.length > 18) {
         const indOper = fields[2];
@@ -166,6 +170,8 @@ function processLine(
       break;
 
     case "C600":
+      // Layout EFD ICMS/IPI - C600 (Consolidação diária):
+      // 2=COD_MOD, 3=COD_MUN, 7=VL_DOC, 12=VL_ICMS, 15=VL_PIS, 16=VL_COFINS
       blockType = "c600";
       if (fields.length > 16) {
         const valorDoc = parseNumber(fields[7]);
@@ -190,6 +196,8 @@ function processLine(
       break;
 
     case "D100":
+      // Layout EFD ICMS/IPI - D100 (CT-e):
+      // 2=IND_OPER, 5=COD_PART, 8=NUM_DOC, 14=VL_DOC, 23=VL_ICMS, 24=VL_PIS, 26=VL_COFINS
       blockType = "d100";
       if (fields.length > 26) {
         const indOper = fields[2];
@@ -217,6 +225,8 @@ function processLine(
       break;
 
     case "D500":
+      // Layout EFD ICMS/IPI - D500 (Telecom/Comunicação):
+      // 2=IND_OPER, 4=COD_PART, 7=SER, 11=VL_DOC, 14=VL_ICMS, 17=VL_PIS, 19=VL_COFINS
       blockType = "d500";
       if (fields.length > 19) {
         const indOper = fields[2];
