@@ -6,6 +6,9 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+const BATCH_SIZE = 500;
+const MAX_FILE_SIZE = 150 * 1024 * 1024; // 150MB
+
 interface ParsedMercadoria {
   tipo: "entrada" | "saida";
   mes_ano: string;
@@ -25,144 +28,280 @@ interface EfdHeader {
   periodoFim: string;
 }
 
-function parseEfdContent(content: string): { header: EfdHeader | null; mercadorias: ParsedMercadoria[] } {
-  const lines = content.split("\n");
-  const mercadorias: ParsedMercadoria[] = [];
-  let header: EfdHeader | null = null;
+interface ProcessingState {
+  currentPeriod: string;
+  currentMercadoria: Partial<ParsedMercadoria> | null;
+}
 
-  let currentPeriod = "";
-  let currentMercadoria: Partial<ParsedMercadoria> | null = null;
+function parseHeaderLine(fields: string[]): EfdHeader | null {
+  const dtIni = fields[6]; // DDMMYYYY
+  const dtFin = fields[7];
+  const nome = fields[8];
+  const cnpj = fields[9]?.replace(/\D/g, "");
 
-  for (const line of lines) {
-    const fields = line.split("|");
-    if (fields.length < 2) continue;
+  if (cnpj && cnpj.length === 14) {
+    return {
+      cnpj,
+      razaoSocial: nome || "Estabelecimento",
+      periodoInicio: dtIni || "",
+      periodoFim: dtFin || "",
+    };
+  }
+  return null;
+}
 
-    const registro = fields[1];
+function getPeriodFromHeader(fields: string[]): string {
+  const dtIni = fields[6];
+  if (dtIni && dtIni.length === 8) {
+    const month = dtIni.substring(2, 4);
+    const year = dtIni.substring(4, 8);
+    return `${year}-${month}-01`;
+  }
+  return "";
+}
 
-    // Registro 0000 - Abertura do arquivo (contém período e dados do estabelecimento)
-    // Layout: |0000|COD_VER|TIPO_ESCRIT|IND_SIT_ESP|NUM_REC_ANT|DT_INI|DT_FIN|NOME|CNPJ|UF|COD_MUN|...
-    // Índices: 1=REG, 2=COD_VER, 3=TIPO, 4=IND_SIT, 5=NUM_REC, 6=DT_INI, 7=DT_FIN, 8=NOME, 9=CNPJ
-    if (registro === "0000" && fields.length > 9) {
-      const dtIni = fields[6]; // DDMMYYYY
-      const dtFin = fields[7]; // DDMMYYYY
-      const nome = fields[8];
-      const cnpj = fields[9]?.replace(/\D/g, "");
+function processLine(
+  line: string,
+  state: ProcessingState
+): { completed: ParsedMercadoria | null; state: ProcessingState } {
+  const fields = line.split("|");
+  if (fields.length < 2) {
+    return { completed: null, state };
+  }
 
-      if (dtIni && dtIni.length === 8) {
-        const month = dtIni.substring(2, 4);
-        const year = dtIni.substring(4, 8);
-        currentPeriod = `${year}-${month}-01`;
-      }
+  const registro = fields[1];
+  let completed: ParsedMercadoria | null = null;
 
-      if (cnpj && cnpj.length === 14) {
-        header = {
-          cnpj,
-          razaoSocial: nome || "Estabelecimento",
-          periodoInicio: dtIni || "",
-          periodoFim: dtFin || "",
-        };
-        console.log(`Extracted header from 0000: CNPJ=${cnpj}, Nome=${nome}`);
-      }
-    }
+  // Registro 0000 - Extract period
+  if (registro === "0000" && fields.length > 9) {
+    state.currentPeriod = getPeriodFromHeader(fields);
+  }
 
-    // Registro C100 - Documento de entrada/saída (NF-e)
-    if (registro === "C100" && fields.length > 7) {
-      const indOper = fields[2]; // 0=Entrada, 1=Saída
-      const tipo = indOper === "0" ? "entrada" : "saida";
-      const valorDoc = parseFloat(fields[7]?.replace(",", ".") || "0");
+  // Registro C100 - Documento de entrada/saída (NF-e)
+  if (registro === "C100" && fields.length > 7) {
+    const indOper = fields[2];
+    const tipo = indOper === "0" ? "entrada" : "saida";
+    const valorDoc = parseFloat(fields[7]?.replace(",", ".") || "0");
 
-      currentMercadoria = {
-        tipo,
-        mes_ano: currentPeriod,
-        valor: valorDoc,
-        pis: 0,
-        cofins: 0,
-        icms: 0,
-        ipi: 0,
-        ncm: null,
-        descricao: null,
-      };
-    }
+    state.currentMercadoria = {
+      tipo,
+      mes_ano: state.currentPeriod,
+      valor: valorDoc,
+      pis: 0,
+      cofins: 0,
+      icms: 0,
+      ipi: 0,
+      ncm: null,
+      descricao: null,
+    };
+  }
 
-    // Registro C170 - Itens do documento
-    if (registro === "C170" && fields.length > 12 && currentMercadoria) {
-      const ncm = fields[8] || null;
-      const descricao = fields[4] || null;
-      const valorItem = parseFloat(fields[7]?.replace(",", ".") || "0");
+  // Registro C170 - Itens do documento
+  if (registro === "C170" && fields.length > 12 && state.currentMercadoria) {
+    const ncm = fields[8] || null;
+    const descricao = fields[4] || null;
+    const valorItem = parseFloat(fields[7]?.replace(",", ".") || "0");
 
-      if (ncm || descricao) {
-        currentMercadoria.ncm = ncm;
-        currentMercadoria.descricao = descricao?.substring(0, 200);
-        currentMercadoria.valor = valorItem;
-      }
-    }
-
-    // Registro C175 - Registro Analítico do Documento (consolidado)
-    if (registro === "C175" && fields.length > 7) {
-      const vlPis = parseFloat(fields[6]?.replace(",", ".") || "0");
-      const vlCofins = parseFloat(fields[7]?.replace(",", ".") || "0");
-
-      if (currentMercadoria) {
-        currentMercadoria.pis = vlPis;
-        currentMercadoria.cofins = vlCofins;
-      }
-    }
-
-    // Registro M100 - Crédito de PIS
-    if (registro === "M100" && fields.length > 7) {
-      const vlCredPis = parseFloat(fields[7]?.replace(",", ".") || "0");
-      if (currentMercadoria && currentMercadoria.tipo === "entrada") {
-        currentMercadoria.pis = (currentMercadoria.pis || 0) + vlCredPis;
-      }
-    }
-
-    // Registro M500 - Crédito de COFINS
-    if (registro === "M500" && fields.length > 7) {
-      const vlCredCofins = parseFloat(fields[7]?.replace(",", ".") || "0");
-      if (currentMercadoria && currentMercadoria.tipo === "entrada") {
-        currentMercadoria.cofins = (currentMercadoria.cofins || 0) + vlCredCofins;
-      }
-    }
-
-    // Ao encontrar registro de fechamento do documento, salvar mercadoria
-    if ((registro === "C190" || registro === "C990") && currentMercadoria) {
-      if (currentMercadoria.valor && currentMercadoria.valor > 0) {
-        mercadorias.push(currentMercadoria as ParsedMercadoria);
-      }
-      currentMercadoria = null;
-    }
-
-    // Bloco F - Demais documentos (Serviços, por exemplo)
-    if (registro === "F100" && fields.length > 10) {
-      const indOper = fields[2]; // IND_OPER: 0=Entrada, 1=Saída
-      const tipo = indOper === "0" ? "entrada" : "saida";
-      const vlOper = parseFloat(fields[6]?.replace(",", ".") || "0");
-      const vlPis = parseFloat(fields[8]?.replace(",", ".") || "0");
-      const vlCofins = parseFloat(fields[10]?.replace(",", ".") || "0");
-      const descricao = fields[3] || "Serviço";
-
-      if (vlOper > 0) {
-        mercadorias.push({
-          tipo,
-          mes_ano: currentPeriod,
-          ncm: null,
-          descricao: descricao.substring(0, 200),
-          valor: vlOper,
-          pis: vlPis,
-          cofins: vlCofins,
-          icms: 0,
-          ipi: 0,
-        });
-      }
+    if (ncm || descricao) {
+      state.currentMercadoria.ncm = ncm;
+      state.currentMercadoria.descricao = descricao?.substring(0, 200);
+      state.currentMercadoria.valor = valorItem;
     }
   }
 
-  console.log(`Parsed ${mercadorias.length} mercadorias from EFD file`);
-  return { header, mercadorias };
+  // Registro C175 - Registro Analítico do Documento
+  if (registro === "C175" && fields.length > 7) {
+    const vlPis = parseFloat(fields[6]?.replace(",", ".") || "0");
+    const vlCofins = parseFloat(fields[7]?.replace(",", ".") || "0");
+
+    if (state.currentMercadoria) {
+      state.currentMercadoria.pis = vlPis;
+      state.currentMercadoria.cofins = vlCofins;
+    }
+  }
+
+  // Registro M100 - Crédito de PIS
+  if (registro === "M100" && fields.length > 7) {
+    const vlCredPis = parseFloat(fields[7]?.replace(",", ".") || "0");
+    if (state.currentMercadoria && state.currentMercadoria.tipo === "entrada") {
+      state.currentMercadoria.pis = (state.currentMercadoria.pis || 0) + vlCredPis;
+    }
+  }
+
+  // Registro M500 - Crédito de COFINS
+  if (registro === "M500" && fields.length > 7) {
+    const vlCredCofins = parseFloat(fields[7]?.replace(",", ".") || "0");
+    if (state.currentMercadoria && state.currentMercadoria.tipo === "entrada") {
+      state.currentMercadoria.cofins = (state.currentMercadoria.cofins || 0) + vlCredCofins;
+    }
+  }
+
+  // Ao encontrar registro de fechamento do documento, salvar mercadoria
+  if ((registro === "C190" || registro === "C990") && state.currentMercadoria) {
+    if (state.currentMercadoria.valor && state.currentMercadoria.valor > 0) {
+      completed = state.currentMercadoria as ParsedMercadoria;
+    }
+    state.currentMercadoria = null;
+  }
+
+  // Bloco F - Demais documentos (Serviços)
+  if (registro === "F100" && fields.length > 10) {
+    const indOper = fields[2];
+    const tipo = indOper === "0" ? "entrada" : "saida";
+    const vlOper = parseFloat(fields[6]?.replace(",", ".") || "0");
+    const vlPis = parseFloat(fields[8]?.replace(",", ".") || "0");
+    const vlCofins = parseFloat(fields[10]?.replace(",", ".") || "0");
+    const descricao = fields[3] || "Serviço";
+
+    if (vlOper > 0) {
+      completed = {
+        tipo,
+        mes_ano: state.currentPeriod,
+        ncm: null,
+        descricao: descricao.substring(0, 200),
+        valor: vlOper,
+        pis: vlPis,
+        cofins: vlCofins,
+        icms: 0,
+        ipi: 0,
+      };
+    }
+  }
+
+  return { completed, state };
+}
+
+async function extractHeader(file: File): Promise<EfdHeader | null> {
+  const reader = file.stream()
+    .pipeThrough(new TextDecoderStream())
+    .getReader();
+
+  let buffer = "";
+  let linesRead = 0;
+  const MAX_HEADER_LINES = 100;
+
+  try {
+    while (linesRead < MAX_HEADER_LINES) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += value;
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        const fields = line.split("|");
+        if (fields[1] === "0000" && fields.length > 9) {
+          await reader.cancel();
+          return parseHeaderLine(fields);
+        }
+        linesRead++;
+        if (linesRead >= MAX_HEADER_LINES) break;
+      }
+    }
+  } catch (e) {
+    console.error("Error extracting header:", e);
+  } finally {
+    try {
+      await reader.cancel();
+    } catch {
+      // Reader already closed
+    }
+  }
+
+  return null;
+}
+
+async function processFileInBatches(
+  supabase: any,
+  file: File,
+  filialId: string,
+  batchSize: number
+): Promise<{ totalInserted: number; error: string | null }> {
+  const reader = file.stream()
+    .pipeThrough(new TextDecoderStream())
+    .getReader();
+
+  let buffer = "";
+  let batch: any[] = [];
+  let totalInserted = 0;
+  let state: ProcessingState = {
+    currentPeriod: "",
+    currentMercadoria: null,
+  };
+
+  const flushBatch = async (): Promise<string | null> => {
+    if (batch.length === 0) return null;
+
+    const { error } = await supabase.from("mercadorias").insert(batch);
+    if (error) {
+      console.error("Insert error:", error);
+      return error.message;
+    }
+
+    totalInserted += batch.length;
+    console.log(`Inserted batch: ${batch.length} records, total: ${totalInserted}`);
+    batch = [];
+    return null;
+  };
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += value;
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        const result = processLine(line, state);
+        state = result.state;
+
+        if (result.completed) {
+          batch.push({
+            ...result.completed,
+            filial_id: filialId,
+          });
+
+          if (batch.length >= batchSize) {
+            const err = await flushBatch();
+            if (err) return { totalInserted, error: err };
+          }
+        }
+      }
+    }
+
+    // Process remaining buffer
+    if (buffer.trim()) {
+      const result = processLine(buffer, state);
+      if (result.completed) {
+        batch.push({
+          ...result.completed,
+          filial_id: filialId,
+        });
+      }
+    }
+
+    // Final flush
+    const err = await flushBatch();
+    if (err) return { totalInserted, error: err };
+
+    return { totalInserted, error: null };
+  } finally {
+    try {
+      await reader.cancel();
+    } catch {
+      // Reader already closed
+    }
+  }
+}
+
+function formatCNPJ(cnpj: string): string {
+  return cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
 }
 
 serve(async (req) => {
-  // Handle CORS preflight requests
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -180,7 +319,6 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Get user from auth header
     const token = authHeader.replace("Bearer ", "");
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
 
@@ -210,7 +348,17 @@ serve(async (req) => {
       );
     }
 
-    // Verify user has access to empresa (through grupo -> tenant)
+    // Check file size
+    if (file.size > MAX_FILE_SIZE) {
+      return new Response(
+        JSON.stringify({ error: `Arquivo muito grande. Máximo: ${MAX_FILE_SIZE / 1024 / 1024}MB` }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    console.log(`Processing EFD file: ${file.name}, size: ${file.size} bytes`);
+
+    // Verify user access to empresa
     const { data: empresa, error: empresaError } = await supabase
       .from("empresas")
       .select("id, grupo_id, grupos_empresas!inner(tenant_id)")
@@ -238,10 +386,8 @@ serve(async (req) => {
       );
     }
 
-    const content = await file.text();
-    console.log(`Processing EFD file: ${file.name}, size: ${content.length} bytes`);
-
-    const { header, mercadorias } = parseEfdContent(content);
+    // PHASE 1: Extract header (streaming - only first lines)
+    const header = await extractHeader(file);
 
     if (!header || !header.cnpj) {
       return new Response(
@@ -252,7 +398,7 @@ serve(async (req) => {
 
     console.log(`Header extracted: CNPJ=${header.cnpj}, Nome=${header.razaoSocial}`);
 
-    // Check if filial exists for this empresa + CNPJ
+    // PHASE 2: Get or create filial
     let filialId: string;
     let filialCreated = false;
 
@@ -267,7 +413,6 @@ serve(async (req) => {
       filialId = existingFilial.id;
       console.log(`Using existing filial: ${filialId}`);
     } else {
-      // Create new filial
       const { data: newFilial, error: createError } = await supabase
         .from("filiais")
         .insert({
@@ -292,7 +437,17 @@ serve(async (req) => {
       console.log(`Created new filial: ${filialId}`);
     }
 
-    if (mercadorias.length === 0) {
+    // PHASE 3: Process file in streaming batches
+    const result = await processFileInBatches(supabase, file, filialId, BATCH_SIZE);
+
+    if (result.error) {
+      return new Response(
+        JSON.stringify({ error: "Failed to save records: " + result.error }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (result.totalInserted === 0) {
       return new Response(
         JSON.stringify({
           success: true,
@@ -302,48 +457,26 @@ serve(async (req) => {
           cnpj: header.cnpj,
           razaoSocial: header.razaoSocial,
           message: filialCreated
-            ? `Filial criada (CNPJ: ${header.cnpj}), mas nenhum registro de mercadoria encontrado no arquivo.`
+            ? `Filial criada (CNPJ: ${formatCNPJ(header.cnpj)}), mas nenhum registro de mercadoria encontrado no arquivo.`
             : `Nenhum registro de mercadoria encontrado no arquivo.`,
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Insert mercadorias with filial_id
-    const insertData = mercadorias.map((m) => ({
-      ...m,
-      filial_id: filialId,
-    }));
-
-    const { error: insertError } = await supabase
-      .from("mercadorias")
-      .insert(insertData);
-
-    if (insertError) {
-      console.error("Insert error:", insertError);
-      return new Response(
-        JSON.stringify({ error: "Failed to save records: " + insertError.message }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    console.log(`Successfully inserted ${mercadorias.length} mercadorias for filial ${filialId}`);
-
-    const formatCNPJ = (cnpj: string) => {
-      return cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
-    };
+    console.log(`Successfully inserted ${result.totalInserted} mercadorias for filial ${filialId}`);
 
     return new Response(
       JSON.stringify({
         success: true,
-        count: mercadorias.length,
+        count: result.totalInserted,
         filialId,
         filialCreated,
         cnpj: header.cnpj,
         razaoSocial: header.razaoSocial,
         message: filialCreated
-          ? `Filial criada automaticamente (CNPJ: ${formatCNPJ(header.cnpj)}). Importados ${mercadorias.length} registros.`
-          : `Importados ${mercadorias.length} registros para ${header.razaoSocial} (CNPJ: ${formatCNPJ(header.cnpj)}).`,
+          ? `Filial criada automaticamente (CNPJ: ${formatCNPJ(header.cnpj)}). Importados ${result.totalInserted} registros.`
+          : `Importados ${result.totalInserted} registros para ${header.razaoSocial} (CNPJ: ${formatCNPJ(header.cnpj)}).`,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
