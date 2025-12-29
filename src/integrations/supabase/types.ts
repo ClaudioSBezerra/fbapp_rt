@@ -47,18 +47,120 @@ export type Database = {
         }
         Relationships: []
       }
+      empresas: {
+        Row: {
+          created_at: string
+          grupo_id: string
+          id: string
+          nome: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          grupo_id: string
+          id?: string
+          nome: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          grupo_id?: string
+          id?: string
+          nome?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "empresas_grupo_id_fkey"
+            columns: ["grupo_id"]
+            isOneToOne: false
+            referencedRelation: "grupos_empresas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      filiais: {
+        Row: {
+          cnpj: string
+          created_at: string
+          empresa_id: string
+          id: string
+          nome_fantasia: string | null
+          razao_social: string
+          updated_at: string
+        }
+        Insert: {
+          cnpj: string
+          created_at?: string
+          empresa_id: string
+          id?: string
+          nome_fantasia?: string | null
+          razao_social: string
+          updated_at?: string
+        }
+        Update: {
+          cnpj?: string
+          created_at?: string
+          empresa_id?: string
+          id?: string
+          nome_fantasia?: string | null
+          razao_social?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "filiais_empresa_id_fkey"
+            columns: ["empresa_id"]
+            isOneToOne: false
+            referencedRelation: "empresas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      grupos_empresas: {
+        Row: {
+          created_at: string
+          id: string
+          nome: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          nome: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          nome?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "grupos_empresas_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       mercadorias: {
         Row: {
           cofins: number
           created_at: string
           descricao: string | null
+          filial_id: string
           icms: number | null
           id: string
           ipi: number | null
           mes_ano: string
           ncm: string | null
           pis: number
-          tenant_id: string
           tipo: string
           updated_at: string
           valor: number
@@ -67,13 +169,13 @@ export type Database = {
           cofins?: number
           created_at?: string
           descricao?: string | null
+          filial_id: string
           icms?: number | null
           id?: string
           ipi?: number | null
           mes_ano: string
           ncm?: string | null
           pis?: number
-          tenant_id: string
           tipo: string
           updated_at?: string
           valor?: number
@@ -82,23 +184,23 @@ export type Database = {
           cofins?: number
           created_at?: string
           descricao?: string | null
+          filial_id?: string
           icms?: number | null
           id?: string
           ipi?: number | null
           mes_ano?: string
           ncm?: string | null
           pis?: number
-          tenant_id?: string
           tipo?: string
           updated_at?: string
           valor?: number
         }
         Relationships: [
           {
-            foreignKeyName: "mercadorias_tenant_id_fkey"
-            columns: ["tenant_id"]
+            foreignKeyName: "mercadorias_filial_id_fkey"
+            columns: ["filial_id"]
             isOneToOne: false
-            referencedRelation: "tenants"
+            referencedRelation: "filiais"
             referencedColumns: ["id"]
           },
         ]
@@ -129,27 +231,21 @@ export type Database = {
       }
       tenants: {
         Row: {
-          cnpj: string
           created_at: string
           id: string
-          nome_fantasia: string | null
-          razao_social: string
+          nome: string
           updated_at: string
         }
         Insert: {
-          cnpj: string
           created_at?: string
           id?: string
-          nome_fantasia?: string | null
-          razao_social: string
+          nome?: string
           updated_at?: string
         }
         Update: {
-          cnpj?: string
           created_at?: string
           id?: string
-          nome_fantasia?: string | null
-          razao_social?: string
+          nome?: string
           updated_at?: string
         }
         Relationships: []
@@ -206,6 +302,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      has_filial_access: {
+        Args: { _filial_id: string; _user_id: string }
+        Returns: boolean
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]

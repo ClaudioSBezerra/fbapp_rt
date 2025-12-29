@@ -22,7 +22,7 @@ interface Mercadoria {
   valor: number;
   pis: number;
   cofins: number;
-  tenant_id: string;
+  filial_id: string;
 }
 
 interface Aliquota {
@@ -32,7 +32,7 @@ interface Aliquota {
   cbs: number;
 }
 
-interface Tenant {
+interface Filial {
   id: string;
   cnpj: string;
   razao_social: string;
@@ -49,6 +49,11 @@ function formatCurrency(value: number): string {
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr);
   return new Intl.DateTimeFormat('pt-BR', { month: 'short', year: 'numeric' }).format(date);
+}
+
+function formatCNPJ(cnpj: string): string {
+  const cleaned = cnpj.replace(/\D/g, '');
+  return cleaned.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
 }
 
 function calculateIbsCbs(valor: number, aliquota: Aliquota | null): number {
@@ -147,11 +152,11 @@ function MercadoriasTable({ mercadorias, aliquotas, tipo }: MercadoriasTableProp
 export default function Mercadorias() {
   const [mercadorias, setMercadorias] = useState<Mercadoria[]>([]);
   const [aliquotas, setAliquotas] = useState<Aliquota[]>([]);
-  const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [filiais, setFiliais] = useState<Filial[]>([]);
   const [loading, setLoading] = useState(true);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [newDialogOpen, setNewDialogOpen] = useState(false);
-  const [selectedTenant, setSelectedTenant] = useState<string>('');
+  const [selectedFilial, setSelectedFilial] = useState<string>('');
   const [importing, setImporting] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -184,22 +189,22 @@ export default function Mercadorias() {
         // Fetch mercadorias (RLS filtered)
         const { data: mercadoriasData } = await supabase
           .from('mercadorias')
-          .select('*')
+          .select('id, tipo, mes_ano, ncm, descricao, valor, pis, cofins, filial_id')
           .order('mes_ano', { ascending: false });
 
         if (mercadoriasData) {
           setMercadorias(mercadoriasData);
         }
 
-        // Fetch tenants for dropdown
-        const { data: tenantsData } = await supabase
-          .from('tenants')
+        // Fetch filiais for dropdown
+        const { data: filiaisData } = await supabase
+          .from('filiais')
           .select('id, cnpj, razao_social, nome_fantasia');
 
-        if (tenantsData) {
-          setTenants(tenantsData);
-          if (tenantsData.length > 0 && !selectedTenant) {
-            setSelectedTenant(tenantsData[0].id);
+        if (filiaisData) {
+          setFiliais(filiaisData);
+          if (filiaisData.length > 0 && !selectedFilial) {
+            setSelectedFilial(filiaisData[0].id);
           }
         }
       } catch (error) {
@@ -215,13 +220,13 @@ export default function Mercadorias() {
 
   const handleImportEFD = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (!file || !selectedTenant || !session) return;
+    if (!file || !selectedFilial || !session) return;
 
     setImporting(true);
     try {
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('tenant_id', selectedTenant);
+      formData.append('filial_id', selectedFilial);
 
       const response = await supabase.functions.invoke('parse-efd', {
         body: formData,
@@ -242,7 +247,7 @@ export default function Mercadorias() {
       // Refresh mercadorias
       const { data: mercadoriasData } = await supabase
         .from('mercadorias')
-        .select('*')
+        .select('id, tipo, mes_ano, ncm, descricao, valor, pis, cofins, filial_id')
         .order('mes_ano', { ascending: false });
 
       if (mercadoriasData) {
@@ -260,15 +265,15 @@ export default function Mercadorias() {
   };
 
   const handleNewMercadoria = async () => {
-    if (!selectedTenant) {
-      toast.error('Selecione uma empresa');
+    if (!selectedFilial) {
+      toast.error('Selecione uma filial');
       return;
     }
 
     setSubmitting(true);
     try {
       const { error } = await supabase.from('mercadorias').insert({
-        tenant_id: selectedTenant,
+        filial_id: selectedFilial,
         tipo: newMercadoria.tipo,
         mes_ano: `${newMercadoria.mes_ano}-01`,
         ncm: newMercadoria.ncm || null,
@@ -295,7 +300,7 @@ export default function Mercadorias() {
       // Refresh mercadorias
       const { data: mercadoriasData } = await supabase
         .from('mercadorias')
-        .select('*')
+        .select('id, tipo, mes_ano, ncm, descricao, valor, pis, cofins, filial_id')
         .order('mes_ano', { ascending: false });
 
       if (mercadoriasData) {
@@ -423,20 +428,20 @@ export default function Mercadorias() {
           <DialogHeader>
             <DialogTitle>Importar Arquivo EFD</DialogTitle>
             <DialogDescription>
-              Selecione a empresa e o arquivo TXT da EFD Contribuições para importar os dados.
+              Selecione a filial e o arquivo TXT da EFD Contribuições para importar os dados.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="tenant">Empresa</Label>
-              <Select value={selectedTenant} onValueChange={setSelectedTenant}>
+              <Label htmlFor="filial">Filial (CNPJ)</Label>
+              <Select value={selectedFilial} onValueChange={setSelectedFilial}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Selecione a empresa" />
+                  <SelectValue placeholder="Selecione a filial" />
                 </SelectTrigger>
                 <SelectContent>
-                  {tenants.map((tenant) => (
-                    <SelectItem key={tenant.id} value={tenant.id}>
-                      {tenant.nome_fantasia || tenant.razao_social}
+                  {filiais.map((filial) => (
+                    <SelectItem key={filial.id} value={filial.id}>
+                      {filial.nome_fantasia || filial.razao_social} - {formatCNPJ(filial.cnpj)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -450,7 +455,7 @@ export default function Mercadorias() {
                 type="file"
                 accept=".txt"
                 onChange={handleImportEFD}
-                disabled={importing || !selectedTenant}
+                disabled={importing || !selectedFilial}
               />
             </div>
           </div>
@@ -480,15 +485,15 @@ export default function Mercadorias() {
           <div className="space-y-4 py-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Empresa</Label>
-                <Select value={selectedTenant} onValueChange={setSelectedTenant}>
+                <Label>Filial</Label>
+                <Select value={selectedFilial} onValueChange={setSelectedFilial}>
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione" />
                   </SelectTrigger>
                   <SelectContent>
-                    {tenants.map((tenant) => (
-                      <SelectItem key={tenant.id} value={tenant.id}>
-                        {tenant.nome_fantasia || tenant.razao_social}
+                    {filiais.map((filial) => (
+                      <SelectItem key={filial.id} value={filial.id}>
+                        {filial.nome_fantasia || filial.razao_social}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -512,16 +517,18 @@ export default function Mercadorias() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Mês/Ano</Label>
+                <Label htmlFor="mes_ano">Mês/Ano</Label>
                 <Input
+                  id="mes_ano"
                   type="month"
                   value={newMercadoria.mes_ano}
                   onChange={(e) => setNewMercadoria({ ...newMercadoria, mes_ano: e.target.value })}
                 />
               </div>
               <div className="space-y-2">
-                <Label>NCM</Label>
+                <Label htmlFor="ncm">NCM</Label>
                 <Input
+                  id="ncm"
                   placeholder="00000000"
                   value={newMercadoria.ncm}
                   onChange={(e) => setNewMercadoria({ ...newMercadoria, ncm: e.target.value })}
@@ -529,17 +536,19 @@ export default function Mercadorias() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label>Descrição</Label>
+              <Label htmlFor="descricao">Descrição</Label>
               <Input
-                placeholder="Descrição da mercadoria ou serviço"
+                id="descricao"
+                placeholder="Descrição do produto ou serviço"
                 value={newMercadoria.descricao}
                 onChange={(e) => setNewMercadoria({ ...newMercadoria, descricao: e.target.value })}
               />
             </div>
             <div className="grid grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label>Valor (R$)</Label>
+                <Label htmlFor="valor">Valor (R$)</Label>
                 <Input
+                  id="valor"
                   type="number"
                   step="0.01"
                   placeholder="0,00"
@@ -548,8 +557,9 @@ export default function Mercadorias() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>PIS (R$)</Label>
+                <Label htmlFor="pis">PIS (R$)</Label>
                 <Input
+                  id="pis"
                   type="number"
                   step="0.01"
                   placeholder="0,00"
@@ -558,8 +568,9 @@ export default function Mercadorias() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>COFINS (R$)</Label>
+                <Label htmlFor="cofins">COFINS (R$)</Label>
                 <Input
+                  id="cofins"
                   type="number"
                   step="0.01"
                   placeholder="0,00"
@@ -570,18 +581,11 @@ export default function Mercadorias() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setNewDialogOpen(false)} disabled={submitting}>
+            <Button variant="outline" onClick={() => setNewDialogOpen(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleNewMercadoria} disabled={submitting || !selectedTenant}>
-              {submitting ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Salvando...
-                </>
-              ) : (
-                'Salvar'
-              )}
+            <Button onClick={handleNewMercadoria} disabled={submitting || !selectedFilial}>
+              {submitting ? 'Salvando...' : 'Salvar'}
             </Button>
           </DialogFooter>
         </DialogContent>
