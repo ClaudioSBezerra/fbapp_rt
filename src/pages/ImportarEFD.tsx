@@ -163,11 +163,16 @@ export default function ImportarEFD() {
                 : job
             ));
             
-            // Show toast on completion
+            // Show toast on completion and redirect
             if (updatedJob.status === 'completed') {
               const counts = updatedJob.counts as ImportCounts;
               const total = counts.mercadorias + counts.energia_agua + counts.fretes;
-              toast.success(`Importação concluída! ${total} registros importados.`);
+              toast.success(`Importação concluída! ${total} registros importados. Redirecionando...`);
+              
+              // Redirect to Mercadorias after 2 seconds
+              setTimeout(() => {
+                navigate('/mercadorias');
+              }, 2000);
             } else if (updatedJob.status === 'failed') {
               toast.error(`Importação falhou: ${updatedJob.error_message || 'Erro desconhecido'}`);
             }
