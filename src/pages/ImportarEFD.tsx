@@ -7,11 +7,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Loader2, CheckCircle, FileText, ArrowRight, AlertCircle, Upload, Clock, XCircle, RefreshCw, Zap } from 'lucide-react';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { Loader2, CheckCircle, FileText, ArrowRight, AlertCircle, Upload, Clock, XCircle, RefreshCw, Zap, Trash2, AlertTriangle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
-
 interface ImportCounts {
   mercadorias: number;
   energia_agua: number;
@@ -87,6 +87,8 @@ export default function ImportarEFD() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [jobs, setJobs] = useState<ImportJob[]>([]);
   const [recordLimit, setRecordLimit] = useState<number>(0);
+  const [isClearing, setIsClearing] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { session } = useAuth();
   const navigate = useNavigate();
@@ -316,15 +318,105 @@ export default function ImportarEFD() {
   const activeJobs = jobs.filter(j => j.status === 'pending' || j.status === 'processing');
   const completedJobs = jobs.filter(j => j.status === 'completed' || j.status === 'failed' || j.status === 'cancelled');
 
+  const handleClearDatabase = async () => {
+    if (!session?.user?.id) return;
+    
+    setIsClearing(true);
+    try {
+      // Deletar dados das tabelas de registros importados
+      const { error: mercError } = await supabase
+        .from('mercadorias')
+        .delete()
+        .neq('id', '00000000-0000-0000-0000-000000000000');
+      
+      const { error: energiaError } = await supabase
+        .from('energia_agua')
+        .delete()
+        .neq('id', '00000000-0000-0000-0000-000000000000');
+      
+      const { error: fretesError } = await supabase
+        .from('fretes')
+        .delete()
+        .neq('id', '00000000-0000-0000-0000-000000000000');
+      
+      // Deletar histórico de importações do usuário
+      const { error: jobsError } = await supabase
+        .from('import_jobs')
+        .delete()
+        .eq('user_id', session.user.id);
+      
+      if (mercError || energiaError || fretesError || jobsError) {
+        console.error('Erros:', { mercError, energiaError, fretesError, jobsError });
+        throw new Error('Erro ao limpar alguns dados');
+      }
+      
+      setJobs([]);
+      toast.success('Base de dados limpa com sucesso!');
+      setShowClearConfirm(false);
+    } catch (error) {
+      console.error('Error clearing database:', error);
+      toast.error('Erro ao limpar base de dados');
+    } finally {
+      setIsClearing(false);
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
+      {/* Clear Database Confirmation Dialog */}
+      <AlertDialog open={showClearConfirm} onOpenChange={setShowClearConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5" />
+              Limpar Base Importada do SPED
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div>
+                <p>Esta ação irá remover permanentemente todos os dados importados:</p>
+                <ul className="list-disc list-inside mt-2 space-y-1">
+                  <li>Mercadorias</li>
+                  <li>Energia e Água</li>
+                  <li>Fretes</li>
+                  <li>Histórico de importações</li>
+                </ul>
+                <p className="mt-3 font-semibold text-destructive">
+                  Esta ação não pode ser desfeita!
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isClearing}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleClearDatabase}
+              disabled={isClearing}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isClearing && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+              Confirmar Limpeza
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Upload Card */}
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
           <CardTitle className="flex items-center gap-2">
             <Upload className="h-5 w-5" />
             Importar EFD
           </CardTitle>
+          <Button 
+            variant="outline" 
+            size="sm"
+            className="text-destructive border-destructive hover:bg-destructive hover:text-destructive-foreground"
+            onClick={() => setShowClearConfirm(true)}
+            disabled={uploading || isClearing}
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            Limpar Base
+          </Button>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
