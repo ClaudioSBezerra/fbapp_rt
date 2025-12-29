@@ -298,8 +298,23 @@ export default function Mercadorias() {
     }
   };
 
-  const totalEntradasPisCofins = filteredMercadorias.filter((m) => m.tipo === 'entrada').reduce((acc, m) => acc + m.pis + m.cofins, 0);
-  const totalSaidasPisCofins = filteredMercadorias.filter((m) => m.tipo === 'saida').reduce((acc, m) => acc + m.pis + m.cofins, 0);
+  const totaisEntradas = useMemo(() => {
+    const entradas = filteredMercadorias.filter((m) => m.tipo === 'entrada');
+    return {
+      valor: entradas.reduce((acc, m) => acc + m.valor, 0),
+      icms: entradas.reduce((acc, m) => acc + (m.icms || 0), 0),
+      pisCofins: entradas.reduce((acc, m) => acc + m.pis + m.cofins, 0),
+    };
+  }, [filteredMercadorias]);
+
+  const totaisSaidas = useMemo(() => {
+    const saidas = filteredMercadorias.filter((m) => m.tipo === 'saida');
+    return {
+      valor: saidas.reduce((acc, m) => acc + m.valor, 0),
+      icms: saidas.reduce((acc, m) => acc + (m.icms || 0), 0),
+      pisCofins: saidas.reduce((acc, m) => acc + m.pis + m.cofins, 0),
+    };
+  }, [filteredMercadorias]);
   const hasFiliais = filiais.length > 0;
 
   const handleClearDatabase = async () => {
@@ -416,9 +431,19 @@ export default function Mercadorias() {
               <ArrowDownRight className="h-4 w-4" /> Total Entradas (Créditos)
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-pis-cofins">{formatCurrency(totalEntradasPisCofins)}</p>
-            <p className="text-xs text-muted-foreground">PIS+COFINS acumulado</p>
+          <CardContent className="space-y-2">
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">Valor (VL_DOC):</span>
+              <span className="text-lg font-bold">{formatCurrency(totaisEntradas.valor)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">ICMS:</span>
+              <span className="text-lg font-bold">{formatCurrency(totaisEntradas.icms)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">PIS+COFINS:</span>
+              <span className="text-lg font-bold text-pis-cofins">{formatCurrency(totaisEntradas.pisCofins)}</span>
+            </div>
           </CardContent>
         </Card>
         <Card className="border-border/50">
@@ -427,9 +452,19 @@ export default function Mercadorias() {
               <ArrowUpRight className="h-4 w-4" /> Total Saídas (Débitos)
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-pis-cofins">{formatCurrency(totalSaidasPisCofins)}</p>
-            <p className="text-xs text-muted-foreground">PIS+COFINS acumulado</p>
+          <CardContent className="space-y-2">
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">Valor (VL_DOC):</span>
+              <span className="text-lg font-bold">{formatCurrency(totaisSaidas.valor)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">ICMS:</span>
+              <span className="text-lg font-bold">{formatCurrency(totaisSaidas.icms)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">PIS+COFINS:</span>
+              <span className="text-lg font-bold text-pis-cofins">{formatCurrency(totaisSaidas.pisCofins)}</span>
+            </div>
           </CardContent>
         </Card>
       </div>

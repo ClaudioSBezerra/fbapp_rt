@@ -237,8 +237,23 @@ export default function EnergiaAgua() {
     }
   };
 
-  const totalCreditos = filteredItems.filter((i) => i.tipo_operacao === 'credito').reduce((acc, i) => acc + i.pis + i.cofins, 0);
-  const totalDebitos = filteredItems.filter((i) => i.tipo_operacao === 'debito').reduce((acc, i) => acc + i.pis + i.cofins, 0);
+  const totaisCreditos = useMemo(() => {
+    const creditos = filteredItems.filter((i) => i.tipo_operacao === 'credito');
+    return {
+      valor: creditos.reduce((acc, i) => acc + i.valor, 0),
+      icms: creditos.reduce((acc, i) => acc + (i.icms || 0), 0),
+      pisCofins: creditos.reduce((acc, i) => acc + i.pis + i.cofins, 0),
+    };
+  }, [filteredItems]);
+
+  const totaisDebitos = useMemo(() => {
+    const debitos = filteredItems.filter((i) => i.tipo_operacao === 'debito');
+    return {
+      valor: debitos.reduce((acc, i) => acc + i.valor, 0),
+      icms: debitos.reduce((acc, i) => acc + (i.icms || 0), 0),
+      pisCofins: debitos.reduce((acc, i) => acc + i.pis + i.cofins, 0),
+    };
+  }, [filteredItems]);
 
   const hasFiliais = filiais.length > 0;
 
@@ -378,11 +393,19 @@ export default function EnergiaAgua() {
               Total Créditos
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-pis-cofins">
-              {formatCurrency(totalCreditos)}
-            </p>
-            <p className="text-xs text-muted-foreground">PIS+COFINS acumulado</p>
+          <CardContent className="space-y-2">
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">Valor (VL_DOC):</span>
+              <span className="text-lg font-bold">{formatCurrency(totaisCreditos.valor)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">ICMS:</span>
+              <span className="text-lg font-bold">{formatCurrency(totaisCreditos.icms)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">PIS+COFINS:</span>
+              <span className="text-lg font-bold text-pis-cofins">{formatCurrency(totaisCreditos.pisCofins)}</span>
+            </div>
           </CardContent>
         </Card>
 
@@ -393,11 +416,19 @@ export default function EnergiaAgua() {
               Total Débitos
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-pis-cofins">
-              {formatCurrency(totalDebitos)}
-            </p>
-            <p className="text-xs text-muted-foreground">PIS+COFINS acumulado</p>
+          <CardContent className="space-y-2">
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">Valor (VL_DOC):</span>
+              <span className="text-lg font-bold">{formatCurrency(totaisDebitos.valor)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">ICMS:</span>
+              <span className="text-lg font-bold">{formatCurrency(totaisDebitos.icms)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">PIS+COFINS:</span>
+              <span className="text-lg font-bold text-pis-cofins">{formatCurrency(totaisDebitos.pisCofins)}</span>
+            </div>
           </CardContent>
         </Card>
       </div>
