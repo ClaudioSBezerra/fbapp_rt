@@ -34,6 +34,33 @@ interface InsertCounts {
   fretes: number;
 }
 
+// Block limits control
+interface BlockLimits {
+  c100: { count: number; limit: number };
+  c500: { count: number; limit: number };
+  c600: { count: number; limit: number };
+  d100: { count: number; limit: number };
+  d500: { count: number; limit: number };
+}
+
+function createBlockLimits(limit: number): BlockLimits {
+  return {
+    c100: { count: 0, limit },
+    c500: { count: 0, limit },
+    c600: { count: 0, limit },
+    d100: { count: 0, limit },
+    d500: { count: 0, limit },
+  };
+}
+
+function allLimitsReached(limits: BlockLimits): boolean {
+  // If limit is 0, no limit is applied - never stop early
+  if (limits.c100.limit === 0) return false;
+  
+  // All blocks must have reached their limits
+  return Object.values(limits).every(b => b.count >= b.limit);
+}
+
 function parseNumber(value: string | undefined): number {
   if (!value) return 0;
   return parseFloat(value.replace(",", ".")) || 0;
@@ -49,19 +76,10 @@ function getPeriodFromHeader(fields: string[]): string {
   return "";
 }
 
-// Test limit: only import 100 C100 records from first filial
-const C100_LIMIT_FIRST_FILIAL = 100;
-
-interface C100LimitContext {
-  firstFilialCNPJ: string | null;
-  c100CountFirstFilial: number;
-}
-
 function processLine(
   line: string,
-  context: ProcessingContext,
-  c100Limit?: C100LimitContext
-): { record: ParsedRecord | null; context: ProcessingContext; c100Record?: { table: "mercadorias"; data: Record<string, any> } } {
+  context: ProcessingContext
+): { record: ParsedRecord | null; context: ProcessingContext; blockType?: string } {
   if (!VALID_PREFIXES.some(p => line.startsWith(p))) {
     return { record: null, context };
   }
@@ -73,6 +91,7 @@ function processLine(
 
   const registro = fields[1];
   let record: ParsedRecord | null = null;
+  let blockType: string | undefined;
 
   switch (registro) {
     case "0000":
@@ -90,10 +109,33 @@ function processLine(
       break;
 
     case "C100":
-      // C100 handled separately with limits
+      blockType = "c100";
+      if (fields.length > 11) {
+        const indOper = fields[2];
+        const tipo = indOper === "0" ? "entrada" : "saida";
+        const valorDoc = parseNumber(fields[11]);
+        
+        if (valorDoc > 0) {
+          record = {
+            table: "mercadorias",
+            data: {
+              tipo,
+              mes_ano: context.currentPeriod,
+              ncm: null,
+              descricao: `NF-e ${fields[8] || ""}`.trim().substring(0, 200) || "NF-e",
+              valor: valorDoc,
+              pis: parseNumber(fields[23]),
+              cofins: parseNumber(fields[25]),
+              icms: 0,
+              ipi: 0,
+            },
+          };
+        }
+      }
       break;
 
     case "C500":
+      blockType = "c500";
       if (fields.length > 10) {
         const indOper = fields[2];
         const tipoOperacao = indOper === "0" ? "entrada" : "saida";
@@ -121,6 +163,7 @@ function processLine(
       break;
 
     case "C600":
+      blockType = "c600";
       if (fields.length > 7) {
         const valorDoc = parseNumber(fields[7]);
         
@@ -144,6 +187,7 @@ function processLine(
       break;
 
     case "D100":
+      blockType = "d100";
       if (fields.length > 14) {
         const indOper = fields[2];
         const tipo = indOper === "0" ? "entrada" : "saida";
@@ -169,6 +213,7 @@ function processLine(
       break;
 
     case "D500":
+      blockType = "d500";
       if (fields.length > 11) {
         const indOper = fields[2];
         const tipo = indOper === "0" ? "entrada" : "saida";
@@ -194,7 +239,7 @@ function processLine(
       break;
   }
 
-  return { record, context };
+  return { record, context, blockType };
 }
 
 serve(async (req) => {
@@ -245,6 +290,10 @@ serve(async (req) => {
       );
     }
 
+    // Get record limit from job (0 = no limit)
+    const recordLimit = job.record_limit || 0;
+    console.log(`Job ${jobId}: Record limit per block = ${recordLimit === 0 ? 'unlimited' : recordLimit}`);
+
     // Update job status to processing
     await supabase
       .from("import_jobs")
@@ -292,6 +341,9 @@ serve(async (req) => {
       currentCNPJ: "",
     };
 
+    // Initialize block limits
+    const blockLimits = createBlockLimits(recordLimit);
+
     const flushBatch = async (table: keyof BatchBuffers): Promise<string | null> => {
       if (batches[table].length === 0) return null;
 
@@ -323,58 +375,16 @@ serve(async (req) => {
     let lastProgressUpdate = 0;
     let estimatedTotalLines = Math.ceil(job.file_size / 200); // Rough estimate: ~200 bytes per line
 
-    // C100 limit control for testing
-    let firstFilialCNPJ: string | null = null;
-    let c100CountFirstFilial = 0;
-
     console.log(`Job ${jobId}: Estimated total lines: ${estimatedTotalLines}`);
 
-    // Helper to process C100 with limits
-    const processC100WithLimit = (line: string, ctx: ProcessingContext): ParsedRecord | null => {
-      const fields = line.split("|");
-      if (fields.length <= 11) return null;
-
-      // Only import C100 from first filial, up to limit
-      if (firstFilialCNPJ === null) {
-        firstFilialCNPJ = ctx.currentCNPJ;
-        console.log(`Job ${jobId}: First filial CNPJ = ${firstFilialCNPJ}`);
-      }
-
-      // Skip C100 from other filiais
-      if (ctx.currentCNPJ !== firstFilialCNPJ) {
-        return null;
-      }
-
-      // Check limit for first filial
-      if (c100CountFirstFilial >= C100_LIMIT_FIRST_FILIAL) {
-        return null;
-      }
-
-      const indOper = fields[2];
-      const tipo = indOper === "0" ? "entrada" : "saida";
-      const valorDoc = parseNumber(fields[11]);
-      
-      if (valorDoc > 0) {
-        c100CountFirstFilial++;
-        return {
-          table: "mercadorias",
-          data: {
-            tipo,
-            mes_ano: ctx.currentPeriod,
-            ncm: null,
-            descricao: `NF-e ${fields[8] || ""}`.trim().substring(0, 200) || "NF-e",
-            valor: valorDoc,
-            pis: parseNumber(fields[23]),
-            cofins: parseNumber(fields[25]),
-            icms: 0,
-            ipi: 0,
-          },
-        };
-      }
-      return null;
-    };
-
     while (true) {
+      // Check if all limits reached - exit early
+      if (allLimitsReached(blockLimits)) {
+        console.log(`Job ${jobId}: All block limits reached, stopping early`);
+        reader.cancel();
+        break;
+      }
+
       const { done, value } = await reader.read();
       
       if (done) {
@@ -384,21 +394,17 @@ serve(async (req) => {
           const result = processLine(trimmedLine, context);
           context = result.context;
           
-          // Check for C100 separately
-          if (trimmedLine.startsWith("|C100|")) {
-            const c100Record = processC100WithLimit(trimmedLine, context);
-            if (c100Record) {
-              batches[c100Record.table].push({
-                ...c100Record.data,
+          if (result.record && result.blockType) {
+            const blockKey = result.blockType as keyof BlockLimits;
+            // Check block limit
+            if (blockLimits[blockKey].limit === 0 || blockLimits[blockKey].count < blockLimits[blockKey].limit) {
+              blockLimits[blockKey].count++;
+              const { table, data } = result.record;
+              batches[table].push({
+                ...data,
                 filial_id: job.filial_id,
               });
             }
-          } else if (result.record) {
-            const { table, data } = result.record;
-            batches[table].push({
-              ...data,
-              filial_id: job.filial_id,
-            });
           }
           linesProcessed++;
         }
@@ -410,40 +416,31 @@ serve(async (req) => {
       buffer = lines.pop() || ""; // Keep incomplete line in buffer
 
       for (const line of lines) {
+        // Check if all limits reached
+        if (allLimitsReached(blockLimits)) {
+          console.log(`Job ${jobId}: All block limits reached during line processing`);
+          break;
+        }
+
         const trimmedLine = line.trim();
         if (!trimmedLine) continue;
 
         const result = processLine(trimmedLine, context);
         context = result.context;
 
-        // Check for C100 separately with limit
-        if (trimmedLine.startsWith("|C100|")) {
-          const c100Record = processC100WithLimit(trimmedLine, context);
-          if (c100Record) {
-            batches[c100Record.table].push({
-              ...c100Record.data,
-              filial_id: job.filial_id,
-            });
-
-            if (batches[c100Record.table].length >= BATCH_SIZE) {
-              const err = await flushBatch(c100Record.table);
-              if (err) {
-                await supabase
-                  .from("import_jobs")
-                  .update({ 
-                    status: "failed", 
-                    error_message: `Failed to insert ${c100Record.table}: ${err}`,
-                    progress: Math.min(95, Math.round((linesProcessed / estimatedTotalLines) * 100)),
-                    total_lines: linesProcessed,
-                    counts,
-                    completed_at: new Date().toISOString() 
-                  })
-                  .eq("id", jobId);
-                throw new Error(`Insert error: ${err}`);
-              }
-            }
+        if (result.record && result.blockType) {
+          const blockKey = result.blockType as keyof BlockLimits;
+          
+          // Check block limit before processing
+          if (blockLimits[blockKey].limit > 0 && blockLimits[blockKey].count >= blockLimits[blockKey].limit) {
+            // Skip this record - limit reached for this block
+            linesProcessed++;
+            continue;
           }
-        } else if (result.record) {
+
+          // Increment block counter
+          blockLimits[blockKey].count++;
+          
           const { table, data } = result.record;
           batches[table].push({
             ...data,
@@ -500,9 +497,8 @@ serve(async (req) => {
       }
     }
 
-    // Log C100 limit info
-    console.log(`Job ${jobId}: C100 limit applied - first filial (${firstFilialCNPJ}): ${c100CountFirstFilial} records imported (limit: ${C100_LIMIT_FIRST_FILIAL})`);
-
+    // Log block limits info
+    console.log(`Job ${jobId}: Block counts - C100: ${blockLimits.c100.count}, C500: ${blockLimits.c500.count}, C600: ${blockLimits.c600.count}, D100: ${blockLimits.d100.count}, D500: ${blockLimits.d500.count}`);
 
     // Final flush
     const flushErr = await flushAllBatches();

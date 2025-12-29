@@ -255,6 +255,7 @@ export type Database = {
           filial_id: string | null
           id: string
           progress: number
+          record_limit: number | null
           started_at: string | null
           status: string
           total_lines: number
@@ -273,6 +274,7 @@ export type Database = {
           filial_id?: string | null
           id?: string
           progress?: number
+          record_limit?: number | null
           started_at?: string | null
           status?: string
           total_lines?: number
@@ -291,6 +293,7 @@ export type Database = {
           filial_id?: string | null
           id?: string
           progress?: number
+          record_limit?: number | null
           started_at?: string | null
           status?: string
           total_lines?: number

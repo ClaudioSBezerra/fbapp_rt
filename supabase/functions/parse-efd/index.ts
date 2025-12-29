@@ -66,7 +66,7 @@ serve(async (req) => {
 
     // Get metadata from JSON body (file already uploaded by frontend)
     const body = await req.json();
-    const { empresa_id: empresaId, file_path: filePath, file_name: fileName, file_size: fileSize } = body;
+    const { empresa_id: empresaId, file_path: filePath, file_name: fileName, file_size: fileSize, record_limit: recordLimit } = body;
 
     if (!filePath) {
       return new Response(
@@ -212,6 +212,7 @@ serve(async (req) => {
         progress: 0,
         total_lines: 0,
         counts: { mercadorias: 0, energia_agua: 0, fretes: 0 },
+        record_limit: recordLimit || 0,
       })
       .select()
       .single();

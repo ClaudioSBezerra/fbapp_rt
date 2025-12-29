@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Loader2, CheckCircle, FileText, ArrowRight, AlertCircle, Upload, Clock, XCircle, RefreshCw } from 'lucide-react';
+import { Loader2, CheckCircle, FileText, ArrowRight, AlertCircle, Upload, Clock, XCircle, RefreshCw, Zap } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
@@ -85,6 +86,7 @@ export default function ImportarEFD() {
   const [isDragOver, setIsDragOver] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [jobs, setJobs] = useState<ImportJob[]>([]);
+  const [recordLimit, setRecordLimit] = useState<number>(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { session } = useAuth();
   const navigate = useNavigate();
@@ -214,6 +216,7 @@ export default function ImportarEFD() {
           file_path: filePath,
           file_name: selectedFile.name,
           file_size: selectedFile.size,
+          record_limit: recordLimit,
         },
       });
 
@@ -324,20 +327,44 @@ export default function ImportarEFD() {
             Arquivos grandes são processados em background.
           </p>
 
-          <div className="space-y-2">
-            <Label htmlFor="empresa">Empresa Destino</Label>
-            <Select value={selectedEmpresa} onValueChange={setSelectedEmpresa} disabled={uploading}>
-              <SelectTrigger>
-                <SelectValue placeholder="Selecione a empresa" />
-              </SelectTrigger>
-              <SelectContent>
-                {empresas.map((empresa) => (
-                  <SelectItem key={empresa.id} value={empresa.id}>
-                    {empresa.nome}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="empresa">Empresa Destino</Label>
+              <Select value={selectedEmpresa} onValueChange={setSelectedEmpresa} disabled={uploading}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione a empresa" />
+                </SelectTrigger>
+                <SelectContent>
+                  {empresas.map((empresa) => (
+                    <SelectItem key={empresa.id} value={empresa.id}>
+                      {empresa.nome}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="recordLimit" className="flex items-center gap-2">
+                <Zap className="h-4 w-4 text-warning" />
+                Limite por Bloco (teste)
+              </Label>
+              <Input
+                id="recordLimit"
+                type="number"
+                min="0"
+                placeholder="0 = sem limite"
+                value={recordLimit || ''}
+                onChange={(e) => setRecordLimit(parseInt(e.target.value) || 0)}
+                disabled={uploading}
+                className="w-full"
+              />
+              <p className="text-xs text-muted-foreground">
+                {recordLimit > 0 
+                  ? `Importará até ${recordLimit} registros de cada bloco (C100, C500, C600, D100, D500)`
+                  : 'Importará todos os registros do arquivo'}
+              </p>
+            </div>
           </div>
 
           <div
