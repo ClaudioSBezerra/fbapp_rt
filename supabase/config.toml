@@ -2,3 +2,6 @@ project_id = "kocbdudzkbvgxwdacdrk"
 
 [functions.onboarding-complete]
 verify_jwt = false
+
+[functions.parse-efd]
+verify_jwt = false
