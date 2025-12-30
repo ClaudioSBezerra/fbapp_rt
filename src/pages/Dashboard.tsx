@@ -1,16 +1,24 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Package, Truck, Zap, Building2, Loader2, TrendingUp, TrendingDown } from 'lucide-react';
+import { Package, Truck, Zap, Building2, Loader2, TrendingUp, TrendingDown, Calendar } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 interface TotaisCategoria {
   valor: number;
   icms: number;
-  icmsProjetado: number;
   pisCofins: number;
-  ibsProjetado: number;
-  cbsProjetado: number;
   count: number;
+}
+
+interface Aliquota {
+  ano: number;
+  ibs_estadual: number;
+  ibs_municipal: number;
+  cbs: number;
+  reduc_icms: number;
 }
 
 interface DashboardStats {
@@ -32,12 +40,11 @@ interface DashboardStats {
 const emptyTotais: TotaisCategoria = {
   valor: 0,
   icms: 0,
-  icmsProjetado: 0,
   pisCofins: 0,
-  ibsProjetado: 0,
-  cbsProjetado: 0,
   count: 0,
 };
+
+const ANOS_PROJECAO = [2027, 2028, 2029, 2030, 2031, 2032, 2033];
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat('pt-BR', {
@@ -47,18 +54,24 @@ function formatCurrency(value: number): string {
 }
 
 function calcularTotais(
-  items: { valor?: number; icms?: number; pis?: number; cofins?: number }[],
-  aliquota: { reduc_icms: number; ibs_estadual: number; ibs_municipal: number; cbs: number } | null
+  items: { valor?: number; icms?: number; pis?: number; cofins?: number }[]
 ): TotaisCategoria {
   const valor = items.reduce((acc, i) => acc + (i.valor || 0), 0);
   const icms = items.reduce((acc, i) => acc + (i.icms || 0), 0);
   const pisCofins = items.reduce((acc, i) => acc + (i.pis || 0) + (i.cofins || 0), 0);
 
-  const icmsProjetado = aliquota ? icms * (1 - aliquota.reduc_icms / 100) : icms;
-  const ibsProjetado = aliquota ? valor * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
-  const cbsProjetado = aliquota ? valor * (aliquota.cbs / 100) : 0;
+  return { valor, icms, pisCofins, count: items.length };
+}
 
-  return { valor, icms, icmsProjetado, pisCofins, ibsProjetado, cbsProjetado, count: items.length };
+function calcularProjecoes(
+  totais: TotaisCategoria,
+  aliquota: Aliquota | null
+) {
+  const icmsProjetado = aliquota ? totais.icms * (1 - aliquota.reduc_icms / 100) : totais.icms;
+  const ibsProjetado = aliquota ? totais.valor * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
+  const cbsProjetado = aliquota ? totais.valor * (aliquota.cbs / 100) : 0;
+
+  return { icmsProjetado, ibsProjetado, cbsProjetado };
 }
 
 export default function Dashboard() {
@@ -68,7 +81,9 @@ export default function Dashboard() {
     energiaAgua: { creditos: { ...emptyTotais }, debitos: { ...emptyTotais } },
     totalEmpresas: 0,
   });
+  const [aliquotas, setAliquotas] = useState<Aliquota[]>([]);
   const [loading, setLoading] = useState(true);
+  const [anoProjecao, setAnoProjecao] = useState<number>(2027);
 
   useEffect(() => {
     const loadStats = async () => {
@@ -78,16 +93,16 @@ export default function Dashboard() {
           { data: fretes },
           { data: energiaAgua },
           { data: empresas },
-          { data: aliquotas },
+          { data: aliquotasData },
         ] = await Promise.all([
           supabase.from('mercadorias').select('tipo, valor, icms, pis, cofins'),
           supabase.from('fretes').select('tipo, valor, icms, pis, cofins'),
           supabase.from('energia_agua').select('tipo_operacao, valor, icms, pis, cofins'),
           supabase.from('empresas').select('id'),
-          supabase.from('aliquotas').select('*').eq('is_active', true).order('ano', { ascending: false }).limit(1),
+          supabase.from('aliquotas').select('ano, ibs_estadual, ibs_municipal, cbs, reduc_icms').order('ano'),
         ]);
 
-        const aliquota = aliquotas?.[0] || null;
+        if (aliquotasData) setAliquotas(aliquotasData);
 
         const mercadoriasEntradas = (mercadorias || []).filter((m) => m.tipo === 'entrada');
         const mercadoriasSaidas = (mercadorias || []).filter((m) => m.tipo === 'saida');
@@ -100,16 +115,16 @@ export default function Dashboard() {
 
         setStats({
           mercadorias: {
-            entradas: calcularTotais(mercadoriasEntradas, aliquota),
-            saidas: calcularTotais(mercadoriasSaidas, aliquota),
+            entradas: calcularTotais(mercadoriasEntradas),
+            saidas: calcularTotais(mercadoriasSaidas),
           },
           fretes: {
-            entradas: calcularTotais(fretesEntradas, aliquota),
-            saidas: calcularTotais(fretesSaidas, aliquota),
+            entradas: calcularTotais(fretesEntradas),
+            saidas: calcularTotais(fretesSaidas),
           },
           energiaAgua: {
-            creditos: calcularTotais(energiaCreditos, aliquota),
-            debitos: calcularTotais(energiaDebitos, aliquota),
+            creditos: calcularTotais(energiaCreditos),
+            debitos: calcularTotais(energiaDebitos),
           },
           totalEmpresas: empresas?.length || 0,
         });
@@ -123,29 +138,100 @@ export default function Dashboard() {
     loadStats();
   }, []);
 
-  // Calcular totais consolidados
-  const totaisConsolidados = {
-    entradas: {
+  const aliquotaSelecionada = useMemo(() => {
+    return aliquotas.find((a) => a.ano === anoProjecao) || null;
+  }, [aliquotas, anoProjecao]);
+
+  // Calcular totais consolidados com projeções baseadas no ano selecionado
+  const totaisConsolidados = useMemo(() => {
+    const entradas = {
       valor: stats.mercadorias.entradas.valor + stats.fretes.entradas.valor + stats.energiaAgua.creditos.valor,
       icms: stats.mercadorias.entradas.icms + stats.fretes.entradas.icms + stats.energiaAgua.creditos.icms,
-      icmsProjetado: stats.mercadorias.entradas.icmsProjetado + stats.fretes.entradas.icmsProjetado + stats.energiaAgua.creditos.icmsProjetado,
       pisCofins: stats.mercadorias.entradas.pisCofins + stats.fretes.entradas.pisCofins + stats.energiaAgua.creditos.pisCofins,
-      ibsProjetado: stats.mercadorias.entradas.ibsProjetado + stats.fretes.entradas.ibsProjetado + stats.energiaAgua.creditos.ibsProjetado,
-      cbsProjetado: stats.mercadorias.entradas.cbsProjetado + stats.fretes.entradas.cbsProjetado + stats.energiaAgua.creditos.cbsProjetado,
-    },
-    saidas: {
+    };
+
+    const saidas = {
       valor: stats.mercadorias.saidas.valor + stats.fretes.saidas.valor + stats.energiaAgua.debitos.valor,
       icms: stats.mercadorias.saidas.icms + stats.fretes.saidas.icms + stats.energiaAgua.debitos.icms,
-      icmsProjetado: stats.mercadorias.saidas.icmsProjetado + stats.fretes.saidas.icmsProjetado + stats.energiaAgua.debitos.icmsProjetado,
       pisCofins: stats.mercadorias.saidas.pisCofins + stats.fretes.saidas.pisCofins + stats.energiaAgua.debitos.pisCofins,
-      ibsProjetado: stats.mercadorias.saidas.ibsProjetado + stats.fretes.saidas.ibsProjetado + stats.energiaAgua.debitos.ibsProjetado,
-      cbsProjetado: stats.mercadorias.saidas.cbsProjetado + stats.fretes.saidas.cbsProjetado + stats.energiaAgua.debitos.cbsProjetado,
-    },
-  };
+    };
+
+    const projEntradas = calcularProjecoes({ ...entradas, count: 0 }, aliquotaSelecionada);
+    const projSaidas = calcularProjecoes({ ...saidas, count: 0 }, aliquotaSelecionada);
+
+    return {
+      entradas: { ...entradas, ...projEntradas },
+      saidas: { ...saidas, ...projSaidas },
+    };
+  }, [stats, aliquotaSelecionada]);
+
+  // Projeções por categoria para os cards
+  const projecoesMercadorias = useMemo(() => ({
+    entradas: { ...stats.mercadorias.entradas, ...calcularProjecoes(stats.mercadorias.entradas, aliquotaSelecionada) },
+    saidas: { ...stats.mercadorias.saidas, ...calcularProjecoes(stats.mercadorias.saidas, aliquotaSelecionada) },
+  }), [stats.mercadorias, aliquotaSelecionada]);
+
+  const projecoesFretes = useMemo(() => ({
+    entradas: { ...stats.fretes.entradas, ...calcularProjecoes(stats.fretes.entradas, aliquotaSelecionada) },
+    saidas: { ...stats.fretes.saidas, ...calcularProjecoes(stats.fretes.saidas, aliquotaSelecionada) },
+  }), [stats.fretes, aliquotaSelecionada]);
+
+  const projecoesEnergia = useMemo(() => ({
+    creditos: { ...stats.energiaAgua.creditos, ...calcularProjecoes(stats.energiaAgua.creditos, aliquotaSelecionada) },
+    debitos: { ...stats.energiaAgua.debitos, ...calcularProjecoes(stats.energiaAgua.debitos, aliquotaSelecionada) },
+  }), [stats.energiaAgua, aliquotaSelecionada]);
 
   const impostoAtualTotal = totaisConsolidados.saidas.icms + totaisConsolidados.saidas.pisCofins - (totaisConsolidados.entradas.icms + totaisConsolidados.entradas.pisCofins);
   const impostoProjetadoTotal = totaisConsolidados.saidas.icmsProjetado + totaisConsolidados.saidas.ibsProjetado + totaisConsolidados.saidas.cbsProjetado - (totaisConsolidados.entradas.icmsProjetado + totaisConsolidados.entradas.ibsProjetado + totaisConsolidados.entradas.cbsProjetado);
   const diferencaImposto = impostoProjetadoTotal - impostoAtualTotal;
+
+  // Dados para gráfico de evolução
+  const dadosEvolucao = useMemo(() => {
+    const totaisSaidas = {
+      valor: stats.mercadorias.saidas.valor + stats.fretes.saidas.valor + stats.energiaAgua.debitos.valor,
+      icms: stats.mercadorias.saidas.icms + stats.fretes.saidas.icms + stats.energiaAgua.debitos.icms,
+      pisCofins: stats.mercadorias.saidas.pisCofins + stats.fretes.saidas.pisCofins + stats.energiaAgua.debitos.pisCofins,
+    };
+
+    const totaisEntradas = {
+      valor: stats.mercadorias.entradas.valor + stats.fretes.entradas.valor + stats.energiaAgua.creditos.valor,
+      icms: stats.mercadorias.entradas.icms + stats.fretes.entradas.icms + stats.energiaAgua.creditos.icms,
+      pisCofins: stats.mercadorias.entradas.pisCofins + stats.fretes.entradas.pisCofins + stats.energiaAgua.creditos.pisCofins,
+    };
+
+    return ANOS_PROJECAO.map((ano) => {
+      const aliq = aliquotas.find((a) => a.ano === ano);
+      
+      if (!aliq) {
+        return {
+          ano,
+          icmsProjetado: totaisSaidas.icms - totaisEntradas.icms,
+          ibsCbsProjetado: 0,
+          total: totaisSaidas.icms - totaisEntradas.icms,
+          impostoAtual: totaisSaidas.icms + totaisSaidas.pisCofins - totaisEntradas.icms - totaisEntradas.pisCofins,
+        };
+      }
+
+      const icmsSaidas = totaisSaidas.icms * (1 - aliq.reduc_icms / 100);
+      const ibsSaidas = totaisSaidas.valor * ((aliq.ibs_estadual + aliq.ibs_municipal) / 100);
+      const cbsSaidas = totaisSaidas.valor * (aliq.cbs / 100);
+
+      const icmsEntradas = totaisEntradas.icms * (1 - aliq.reduc_icms / 100);
+      const ibsEntradas = totaisEntradas.valor * ((aliq.ibs_estadual + aliq.ibs_municipal) / 100);
+      const cbsEntradas = totaisEntradas.valor * (aliq.cbs / 100);
+
+      const icmsLiquido = icmsSaidas - icmsEntradas;
+      const ibsCbsLiquido = (ibsSaidas + cbsSaidas) - (ibsEntradas + cbsEntradas);
+
+      return {
+        ano,
+        icmsProjetado: icmsLiquido,
+        ibsCbsProjetado: ibsCbsLiquido,
+        total: icmsLiquido + ibsCbsLiquido,
+        impostoAtual: totaisSaidas.icms + totaisSaidas.pisCofins - totaisEntradas.icms - totaisEntradas.pisCofins,
+      };
+    });
+  }, [aliquotas, stats]);
 
   if (loading) {
     return (
@@ -163,7 +249,7 @@ export default function Dashboard() {
   }: {
     title: string;
     icon: React.ElementType;
-    totais: TotaisCategoria;
+    totais: TotaisCategoria & { icmsProjetado: number; ibsProjetado: number; cbsProjetado: number };
     variant: 'entrada' | 'saida';
   }) => (
     <Card className="border-border/50">
@@ -184,7 +270,7 @@ export default function Dashboard() {
           <span className="text-sm font-semibold">{formatCurrency(totais.icms)}</span>
         </div>
         <div className="flex justify-between items-center">
-          <span className="text-xs text-muted-foreground">ICMS Projetado:</span>
+          <span className="text-xs text-muted-foreground">ICMS Projetado ({anoProjecao}):</span>
           <span className="text-sm font-semibold">{formatCurrency(totais.icmsProjetado)}</span>
         </div>
         <div className="flex justify-between items-center">
@@ -192,11 +278,11 @@ export default function Dashboard() {
           <span className="text-sm font-semibold text-pis-cofins">{formatCurrency(totais.pisCofins)}</span>
         </div>
         <div className="flex justify-between items-center">
-          <span className="text-xs text-muted-foreground">IBS Projetado:</span>
+          <span className="text-xs text-muted-foreground">IBS Projetado ({anoProjecao}):</span>
           <span className="text-sm font-semibold text-ibs-cbs">{formatCurrency(totais.ibsProjetado)}</span>
         </div>
         <div className="flex justify-between items-center">
-          <span className="text-xs text-muted-foreground">CBS Projetado:</span>
+          <span className="text-xs text-muted-foreground">CBS Projetado ({anoProjecao}):</span>
           <span className="text-sm font-semibold text-ibs-cbs">{formatCurrency(totais.cbsProjetado)}</span>
         </div>
       </CardContent>
@@ -205,9 +291,25 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
-        <p className="text-muted-foreground">Visão geral consolidada da carga tributária atual vs projetada</p>
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
+          <p className="text-muted-foreground">Visão geral consolidada da carga tributária atual vs projetada</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Calendar className="h-4 w-4 text-muted-foreground" />
+          <Label className="text-sm font-medium">Ano Projeção:</Label>
+          <Select value={anoProjecao.toString()} onValueChange={(v) => setAnoProjecao(parseInt(v))}>
+            <SelectTrigger className="w-[120px]">
+              <SelectValue placeholder="Ano" />
+            </SelectTrigger>
+            <SelectContent>
+              {ANOS_PROJECAO.map((ano) => (
+                <SelectItem key={ano} value={ano.toString()}>{ano}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {/* Resumo Geral */}
@@ -236,7 +338,7 @@ export default function Dashboard() {
 
         <Card className="border-border/50">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Imposto Projetado (Líquido)</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Imposto Projetado {anoProjecao} (Líquido)</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-ibs-cbs">{formatCurrency(impostoProjetadoTotal)}</div>
@@ -246,7 +348,7 @@ export default function Dashboard() {
 
         <Card className={`border-border/50 ${diferencaImposto < 0 ? 'bg-green-500/10' : diferencaImposto > 0 ? 'bg-red-500/10' : ''}`}>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Diferença</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Diferença {anoProjecao}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className={`text-2xl font-bold ${diferencaImposto < 0 ? 'text-green-600' : diferencaImposto > 0 ? 'text-red-600' : ''}`}>
@@ -257,6 +359,67 @@ export default function Dashboard() {
         </Card>
       </div>
 
+      {/* Gráfico de Evolução */}
+      <Card className="border-border/50">
+        <CardHeader>
+          <CardTitle className="text-lg font-semibold flex items-center gap-2">
+            <TrendingUp className="h-5 w-5" />
+            Evolução da Carga Tributária Projetada (2027-2033)
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={dadosEvolucao}>
+              <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+              <XAxis dataKey="ano" className="text-xs" />
+              <YAxis 
+                tickFormatter={(v) => {
+                  if (v >= 1000000) return `${(v / 1000000).toFixed(1)}M`;
+                  if (v >= 1000) return `${(v / 1000).toFixed(0)}K`;
+                  return v.toFixed(0);
+                }} 
+                className="text-xs"
+              />
+              <Tooltip 
+                formatter={(v: number) => formatCurrency(v)}
+                labelFormatter={(label) => `Ano: ${label}`}
+                contentStyle={{ backgroundColor: 'hsl(var(--popover))', border: '1px solid hsl(var(--border))' }}
+              />
+              <Legend />
+              <Line 
+                type="monotone" 
+                dataKey="impostoAtual" 
+                name="Imposto Atual (ICMS+PIS/COFINS)" 
+                stroke="hsl(var(--muted-foreground))" 
+                strokeDasharray="5 5"
+                strokeWidth={2}
+              />
+              <Line 
+                type="monotone" 
+                dataKey="icmsProjetado" 
+                name="ICMS Projetado" 
+                stroke="hsl(220, 70%, 50%)" 
+                strokeWidth={2}
+              />
+              <Line 
+                type="monotone" 
+                dataKey="ibsCbsProjetado" 
+                name="IBS+CBS Projetado" 
+                stroke="hsl(142, 71%, 45%)" 
+                strokeWidth={2}
+              />
+              <Line 
+                type="monotone" 
+                dataKey="total" 
+                name="Total Projetado" 
+                stroke="hsl(24, 95%, 53%)" 
+                strokeWidth={3}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+
       {/* Mercadorias */}
       <div>
         <h2 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
@@ -266,13 +429,13 @@ export default function Dashboard() {
           <TotaisCard
             title="Entradas (Créditos)"
             icon={TrendingDown}
-            totais={stats.mercadorias.entradas}
+            totais={projecoesMercadorias.entradas}
             variant="entrada"
           />
           <TotaisCard
             title="Saídas (Débitos)"
             icon={TrendingUp}
-            totais={stats.mercadorias.saidas}
+            totais={projecoesMercadorias.saidas}
             variant="saida"
           />
         </div>
@@ -287,13 +450,13 @@ export default function Dashboard() {
           <TotaisCard
             title="Entradas (Créditos)"
             icon={TrendingDown}
-            totais={stats.fretes.entradas}
+            totais={projecoesFretes.entradas}
             variant="entrada"
           />
           <TotaisCard
             title="Saídas (Débitos)"
             icon={TrendingUp}
-            totais={stats.fretes.saidas}
+            totais={projecoesFretes.saidas}
             variant="saida"
           />
         </div>
@@ -308,13 +471,13 @@ export default function Dashboard() {
           <TotaisCard
             title="Créditos"
             icon={TrendingDown}
-            totais={stats.energiaAgua.creditos}
+            totais={projecoesEnergia.creditos}
             variant="entrada"
           />
           <TotaisCard
             title="Débitos"
             icon={TrendingUp}
-            totais={stats.energiaAgua.debitos}
+            totais={projecoesEnergia.debitos}
             variant="saida"
           />
         </div>

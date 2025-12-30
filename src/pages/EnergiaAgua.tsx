@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, ArrowDownRight, ArrowUpRight, Zap, Filter } from 'lucide-react';
+import { Plus, ArrowDownRight, ArrowUpRight, Zap, Filter, Calendar } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
@@ -86,6 +86,8 @@ export default function EnergiaAgua() {
   // Filters
   const [filterFilial, setFilterFilial] = useState<string>('all');
   const [filterMesAno, setFilterMesAno] = useState<string>('all');
+  const [anoProjecao, setAnoProjecao] = useState<number>(2027);
+  const ANOS_PROJECAO = [2027, 2028, 2029, 2030, 2031, 2032, 2033];
 
   const [newItem, setNewItem] = useState({
     tipo_operacao: 'credito',
@@ -237,19 +239,23 @@ export default function EnergiaAgua() {
     }
   };
 
+  const aliquotaSelecionada = useMemo(() => {
+    return aliquotas.find((a) => a.ano === anoProjecao) || null;
+  }, [aliquotas, anoProjecao]);
+
   const totaisCreditos = useMemo(() => {
     const creditos = filteredItems.filter((i) => i.tipo_operacao === 'credito');
     const valor = creditos.reduce((acc, i) => acc + i.valor, 0);
     const icms = creditos.reduce((acc, i) => acc + (i.icms || 0), 0);
     const pisCofins = creditos.reduce((acc, i) => acc + i.pis + i.cofins, 0);
     
-    const aliquota = aliquotas[0];
+    const aliquota = aliquotaSelecionada;
     const icmsProjetado = aliquota ? icms * (1 - (aliquota.reduc_icms / 100)) : icms;
     const ibsProjetado = aliquota ? valor * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
     const cbsProjetado = aliquota ? valor * (aliquota.cbs / 100) : 0;
     
     return { valor, icms, pisCofins, icmsProjetado, ibsProjetado, cbsProjetado };
-  }, [filteredItems, aliquotas]);
+  }, [filteredItems, aliquotaSelecionada]);
 
   const totaisDebitos = useMemo(() => {
     const debitos = filteredItems.filter((i) => i.tipo_operacao === 'debito');
@@ -257,13 +263,13 @@ export default function EnergiaAgua() {
     const icms = debitos.reduce((acc, i) => acc + (i.icms || 0), 0);
     const pisCofins = debitos.reduce((acc, i) => acc + i.pis + i.cofins, 0);
     
-    const aliquota = aliquotas[0];
+    const aliquota = aliquotaSelecionada;
     const icmsProjetado = aliquota ? icms * (1 - (aliquota.reduc_icms / 100)) : icms;
     const ibsProjetado = aliquota ? valor * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
     const cbsProjetado = aliquota ? valor * (aliquota.cbs / 100) : 0;
     
     return { valor, icms, pisCofins, icmsProjetado, ibsProjetado, cbsProjetado };
-  }, [filteredItems, aliquotas]);
+  }, [filteredItems, aliquotaSelecionada]);
 
   const hasFiliais = filiais.length > 0;
 
@@ -298,8 +304,7 @@ export default function EnergiaAgua() {
           </TableHeader>
           <TableBody>
             {data.map((row, index) => {
-              const year = getYearFromMesAno(row.mes_ano);
-              const aliquota = aliquotas.find((a) => a.ano === year) || aliquotas[0];
+              const aliquota = aliquotaSelecionada;
               
               const vlIcms = row.icms;
               const vlIcmsProjetado = aliquota ? vlIcms * (1 - (aliquota.reduc_icms / 100)) : vlIcms;
@@ -391,6 +396,20 @@ export default function EnergiaAgua() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="flex items-center gap-2">
+              <Calendar className="h-4 w-4 text-muted-foreground" />
+              <Label className="text-sm">Ano Projeção:</Label>
+              <Select value={anoProjecao.toString()} onValueChange={(v) => setAnoProjecao(parseInt(v))}>
+                <SelectTrigger className="w-[120px]">
+                  <SelectValue placeholder="Ano" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ANOS_PROJECAO.map((ano) => (
+                    <SelectItem key={ano} value={ano.toString()}>{ano}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -400,7 +419,7 @@ export default function EnergiaAgua() {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
               <ArrowDownRight className="h-4 w-4" />
-              Total Créditos
+              Total Créditos - Projeção {anoProjecao}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -435,7 +454,7 @@ export default function EnergiaAgua() {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
               <ArrowUpRight className="h-4 w-4" />
-              Total Débitos
+              Total Débitos - Projeção {anoProjecao}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
