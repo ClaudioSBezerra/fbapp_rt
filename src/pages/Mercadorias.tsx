@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, ArrowUpRight, ArrowDownRight, Building2, Filter, Trash2, AlertTriangle } from 'lucide-react';
+import { Plus, ArrowUpRight, ArrowDownRight, Building2, Filter, Trash2, AlertTriangle, Calendar } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -74,9 +74,11 @@ interface MercadoriasTableProps {
   data: AggregatedRow[];
   aliquotas: Aliquota[];
   tipo: 'entrada' | 'saida';
+  anoProjecao: number;
 }
 
-function MercadoriasTable({ data, aliquotas, tipo }: MercadoriasTableProps) {
+function MercadoriasTable({ data, aliquotas, tipo, anoProjecao }: MercadoriasTableProps) {
+  const aliquotaSelecionada = aliquotas.find((a) => a.ano === anoProjecao) || aliquotas[0];
   if (data.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -113,8 +115,7 @@ function MercadoriasTable({ data, aliquotas, tipo }: MercadoriasTableProps) {
         </TableHeader>
         <TableBody>
           {data.map((row, index) => {
-            const year = getYearFromMesAno(row.mes_ano);
-            const aliquota = aliquotas.find((a) => a.ano === year) || aliquotas[0];
+            const aliquota = aliquotaSelecionada;
             
             const vlIcms = row.icms;
             const vlIcmsProjetado = aliquota ? vlIcms * (1 - (aliquota.reduc_icms / 100)) : vlIcms;
@@ -165,6 +166,8 @@ export default function Mercadorias() {
   // Filters
   const [filterFilial, setFilterFilial] = useState<string>('all');
   const [filterMesAno, setFilterMesAno] = useState<string>('all');
+  const [anoProjecao, setAnoProjecao] = useState<number>(2027);
+  const ANOS_PROJECAO = [2027, 2028, 2029, 2030, 2031, 2032, 2033];
 
   const [newMercadoria, setNewMercadoria] = useState({
     tipo: 'entrada',
@@ -298,19 +301,23 @@ export default function Mercadorias() {
     }
   };
 
+  const aliquotaSelecionada = useMemo(() => {
+    return aliquotas.find((a) => a.ano === anoProjecao) || null;
+  }, [aliquotas, anoProjecao]);
+
   const totaisEntradas = useMemo(() => {
     const entradas = filteredMercadorias.filter((m) => m.tipo === 'entrada');
     const valor = entradas.reduce((acc, m) => acc + m.valor, 0);
     const icms = entradas.reduce((acc, m) => acc + (m.icms || 0), 0);
     const pisCofins = entradas.reduce((acc, m) => acc + m.pis + m.cofins, 0);
     
-    const aliquota = aliquotas[0];
+    const aliquota = aliquotaSelecionada;
     const icmsProjetado = aliquota ? icms * (1 - (aliquota.reduc_icms / 100)) : icms;
     const ibsProjetado = aliquota ? valor * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
     const cbsProjetado = aliquota ? valor * (aliquota.cbs / 100) : 0;
     
     return { valor, icms, pisCofins, icmsProjetado, ibsProjetado, cbsProjetado };
-  }, [filteredMercadorias, aliquotas]);
+  }, [filteredMercadorias, aliquotaSelecionada]);
 
   const totaisSaidas = useMemo(() => {
     const saidas = filteredMercadorias.filter((m) => m.tipo === 'saida');
@@ -318,13 +325,13 @@ export default function Mercadorias() {
     const icms = saidas.reduce((acc, m) => acc + (m.icms || 0), 0);
     const pisCofins = saidas.reduce((acc, m) => acc + m.pis + m.cofins, 0);
     
-    const aliquota = aliquotas[0];
+    const aliquota = aliquotaSelecionada;
     const icmsProjetado = aliquota ? icms * (1 - (aliquota.reduc_icms / 100)) : icms;
     const ibsProjetado = aliquota ? valor * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
     const cbsProjetado = aliquota ? valor * (aliquota.cbs / 100) : 0;
     
     return { valor, icms, pisCofins, icmsProjetado, ibsProjetado, cbsProjetado };
-  }, [filteredMercadorias, aliquotas]);
+  }, [filteredMercadorias, aliquotaSelecionada]);
   const hasFiliais = filiais.length > 0;
 
   const handleClearDatabase = async () => {
@@ -430,6 +437,20 @@ export default function Mercadorias() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="flex items-center gap-2">
+              <Calendar className="h-4 w-4 text-muted-foreground" />
+              <Label className="text-sm">Ano Projeção:</Label>
+              <Select value={anoProjecao.toString()} onValueChange={(v) => setAnoProjecao(parseInt(v))}>
+                <SelectTrigger className="w-[120px]">
+                  <SelectValue placeholder="Ano" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ANOS_PROJECAO.map((ano) => (
+                    <SelectItem key={ano} value={ano.toString()}>{ano}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -438,7 +459,7 @@ export default function Mercadorias() {
         <Card className="border-border/50">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <ArrowDownRight className="h-4 w-4" /> Total Entradas (Créditos)
+              <ArrowDownRight className="h-4 w-4" /> Total Entradas (Créditos) - Projeção {anoProjecao}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -471,7 +492,7 @@ export default function Mercadorias() {
         <Card className="border-border/50">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <ArrowUpRight className="h-4 w-4" /> Total Saídas (Débitos)
+              <ArrowUpRight className="h-4 w-4" /> Total Saídas (Débitos) - Projeção {anoProjecao}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -519,10 +540,10 @@ export default function Mercadorias() {
           </CardHeader>
           <CardContent>
             <TabsContent value="entradas" className="mt-0">
-              {loading ? <div className="py-12 text-center text-muted-foreground">Carregando...</div> : <MercadoriasTable data={entradasAgregadas} aliquotas={aliquotas} tipo="entrada" />}
+              {loading ? <div className="py-12 text-center text-muted-foreground">Carregando...</div> : <MercadoriasTable data={entradasAgregadas} aliquotas={aliquotas} tipo="entrada" anoProjecao={anoProjecao} />}
             </TabsContent>
             <TabsContent value="saidas" className="mt-0">
-              {loading ? <div className="py-12 text-center text-muted-foreground">Carregando...</div> : <MercadoriasTable data={saidasAgregadas} aliquotas={aliquotas} tipo="saida" />}
+              {loading ? <div className="py-12 text-center text-muted-foreground">Carregando...</div> : <MercadoriasTable data={saidasAgregadas} aliquotas={aliquotas} tipo="saida" anoProjecao={anoProjecao} />}
             </TabsContent>
           </CardContent>
         </Tabs>
