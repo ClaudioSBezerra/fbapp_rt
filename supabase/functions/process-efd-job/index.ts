@@ -9,6 +9,10 @@ const corsHeaders = {
 const BATCH_SIZE = 500;
 const PROGRESS_UPDATE_INTERVAL = 5000; // Update progress every 5k lines
 
+// Chunk processing limits
+const MAX_LINES_PER_CHUNK = 100000; // Process max 100k lines per execution
+const MAX_EXECUTION_TIME_MS = 45000; // Stop after 45 seconds to have safety margin
+
 // Only process these record types
 const VALID_PREFIXES = ["|0000|", "|C010|", "|C100|", "|C500|", "|C600|", "|D010|", "|D100|", "|D500|"];
 
@@ -310,15 +314,33 @@ serve(async (req) => {
       );
     }
 
+    // Check if job is already completed
+    if (job.status === "completed") {
+      console.log(`Job ${jobId}: Already completed`);
+      return new Response(
+        JSON.stringify({ success: true, message: "Job already completed" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Get resumption info
+    const startByte = job.bytes_processed || 0;
+    const chunkNumber = (job.chunk_number || 0) + 1;
+    const isResuming = startByte > 0;
+
+    console.log(`Job ${jobId}: Chunk ${chunkNumber}, ${isResuming ? `resuming from byte ${startByte}` : 'starting fresh'}`);
+
     // Get record limit from job (0 = no limit)
     const recordLimit = job.record_limit || 0;
     console.log(`Job ${jobId}: Limit configuration - C100: ${recordLimit === 0 ? 'unlimited' : recordLimit}, C500/C600/D100/D500: unlimited`);
 
-    // Update job status to processing
-    await supabase
-      .from("import_jobs")
-      .update({ status: "processing", started_at: new Date().toISOString() })
-      .eq("id", jobId);
+    // Update job status to processing (only on first chunk)
+    if (!isResuming) {
+      await supabase
+        .from("import_jobs")
+        .update({ status: "processing", started_at: new Date().toISOString() })
+        .eq("id", jobId);
+    }
 
     console.log(`Job ${jobId}: Creating signed URL for ${job.file_path}`);
 
@@ -343,9 +365,33 @@ serve(async (req) => {
       );
     }
 
-    // Fetch file as stream - does NOT load entire file into memory
-    const fetchResponse = await fetch(signedUrlData.signedUrl);
+    // Fetch file as stream with Range header for resumption
+    const fetchHeaders: HeadersInit = {};
+    if (startByte > 0) {
+      fetchHeaders['Range'] = `bytes=${startByte}-`;
+      console.log(`Job ${jobId}: Using Range header: bytes=${startByte}-`);
+    }
+
+    const fetchResponse = await fetch(signedUrlData.signedUrl, { headers: fetchHeaders });
     if (!fetchResponse.ok || !fetchResponse.body) {
+      // 416 Range Not Satisfiable means we've reached end of file
+      if (fetchResponse.status === 416) {
+        console.log(`Job ${jobId}: Range not satisfiable - file fully processed`);
+        // Mark as completed
+        await supabase
+          .from("import_jobs")
+          .update({ 
+            status: "completed", 
+            progress: 100,
+            completed_at: new Date().toISOString() 
+          })
+          .eq("id", jobId);
+        return new Response(
+          JSON.stringify({ success: true, message: "File fully processed" }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      
       console.error("Fetch error:", fetchResponse.status, fetchResponse.statusText);
       await supabase
         .from("import_jobs")
@@ -361,7 +407,10 @@ serve(async (req) => {
       );
     }
 
-    console.log(`Job ${jobId}: Stream connected, starting processing`);
+    console.log(`Job ${jobId}: Stream connected, starting chunk ${chunkNumber} processing`);
+
+    // Start time for chunk limit
+    const chunkStartTime = Date.now();
 
     // STREAMING PROCESSING - read file chunk by chunk
     const batches: BatchBuffers = {
@@ -369,11 +418,15 @@ serve(async (req) => {
       energia_agua: [],
       fretes: [],
     };
+    
+    // Initialize counts with existing values (for resumption)
+    const existingCounts = job.counts as InsertCounts || { mercadorias: 0, energia_agua: 0, fretes: 0 };
     const counts: InsertCounts = {
-      mercadorias: 0,
-      energia_agua: 0,
-      fretes: 0,
+      mercadorias: existingCounts.mercadorias || 0,
+      energia_agua: existingCounts.energia_agua || 0,
+      fretes: existingCounts.fretes || 0,
     };
+    
     let context: ProcessingContext = {
       currentPeriod: "",
       currentCNPJ: "",
@@ -381,6 +434,9 @@ serve(async (req) => {
 
     // Initialize block limits
     const blockLimits = createBlockLimits(recordLimit);
+
+    // Track bytes processed in this chunk
+    let bytesProcessedInChunk = 0;
 
     const flushBatch = async (table: keyof BatchBuffers): Promise<string | null> => {
       if (batches[table].length === 0) return null;
@@ -408,13 +464,27 @@ serve(async (req) => {
     const reader = fetchResponse.body.pipeThrough(new TextDecoderStream()).getReader();
     
     let buffer = "";
-    let linesProcessed = 0;
+    let linesProcessedInChunk = 0;
+    let totalLinesProcessed = job.total_lines || 0;
     let lastProgressUpdate = 0;
     let estimatedTotalLines = Math.ceil(job.file_size / 200); // Rough estimate: ~200 bytes per line
 
     console.log(`Job ${jobId}: Estimated total lines: ${estimatedTotalLines}`);
 
+    let shouldContinueNextChunk = false;
+    let reachedChunkLimit = false;
+
     while (true) {
+      // Check if we've hit chunk limits
+      const elapsedTime = Date.now() - chunkStartTime;
+      if (elapsedTime > MAX_EXECUTION_TIME_MS || linesProcessedInChunk >= MAX_LINES_PER_CHUNK) {
+        console.log(`Job ${jobId}: Chunk limit reached (time: ${elapsedTime}ms, lines: ${linesProcessedInChunk})`);
+        shouldContinueNextChunk = true;
+        reachedChunkLimit = true;
+        reader.cancel();
+        break;
+      }
+
       // Check if all limits reached - exit early
       if (allLimitsReached(blockLimits)) {
         console.log(`Job ${jobId}: All block limits reached, stopping early`);
@@ -443,16 +513,29 @@ serve(async (req) => {
               });
             }
           }
-          linesProcessed++;
+          linesProcessedInChunk++;
+          totalLinesProcessed++;
         }
         break;
       }
+
+      // Track bytes for resumption
+      bytesProcessedInChunk += new TextEncoder().encode(value).length;
 
       buffer += value;
       const lines = buffer.split("\n");
       buffer = lines.pop() || ""; // Keep incomplete line in buffer
 
       for (const line of lines) {
+        // Check chunk limits inside loop
+        const elapsedTimeInLoop = Date.now() - chunkStartTime;
+        if (elapsedTimeInLoop > MAX_EXECUTION_TIME_MS || linesProcessedInChunk >= MAX_LINES_PER_CHUNK) {
+          console.log(`Job ${jobId}: Chunk limit reached in loop (time: ${elapsedTimeInLoop}ms, lines: ${linesProcessedInChunk})`);
+          shouldContinueNextChunk = true;
+          reachedChunkLimit = true;
+          break;
+        }
+
         // Check if all limits reached
         if (allLimitsReached(blockLimits)) {
           console.log(`Job ${jobId}: All block limits reached during line processing`);
@@ -471,7 +554,8 @@ serve(async (req) => {
           // Check block limit before processing
           if (blockLimits[blockKey].limit > 0 && blockLimits[blockKey].count >= blockLimits[blockKey].limit) {
             // Skip this record - limit reached for this block
-            linesProcessed++;
+            linesProcessedInChunk++;
+            totalLinesProcessed++;
             continue;
           }
 
@@ -492,8 +576,8 @@ serve(async (req) => {
                 .update({ 
                   status: "failed", 
                   error_message: `Failed to insert ${table}: ${err}`,
-                  progress: Math.min(95, Math.round((linesProcessed / estimatedTotalLines) * 100)),
-                  total_lines: linesProcessed,
+                  progress: Math.min(95, Math.round((totalLinesProcessed / estimatedTotalLines) * 100)),
+                  total_lines: totalLinesProcessed,
                   counts,
                   completed_at: new Date().toISOString() 
                 })
@@ -503,10 +587,11 @@ serve(async (req) => {
           }
         }
 
-        linesProcessed++;
+        linesProcessedInChunk++;
+        totalLinesProcessed++;
 
         // Update progress periodically and check for cancellation
-        if (linesProcessed - lastProgressUpdate >= PROGRESS_UPDATE_INTERVAL) {
+        if (linesProcessedInChunk - lastProgressUpdate >= PROGRESS_UPDATE_INTERVAL) {
           // Check if job was cancelled
           const { data: currentJob } = await supabase
             .from("import_jobs")
@@ -523,21 +608,26 @@ serve(async (req) => {
             );
           }
 
-          const progress = Math.min(95, Math.round((linesProcessed / estimatedTotalLines) * 100));
+          const progress = Math.min(95, Math.round((totalLinesProcessed / estimatedTotalLines) * 100));
           await supabase
             .from("import_jobs")
-            .update({ progress, total_lines: linesProcessed, counts })
+            .update({ progress, total_lines: totalLinesProcessed, counts })
             .eq("id", jobId);
-          lastProgressUpdate = linesProcessed;
-          console.log(`Job ${jobId}: Progress ${progress}% (${linesProcessed} lines, mercadorias: ${counts.mercadorias}, energia_agua: ${counts.energia_agua}, fretes: ${counts.fretes})`);
+          lastProgressUpdate = linesProcessedInChunk;
+          console.log(`Job ${jobId}: Progress ${progress}% (${totalLinesProcessed} lines, mercadorias: ${counts.mercadorias}, energia_agua: ${counts.energia_agua}, fretes: ${counts.fretes})`);
         }
+      }
+
+      // Break outer loop if we hit chunk limit
+      if (reachedChunkLimit) {
+        break;
       }
     }
 
     // Log block limits info
     console.log(`Job ${jobId}: Block counts - C100: ${blockLimits.c100.count}, C500: ${blockLimits.c500.count}, C600: ${blockLimits.c600.count}, D100: ${blockLimits.d100.count}, D500: ${blockLimits.d500.count}`);
 
-    // Final flush
+    // Final flush for this chunk
     const flushErr = await flushAllBatches();
     if (flushErr) {
       await supabase
@@ -546,7 +636,7 @@ serve(async (req) => {
           status: "failed", 
           error_message: `Final flush error: ${flushErr}`,
           progress: 100,
-          total_lines: linesProcessed,
+          total_lines: totalLinesProcessed,
           counts,
           completed_at: new Date().toISOString() 
         })
@@ -554,8 +644,56 @@ serve(async (req) => {
       throw new Error(`Final flush error: ${flushErr}`);
     }
 
+    // If we need to continue with another chunk
+    if (shouldContinueNextChunk) {
+      const newBytesProcessed = startByte + bytesProcessedInChunk;
+      const progress = Math.min(95, Math.round((totalLinesProcessed / estimatedTotalLines) * 100));
+      
+      console.log(`Job ${jobId}: Chunk ${chunkNumber} completed, saving progress. Bytes: ${newBytesProcessed}, Lines: ${totalLinesProcessed}`);
+      
+      // Save progress for resumption
+      await supabase
+        .from("import_jobs")
+        .update({ 
+          bytes_processed: newBytesProcessed,
+          chunk_number: chunkNumber,
+          progress,
+          total_lines: totalLinesProcessed,
+          counts
+        })
+        .eq("id", jobId);
+
+      // Re-invoke self to continue processing
+      console.log(`Job ${jobId}: Invoking next chunk...`);
+      const selfUrl = `${supabaseUrl}/functions/v1/process-efd-job`;
+      
+      fetch(selfUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${supabaseKey}`,
+        },
+        body: JSON.stringify({ job_id: jobId }),
+      }).catch(err => {
+        console.error(`Job ${jobId}: Failed to invoke next chunk:`, err);
+      });
+
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          message: `Chunk ${chunkNumber} completed, continuing...`,
+          chunk_number: chunkNumber,
+          bytes_processed: newBytesProcessed,
+          lines_processed: totalLinesProcessed,
+          counts
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Job fully completed
     const totalRecords = counts.mercadorias + counts.energia_agua + counts.fretes;
-    console.log(`Job ${jobId}: Completed! Total lines: ${linesProcessed}, Total records: ${totalRecords}`);
+    console.log(`Job ${jobId}: Completed! Total lines: ${totalLinesProcessed}, Total records: ${totalRecords}`);
 
     // Update job as completed
     await supabase
@@ -563,7 +701,7 @@ serve(async (req) => {
       .update({ 
         status: "completed", 
         progress: 100,
-        total_lines: linesProcessed,
+        total_lines: totalLinesProcessed,
         counts,
         completed_at: new Date().toISOString() 
       })
