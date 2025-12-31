@@ -250,6 +250,8 @@ export type Database = {
       }
       import_jobs: {
         Row: {
+          bytes_processed: number | null
+          chunk_number: number | null
           completed_at: string | null
           counts: Json
           created_at: string
@@ -269,6 +271,8 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          bytes_processed?: number | null
+          chunk_number?: number | null
           completed_at?: string | null
           counts?: Json
           created_at?: string
@@ -288,6 +292,8 @@ export type Database = {
           user_id: string
         }
         Update: {
+          bytes_processed?: number | null
+          chunk_number?: number | null
           completed_at?: string | null
           counts?: Json
           created_at?: string
