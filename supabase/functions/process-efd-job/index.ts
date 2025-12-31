@@ -43,22 +43,27 @@ interface BlockLimits {
   d500: { count: number; limit: number };
 }
 
-function createBlockLimits(limit: number): BlockLimits {
+function createBlockLimits(c100Limit: number): BlockLimits {
+  // Se c100Limit = 0, significa sem limite para todos (importação completa)
+  // Se c100Limit > 0, aplica limite apenas ao C100, demais blocos sem limite
   return {
-    c100: { count: 0, limit },
-    c500: { count: 0, limit },
-    c600: { count: 0, limit },
-    d100: { count: 0, limit },
-    d500: { count: 0, limit },
+    c100: { count: 0, limit: c100Limit },  // Usa o limite definido
+    c500: { count: 0, limit: 0 },          // Sempre sem limite - importa todos
+    c600: { count: 0, limit: 0 },          // Sempre sem limite - importa todos
+    d100: { count: 0, limit: 0 },          // Sempre sem limite - importa todos
+    d500: { count: 0, limit: 0 },          // Sempre sem limite - importa todos
   };
 }
 
 function allLimitsReached(limits: BlockLimits): boolean {
-  // If limit is 0, no limit is applied - never stop early
-  if (limits.c100.limit === 0) return false;
+  // Pegar apenas blocos que têm limite definido (limit > 0)
+  const blocksWithLimits = Object.values(limits).filter(b => b.limit > 0);
   
-  // All blocks must have reached their limits
-  return Object.values(limits).every(b => b.count >= b.limit);
+  // Se nenhum bloco tem limite (todos = 0), nunca para antecipadamente
+  if (blocksWithLimits.length === 0) return false;
+  
+  // Retorna true apenas se TODOS os blocos COM limite atingiram seus limites
+  return blocksWithLimits.every(b => b.count >= b.limit);
 }
 
 function parseNumber(value: string | undefined): number {
@@ -307,7 +312,7 @@ serve(async (req) => {
 
     // Get record limit from job (0 = no limit)
     const recordLimit = job.record_limit || 0;
-    console.log(`Job ${jobId}: Record limit per block = ${recordLimit === 0 ? 'unlimited' : recordLimit}`);
+    console.log(`Job ${jobId}: Limit configuration - C100: ${recordLimit === 0 ? 'unlimited' : recordLimit}, C500/C600/D100/D500: unlimited`);
 
     // Update job status to processing
     await supabase
