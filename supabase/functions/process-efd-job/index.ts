@@ -185,34 +185,65 @@ function processLine(
       break;
 
     case "C500":
-      // Layout EFD ICMS/IPI - C500 (Energia/Água):
-      // 2=IND_OPER, 4=COD_PART, 5=COD_MOD, 7=SER, 10=VL_DOC, 13=VL_ICMS, 16=VL_PIS, 18=VL_COFINS
+      // Energia/Água - layout diferente para ICMS/IPI e Contribuições
       blockType = "c500";
-      if (fields.length > 18) {
-        const indOper = fields[2];
-        const tipoOperacao = indOper === "0" ? "credito" : "debito";
-        const codMod = fields[5] || "";
-        // Only process energia (06) or agua (29), ignore other codes
-        const tipoServico = codMod === "06" ? "energia" : codMod === "29" ? "agua" : null;
-        const cnpjFornecedor = fields[4]?.replace(/\D/g, "") || null;
-        const valorDoc = parseNumber(fields[10]);
+      
+      if (context.efdType === 'contribuicoes') {
+        // Layout EFD Contribuições - C500 (Energia/Água/Gás com crédito)
+        // |C500|COD_PART|COD_MOD|COD_SIT|SER|SUB|NUM_DOC|DT_DOC|DT_E_S|VL_DOC|VL_ICMS|COD_INF|VL_PIS|VL_COFINS|
+        // Indices: 2=COD_PART, 3=COD_MOD, 10=VL_DOC, 11=VL_ICMS, 13=VL_PIS, 14=VL_COFINS
+        if (fields.length > 14) {
+          const codMod = fields[3] || "";
+          const tipoServico = codMod === "06" ? "energia" : 
+                              codMod === "29" ? "agua" : 
+                              codMod === "28" ? "gas" : null;
+          const cnpjFornecedor = fields[2]?.replace(/\D/g, "") || null;
+          const valorDoc = parseNumber(fields[10]);
 
-        // Only create record if valid tipo_servico and valor > 0
-        if (valorDoc > 0 && tipoServico !== null) {
-          record = {
-            table: "energia_agua",
-            data: {
-              tipo_operacao: tipoOperacao,
-              tipo_servico: tipoServico,
-              cnpj_fornecedor: cnpjFornecedor,
-              descricao: `${tipoServico === "energia" ? "Energia Elétrica" : "Água"} - ${fields[7] || ""}`.trim().substring(0, 200),
-              mes_ano: context.currentPeriod,
-              valor: valorDoc,
-              pis: parseNumber(fields[16]),
-              cofins: parseNumber(fields[18]),
-              icms: parseNumber(fields[13]),
-            },
-          };
+          if (valorDoc > 0 && tipoServico !== null) {
+            record = {
+              table: "energia_agua",
+              data: {
+                tipo_operacao: "credito", // EFD Contribuições C500 é sempre crédito
+                tipo_servico: tipoServico,
+                cnpj_fornecedor: cnpjFornecedor,
+                descricao: `${tipoServico === "energia" ? "Energia Elétrica" : tipoServico === "agua" ? "Água" : "Gás"} - Doc ${fields[7] || ""}`.trim().substring(0, 200),
+                mes_ano: context.currentPeriod,
+                valor: valorDoc,
+                pis: parseNumber(fields[13]),
+                cofins: parseNumber(fields[14]),
+                icms: parseNumber(fields[11]),
+              },
+            };
+          }
+        }
+      } else {
+        // Layout EFD ICMS/IPI - C500 (Energia/Água):
+        // 2=IND_OPER, 4=COD_PART, 5=COD_MOD, 7=SER, 10=VL_DOC, 13=VL_ICMS, 16=VL_PIS, 18=VL_COFINS
+        if (fields.length > 18) {
+          const indOper = fields[2];
+          const tipoOperacao = indOper === "0" ? "credito" : "debito";
+          const codMod = fields[5] || "";
+          const tipoServico = codMod === "06" ? "energia" : codMod === "29" ? "agua" : null;
+          const cnpjFornecedor = fields[4]?.replace(/\D/g, "") || null;
+          const valorDoc = parseNumber(fields[10]);
+
+          if (valorDoc > 0 && tipoServico !== null) {
+            record = {
+              table: "energia_agua",
+              data: {
+                tipo_operacao: tipoOperacao,
+                tipo_servico: tipoServico,
+                cnpj_fornecedor: cnpjFornecedor,
+                descricao: `${tipoServico === "energia" ? "Energia Elétrica" : "Água"} - ${fields[7] || ""}`.trim().substring(0, 200),
+                mes_ano: context.currentPeriod,
+                valor: valorDoc,
+                pis: parseNumber(fields[16]),
+                cofins: parseNumber(fields[18]),
+                icms: parseNumber(fields[13]),
+              },
+            };
+          }
         }
       }
       break;
@@ -244,59 +275,121 @@ function processLine(
       break;
 
     case "D100":
-      // Layout EFD ICMS/IPI - D100 (CT-e):
-      // 2=IND_OPER, 5=COD_PART, 8=NUM_DOC, 14=VL_DOC, 23=VL_ICMS, 24=VL_PIS, 26=VL_COFINS
+      // CT-e - layout diferente para ICMS/IPI e Contribuições
       blockType = "d100";
-      if (fields.length > 26) {
-        const indOper = fields[2];
-        const tipo = indOper === "0" ? "entrada" : "saida";
-        const cnpjTransportadora = fields[5]?.replace(/\D/g, "") || null;
-        const valorDoc = parseNumber(fields[14]);
+      
+      if (context.efdType === 'contribuicoes') {
+        // Layout EFD Contribuições - D100 (CT-e com crédito)
+        // |D100|IND_OPER|IND_EMIT|COD_PART|COD_MOD|COD_SIT|SER|SUB|NUM_DOC|CHV_CTE|DT_DOC|DT_A_P|TP_CTE|CHV_CTE_REF|VL_DOC|VL_DESC|IND_FRT|VL_SERV|VL_BC_ICMS|VL_ICMS|VL_NT|COD_INF|VL_PIS|VL_COFINS|
+        // Indices: 2=IND_OPER, 4=COD_PART, 9=NUM_DOC ou 10=CHV_CTE, 15=VL_DOC, 20=VL_ICMS, 23=VL_PIS, 24=VL_COFINS
+        if (fields.length > 24) {
+          const indOper = fields[2];
+          const tipo = indOper === "0" ? "entrada" : "saida";
+          const cnpjTransportadora = fields[4]?.replace(/\D/g, "") || null;
+          const valorDoc = parseNumber(fields[15]);
 
-        if (valorDoc > 0) {
-          record = {
-            table: "fretes",
-            data: {
-              tipo,
-              mes_ano: context.currentPeriod,
-              ncm: null,
-              descricao: `CT-e ${fields[8] || ""}`.trim().substring(0, 200) || "Conhecimento de Transporte",
-              cnpj_transportadora: cnpjTransportadora,
-              valor: valorDoc,
-              pis: parseNumber(fields[24]),
-              cofins: parseNumber(fields[26]),
-              icms: parseNumber(fields[23]),
-            },
-          };
+          if (valorDoc > 0) {
+            record = {
+              table: "fretes",
+              data: {
+                tipo,
+                mes_ano: context.currentPeriod,
+                ncm: null,
+                descricao: `CT-e ${fields[10] || fields[9] || ""}`.trim().substring(0, 200) || "Conhecimento de Transporte",
+                cnpj_transportadora: cnpjTransportadora,
+                valor: valorDoc,
+                pis: parseNumber(fields[23]),
+                cofins: parseNumber(fields[24]),
+                icms: parseNumber(fields[20]),
+              },
+            };
+          }
+        }
+      } else {
+        // Layout EFD ICMS/IPI - D100 (CT-e):
+        // 2=IND_OPER, 5=COD_PART, 8=NUM_DOC, 14=VL_DOC, 23=VL_ICMS, 24=VL_PIS, 26=VL_COFINS
+        if (fields.length > 26) {
+          const indOper = fields[2];
+          const tipo = indOper === "0" ? "entrada" : "saida";
+          const cnpjTransportadora = fields[5]?.replace(/\D/g, "") || null;
+          const valorDoc = parseNumber(fields[14]);
+
+          if (valorDoc > 0) {
+            record = {
+              table: "fretes",
+              data: {
+                tipo,
+                mes_ano: context.currentPeriod,
+                ncm: null,
+                descricao: `CT-e ${fields[8] || ""}`.trim().substring(0, 200) || "Conhecimento de Transporte",
+                cnpj_transportadora: cnpjTransportadora,
+                valor: valorDoc,
+                pis: parseNumber(fields[24]),
+                cofins: parseNumber(fields[26]),
+                icms: parseNumber(fields[23]),
+              },
+            };
+          }
         }
       }
       break;
 
     case "D500":
-      // Layout EFD ICMS/IPI - D500 (Telecom/Comunicação):
-      // 2=IND_OPER, 4=COD_PART, 7=SER, 11=VL_DOC, 14=VL_ICMS, 17=VL_PIS, 19=VL_COFINS
+      // Telecom/Comunicação - layout diferente para ICMS/IPI e Contribuições
       blockType = "d500";
-      if (fields.length > 19) {
-        const indOper = fields[2];
-        const tipo = indOper === "0" ? "entrada" : "saida";
-        const cnpjFornecedor = fields[4]?.replace(/\D/g, "") || null;
-        const valorDoc = parseNumber(fields[11]);
+      
+      if (context.efdType === 'contribuicoes') {
+        // Layout EFD Contribuições - D500 (Telecom/Comunicação com crédito)
+        // |D500|IND_OPER|IND_EMIT|COD_PART|COD_MOD|COD_SIT|SER|SUB|NUM_DOC|DT_DOC|DT_A_P|VL_DOC|VL_DESC|VL_SERV|VL_SERV_NT|VL_TERC|VL_DA|VL_BC_ICMS|VL_ICMS|COD_INF|VL_PIS|VL_COFINS|
+        // Indices: 2=IND_OPER, 4=COD_PART, 9=NUM_DOC, 12=VL_DOC, 19=VL_ICMS, 21=VL_PIS, 22=VL_COFINS
+        if (fields.length > 22) {
+          const indOper = fields[2];
+          const tipo = indOper === "0" ? "entrada" : "saida";
+          const cnpjFornecedor = fields[4]?.replace(/\D/g, "") || null;
+          const valorDoc = parseNumber(fields[12]);
 
-        if (valorDoc > 0) {
-          record = {
-            table: "fretes",
-            data: {
-              tipo,
-              mes_ano: context.currentPeriod,
-              ncm: null,
-              descricao: `Telecom/Comunicação ${fields[7] || ""}`.trim().substring(0, 200) || "Serviço de Comunicação",
-              cnpj_transportadora: cnpjFornecedor,
-              valor: valorDoc,
-              pis: parseNumber(fields[17]),
-              cofins: parseNumber(fields[19]),
-              icms: parseNumber(fields[14]),
-            },
-          };
+          if (valorDoc > 0) {
+            record = {
+              table: "fretes",
+              data: {
+                tipo,
+                mes_ano: context.currentPeriod,
+                ncm: null,
+                descricao: `Telecom/Comunicação ${fields[9] || ""}`.trim().substring(0, 200) || "Serviço de Comunicação",
+                cnpj_transportadora: cnpjFornecedor,
+                valor: valorDoc,
+                pis: parseNumber(fields[21]),
+                cofins: parseNumber(fields[22]),
+                icms: parseNumber(fields[19]),
+              },
+            };
+          }
+        }
+      } else {
+        // Layout EFD ICMS/IPI - D500 (Telecom/Comunicação):
+        // 2=IND_OPER, 4=COD_PART, 7=SER, 11=VL_DOC, 14=VL_ICMS, 17=VL_PIS, 19=VL_COFINS
+        if (fields.length > 19) {
+          const indOper = fields[2];
+          const tipo = indOper === "0" ? "entrada" : "saida";
+          const cnpjFornecedor = fields[4]?.replace(/\D/g, "") || null;
+          const valorDoc = parseNumber(fields[11]);
+
+          if (valorDoc > 0) {
+            record = {
+              table: "fretes",
+              data: {
+                tipo,
+                mes_ano: context.currentPeriod,
+                ncm: null,
+                descricao: `Telecom/Comunicação ${fields[7] || ""}`.trim().substring(0, 200) || "Serviço de Comunicação",
+                cnpj_transportadora: cnpjFornecedor,
+                valor: valorDoc,
+                pis: parseNumber(fields[17]),
+                cofins: parseNumber(fields[19]),
+                icms: parseNumber(fields[14]),
+              },
+            };
+          }
         }
       }
       break;
