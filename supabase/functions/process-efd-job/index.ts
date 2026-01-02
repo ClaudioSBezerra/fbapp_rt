@@ -16,9 +16,12 @@ const MAX_EXECUTION_TIME_MS = 45000; // Stop after 45 seconds to have safety mar
 // Only process these record types
 const VALID_PREFIXES = ["|0000|", "|C010|", "|C100|", "|C500|", "|C600|", "|D010|", "|D100|", "|D500|"];
 
+type EFDType = 'icms_ipi' | 'contribuicoes' | null;
+
 interface ProcessingContext {
   currentPeriod: string;
   currentCNPJ: string;
+  efdType: EFDType;
 }
 
 interface ParsedRecord {
@@ -75,13 +78,41 @@ function parseNumber(value: string | undefined): number {
   return parseFloat(value.replace(",", ".")) || 0;
 }
 
-function getPeriodFromHeader(fields: string[]): string {
-  const dtIni = fields[6];
+// Detecta o tipo de EFD baseado na estrutura do registro 0000
+// EFD ICMS/IPI: |0000|COD_VER|COD_FIN|DT_INI|DT_FIN|NOME|...
+// EFD Contribuições: |0000|COD_VER|TIPO_ESCRIT|IND_SIT_ESP|NUM_REC_ANT|DT_INI|DT_FIN|NOME|...
+function detectEFDType(fields: string[]): EFDType {
+  // fields[4] em ICMS/IPI é DT_INI (8 dígitos numéricos)
+  // fields[4] em Contribuições é NUM_REC_ANTERIOR (pode estar vazio ou ter outro formato)
+  const field4 = fields[4] || '';
+  
+  // Se field4 tem exatamente 8 caracteres numéricos e parece uma data (DDMMAAAA)
+  if (/^\d{8}$/.test(field4)) {
+    const day = parseInt(field4.substring(0, 2), 10);
+    const month = parseInt(field4.substring(2, 4), 10);
+    // Validar se parece uma data válida
+    if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
+      return 'icms_ipi';
+    }
+  }
+  
+  // Caso contrário, é Contribuições (DT_INI está no field6)
+  return 'contribuicoes';
+}
+
+function getPeriodFromHeader(fields: string[], efdType: EFDType): string {
+  // Posição do DT_INI depende do tipo de EFD
+  // ICMS/IPI: fields[4], Contribuições: fields[6]
+  const dtIniIndex = efdType === 'icms_ipi' ? 4 : 6;
+  const dtIni = fields[dtIniIndex] || '';
+  
   if (dtIni && dtIni.length === 8) {
     const month = dtIni.substring(2, 4);
     const year = dtIni.substring(4, 8);
     return `${year}-${month}-01`;
   }
+  
+  console.warn(`getPeriodFromHeader: Invalid date format at index ${dtIniIndex}: "${dtIni}" for EFD type ${efdType}`);
   return "";
 }
 
@@ -105,8 +136,16 @@ function processLine(
   switch (registro) {
     case "0000":
       if (fields.length > 9) {
-        context.currentPeriod = getPeriodFromHeader(fields);
+        // Detectar tipo de EFD na primeira vez que encontrar o registro 0000
+        if (!context.efdType) {
+          context.efdType = detectEFDType(fields);
+          console.log(`Detected EFD type: ${context.efdType}`);
+        }
+        context.currentPeriod = getPeriodFromHeader(fields, context.efdType);
+        // CNPJ está em posições diferentes dependendo do tipo
+        // ICMS/IPI: fields[9], Contribuições: fields[9] também
         context.currentCNPJ = fields[9]?.replace(/\D/g, "") || "";
+        console.log(`Parsed 0000: period=${context.currentPeriod}, CNPJ=${context.currentCNPJ}`);
       }
       break;
 
@@ -430,6 +469,7 @@ serve(async (req) => {
     let context: ProcessingContext = {
       currentPeriod: "",
       currentCNPJ: "",
+      efdType: null,
     };
 
     // Initialize block limits
@@ -502,15 +542,20 @@ serve(async (req) => {
           context = result.context;
           
           if (result.record && result.blockType) {
-            const blockKey = result.blockType as keyof BlockLimits;
-            // Check block limit
-            if (blockLimits[blockKey].limit === 0 || blockLimits[blockKey].count < blockLimits[blockKey].limit) {
-              blockLimits[blockKey].count++;
-              const { table, data } = result.record;
-              batches[table].push({
-                ...data,
-                filial_id: job.filial_id,
-              });
+            // Validar que mes_ano não está vazio
+            if (!result.record.data.mes_ano) {
+              console.warn(`Job ${jobId}: Skipping final buffer record with empty mes_ano`);
+            } else {
+              const blockKey = result.blockType as keyof BlockLimits;
+              // Check block limit
+              if (blockLimits[blockKey].limit === 0 || blockLimits[blockKey].count < blockLimits[blockKey].limit) {
+                blockLimits[blockKey].count++;
+                const { table, data } = result.record;
+                batches[table].push({
+                  ...data,
+                  filial_id: job.filial_id,
+                });
+              }
             }
           }
           linesProcessedInChunk++;
@@ -550,6 +595,14 @@ serve(async (req) => {
 
         if (result.record && result.blockType) {
           const blockKey = result.blockType as keyof BlockLimits;
+          
+          // Validar que mes_ano não está vazio antes de processar
+          if (!result.record.data.mes_ano) {
+            console.warn(`Job ${jobId}: Skipping record with empty mes_ano (block: ${result.blockType}, line: ${totalLinesProcessed})`);
+            linesProcessedInChunk++;
+            totalLinesProcessed++;
+            continue;
+          }
           
           // Check block limit before processing
           if (blockLimits[blockKey].limit > 0 && blockLimits[blockKey].count >= blockLimits[blockKey].limit) {
