@@ -14,19 +14,27 @@ const MAX_LINES_PER_CHUNK = 100000; // Process max 100k lines per execution
 const MAX_EXECUTION_TIME_MS = 45000; // Stop after 45 seconds to have safety margin
 
 // Only process these record types
-const VALID_PREFIXES = ["|0000|", "|C010|", "|C100|", "|C500|", "|C600|", "|D010|", "|D100|", "|D500|"];
+const VALID_PREFIXES = ["|0000|", "|C010|", "|C100|", "|C500|", "|C600|", "|D010|", "|D100|", "|D101|", "|D105|", "|D500|", "|D501|", "|D505|"];
 
 type EFDType = 'icms_ipi' | 'contribuicoes' | null;
+
+interface ParsedRecord {
+  table: "mercadorias" | "energia_agua" | "fretes";
+  data: Record<string, any>;
+}
+
+interface PendingRecord {
+  record: ParsedRecord;
+  pis: number;
+  cofins: number;
+}
 
 interface ProcessingContext {
   currentPeriod: string;
   currentCNPJ: string;
   efdType: EFDType;
-}
-
-interface ParsedRecord {
-  table: "mercadorias" | "energia_agua" | "fretes";
-  data: Record<string, any>;
+  pendingD100: PendingRecord | null;
+  pendingD500: PendingRecord | null;
 }
 
 interface BatchBuffers {
@@ -114,6 +122,28 @@ function getPeriodFromHeader(fields: string[], efdType: EFDType): string {
   
   console.warn(`getPeriodFromHeader: Invalid date format at index ${dtIniIndex}: "${dtIni}" for EFD type ${efdType}`);
   return "";
+}
+
+function finalizePendingD100(context: ProcessingContext): ParsedRecord | null {
+  if (!context.pendingD100) return null;
+  
+  const record = context.pendingD100.record;
+  record.data.pis = context.pendingD100.pis;
+  record.data.cofins = context.pendingD100.cofins;
+  context.pendingD100 = null;
+  
+  return record;
+}
+
+function finalizePendingD500(context: ProcessingContext): ParsedRecord | null {
+  if (!context.pendingD500) return null;
+  
+  const record = context.pendingD500.record;
+  record.data.pis = context.pendingD500.pis;
+  record.data.cofins = context.pendingD500.cofins;
+  context.pendingD500 = null;
+  
+  return record;
 }
 
 function processLine(
@@ -279,29 +309,38 @@ function processLine(
       blockType = "d100";
       
       if (context.efdType === 'contribuicoes') {
+        // Finalize any pending D100 before starting a new one
+        record = finalizePendingD100(context);
+        
         // Layout EFD Contribuições - D100 (CT-e com crédito)
-        // |D100|IND_OPER|IND_EMIT|COD_PART|COD_MOD|COD_SIT|SER|SUB|NUM_DOC|CHV_CTE|DT_DOC|DT_A_P|TP_CTE|CHV_CTE_REF|VL_DOC|VL_DESC|IND_FRT|VL_SERV|VL_BC_ICMS|VL_ICMS|VL_NT|COD_INF|VL_PIS|VL_COFINS|
-        // Indices: 2=IND_OPER, 4=COD_PART, 9=NUM_DOC ou 10=CHV_CTE, 15=VL_DOC, 20=VL_ICMS, 23=VL_PIS, 24=VL_COFINS
-        if (fields.length > 24) {
+        // |D100|IND_OPER|IND_EMIT|COD_PART|COD_MOD|COD_SIT|SER|SUB|NUM_DOC|CHV_CTE|DT_DOC|DT_A_P|TP_CTE|CHV_CTE_REF|VL_DOC|VL_DESC|IND_FRT|VL_SERV|VL_BC_ICMS|VL_ICMS|VL_NT|COD_INF|COD_CTA|
+        // Indices: 2=IND_OPER, 4=COD_PART, 9=NUM_DOC ou 10=CHV_CTE, 15=VL_DOC, 20=VL_ICMS
+        // IMPORTANTE: PIS/COFINS vêm dos registros D101 e D105
+        if (fields.length > 20) {
           const indOper = fields[2];
           const tipo = indOper === "0" ? "entrada" : "saida";
           const cnpjTransportadora = fields[4]?.replace(/\D/g, "") || null;
           const valorDoc = parseNumber(fields[15]);
 
           if (valorDoc > 0) {
-            record = {
-              table: "fretes",
-              data: {
-                tipo,
-                mes_ano: context.currentPeriod,
-                ncm: null,
-                descricao: `CT-e ${fields[10] || fields[9] || ""}`.trim().substring(0, 200) || "Conhecimento de Transporte",
-                cnpj_transportadora: cnpjTransportadora,
-                valor: valorDoc,
-                pis: parseNumber(fields[23]),
-                cofins: parseNumber(fields[24]),
-                icms: parseNumber(fields[20]),
+            // Store pending D100 - PIS/COFINS will be accumulated from D101/D105
+            context.pendingD100 = {
+              record: {
+                table: "fretes",
+                data: {
+                  tipo,
+                  mes_ano: context.currentPeriod,
+                  ncm: null,
+                  descricao: `CT-e ${fields[10] || fields[9] || ""}`.trim().substring(0, 200) || "Conhecimento de Transporte",
+                  cnpj_transportadora: cnpjTransportadora,
+                  valor: valorDoc,
+                  pis: 0,      // Will be filled by D101
+                  cofins: 0,   // Will be filled by D105
+                  icms: parseNumber(fields[20]),
+                },
               },
+              pis: 0,
+              cofins: 0,
             };
           }
         }
@@ -334,34 +373,71 @@ function processLine(
       }
       break;
 
+    case "D101":
+      // Complemento do D100 - PIS (EFD Contribuições)
+      // |D101|IND_NAT_FRT|VL_ITEM|CST_PIS|NAT_BC_CR|VL_BC_PIS|ALIQ_PIS|VL_PIS|COD_CTA|
+      // Indice 8 = VL_PIS
+      if (context.efdType === 'contribuicoes' && context.pendingD100 && fields.length > 8) {
+        context.pendingD100.pis += parseNumber(fields[8]);
+      }
+      break;
+
+    case "D105":
+      // Complemento do D100 - COFINS (EFD Contribuições)
+      // |D105|IND_NAT_FRT|VL_ITEM|CST_COFINS|NAT_BC_CR|VL_BC_COFINS|ALIQ_COFINS|VL_COFINS|COD_CTA|
+      // Indice 8 = VL_COFINS
+      if (context.efdType === 'contribuicoes' && context.pendingD100 && fields.length > 8) {
+        context.pendingD100.cofins += parseNumber(fields[8]);
+      }
+      break;
+
     case "D500":
       // Telecom/Comunicação - layout diferente para ICMS/IPI e Contribuições
       blockType = "d500";
       
       if (context.efdType === 'contribuicoes') {
+        // Finalize any pending D100 and D500 before starting a new D500
+        const pendingD100Record = finalizePendingD100(context);
+        if (pendingD100Record) {
+          // Return pending D100 first - D500 will be processed next
+          record = pendingD100Record;
+          blockType = "d100";
+        }
+        
+        const pendingD500Record = finalizePendingD500(context);
+        if (pendingD500Record && !record) {
+          record = pendingD500Record;
+        }
+        
         // Layout EFD Contribuições - D500 (Telecom/Comunicação com crédito)
-        // |D500|IND_OPER|IND_EMIT|COD_PART|COD_MOD|COD_SIT|SER|SUB|NUM_DOC|DT_DOC|DT_A_P|VL_DOC|VL_DESC|VL_SERV|VL_SERV_NT|VL_TERC|VL_DA|VL_BC_ICMS|VL_ICMS|COD_INF|VL_PIS|VL_COFINS|
-        // Indices: 2=IND_OPER, 4=COD_PART, 9=NUM_DOC, 12=VL_DOC, 19=VL_ICMS, 21=VL_PIS, 22=VL_COFINS
-        if (fields.length > 22) {
+        // |D500|IND_OPER|IND_EMIT|COD_PART|COD_MOD|COD_SIT|SER|SUB|NUM_DOC|DT_DOC|DT_A_P|VL_DOC|VL_DESC|VL_SERV|VL_SERV_NT|VL_TERC|VL_DA|VL_BC_ICMS|VL_ICMS|COD_INF|COD_CTA|
+        // Indices: 2=IND_OPER, 4=COD_PART, 9=NUM_DOC, 12=VL_DOC, 19=VL_ICMS
+        // IMPORTANTE: PIS/COFINS vêm dos registros D501 e D505
+        if (fields.length > 19) {
           const indOper = fields[2];
           const tipo = indOper === "0" ? "entrada" : "saida";
           const cnpjFornecedor = fields[4]?.replace(/\D/g, "") || null;
           const valorDoc = parseNumber(fields[12]);
 
           if (valorDoc > 0) {
-            record = {
-              table: "fretes",
-              data: {
-                tipo,
-                mes_ano: context.currentPeriod,
-                ncm: null,
-                descricao: `Telecom/Comunicação ${fields[9] || ""}`.trim().substring(0, 200) || "Serviço de Comunicação",
-                cnpj_transportadora: cnpjFornecedor,
-                valor: valorDoc,
-                pis: parseNumber(fields[21]),
-                cofins: parseNumber(fields[22]),
-                icms: parseNumber(fields[19]),
+            // Store pending D500 - PIS/COFINS will be accumulated from D501/D505
+            context.pendingD500 = {
+              record: {
+                table: "fretes",
+                data: {
+                  tipo,
+                  mes_ano: context.currentPeriod,
+                  ncm: null,
+                  descricao: `Telecom/Comunicação ${fields[9] || ""}`.trim().substring(0, 200) || "Serviço de Comunicação",
+                  cnpj_transportadora: cnpjFornecedor,
+                  valor: valorDoc,
+                  pis: 0,      // Will be filled by D501
+                  cofins: 0,   // Will be filled by D505
+                  icms: parseNumber(fields[19]),
+                },
               },
+              pis: 0,
+              cofins: 0,
             };
           }
         }
@@ -391,6 +467,24 @@ function processLine(
             };
           }
         }
+      }
+      break;
+
+    case "D501":
+      // Complemento do D500 - PIS (EFD Contribuições)
+      // |D501|CST_PIS|VL_ITEM|NAT_BC_CR|VL_BC_PIS|ALIQ_PIS|VL_PIS|COD_CTA|
+      // Indice 7 = VL_PIS
+      if (context.efdType === 'contribuicoes' && context.pendingD500 && fields.length > 7) {
+        context.pendingD500.pis += parseNumber(fields[7]);
+      }
+      break;
+
+    case "D505":
+      // Complemento do D500 - COFINS (EFD Contribuições)
+      // |D505|CST_COFINS|VL_ITEM|NAT_BC_CR|VL_BC_COFINS|ALIQ_COFINS|VL_COFINS|COD_CTA|
+      // Indice 7 = VL_COFINS
+      if (context.efdType === 'contribuicoes' && context.pendingD500 && fields.length > 7) {
+        context.pendingD500.cofins += parseNumber(fields[7]);
       }
       break;
   }
@@ -563,6 +657,8 @@ serve(async (req) => {
       currentPeriod: "",
       currentCNPJ: "",
       efdType: null,
+      pendingD100: null,
+      pendingD500: null,
     };
 
     // Initialize block limits
@@ -654,6 +750,32 @@ serve(async (req) => {
           linesProcessedInChunk++;
           totalLinesProcessed++;
         }
+        
+        // Finalize any pending D100/D500 records at end of file
+        const finalD100 = finalizePendingD100(context);
+        if (finalD100 && finalD100.data.mes_ano) {
+          if (blockLimits.d100.limit === 0 || blockLimits.d100.count < blockLimits.d100.limit) {
+            blockLimits.d100.count++;
+            batches.fretes.push({
+              ...finalD100.data,
+              filial_id: job.filial_id,
+            });
+            console.log(`Job ${jobId}: Finalized pending D100 at end of file`);
+          }
+        }
+        
+        const finalD500 = finalizePendingD500(context);
+        if (finalD500 && finalD500.data.mes_ano) {
+          if (blockLimits.d500.limit === 0 || blockLimits.d500.count < blockLimits.d500.limit) {
+            blockLimits.d500.count++;
+            batches.fretes.push({
+              ...finalD500.data,
+              filial_id: job.filial_id,
+            });
+            console.log(`Job ${jobId}: Finalized pending D500 at end of file`);
+          }
+        }
+        
         break;
       }
 
