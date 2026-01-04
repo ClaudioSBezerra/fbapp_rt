@@ -49,6 +49,22 @@ interface InsertCounts {
   fretes: number;
 }
 
+interface SeenCounts {
+  c100: number;
+  c500: number;
+  c600: number;
+  d100: number;
+  d101: number;
+  d105: number;
+  d500: number;
+  d501: number;
+  d505: number;
+}
+
+function createSeenCounts(): SeenCounts {
+  return { c100: 0, c500: 0, c600: 0, d100: 0, d101: 0, d105: 0, d500: 0, d501: 0, d505: 0 };
+}
+
 // Block limits control
 interface BlockLimits {
   c100: { count: number; limit: number };
@@ -646,12 +662,16 @@ serve(async (req) => {
     };
     
     // Initialize counts with existing values (for resumption)
-    const existingCounts = job.counts as InsertCounts || { mercadorias: 0, energia_agua: 0, fretes: 0 };
+    const existingCounts = job.counts as any || { mercadorias: 0, energia_agua: 0, fretes: 0 };
     const counts: InsertCounts = {
       mercadorias: existingCounts.mercadorias || 0,
       energia_agua: existingCounts.energia_agua || 0,
       fretes: existingCounts.fretes || 0,
     };
+    
+    // Track seen record counts (for diagnostics)
+    const existingSeen = existingCounts.seen as SeenCounts || createSeenCounts();
+    const seenCounts: SeenCounts = { ...existingSeen };
     
     let context: ProcessingContext = {
       currentPeriod: "",
@@ -807,6 +827,21 @@ serve(async (req) => {
 
         const result = processLine(trimmedLine, context);
         context = result.context;
+        
+        // Track seen record counts for diagnostics
+        if (result.blockType) {
+          const seenKey = result.blockType as keyof SeenCounts;
+          if (seenKey in seenCounts) {
+            seenCounts[seenKey]++;
+          }
+        }
+        // Also track D101/D105/D501/D505 lines even when they don't produce records
+        const fields = trimmedLine.split("|");
+        const registro = fields[1];
+        if (registro === "D101" && "d101" in seenCounts) seenCounts.d101++;
+        if (registro === "D105" && "d105" in seenCounts) seenCounts.d105++;
+        if (registro === "D501" && "d501" in seenCounts) seenCounts.d501++;
+        if (registro === "D505" && "d505" in seenCounts) seenCounts.d505++;
 
         if (result.record && result.blockType) {
           const blockKey = result.blockType as keyof BlockLimits;
@@ -892,8 +927,34 @@ serve(async (req) => {
       }
     }
 
-    // Log block limits info
+    // Log block limits and seen counts info
     console.log(`Job ${jobId}: Block counts - C100: ${blockLimits.c100.count}, C500: ${blockLimits.c500.count}, C600: ${blockLimits.c600.count}, D100: ${blockLimits.d100.count}, D500: ${blockLimits.d500.count}`);
+    console.log(`Job ${jobId}: Seen counts - C100: ${seenCounts.c100}, C500: ${seenCounts.c500}, C600: ${seenCounts.c600}, D100: ${seenCounts.d100}, D101: ${seenCounts.d101}, D105: ${seenCounts.d105}, D500: ${seenCounts.d500}, D501: ${seenCounts.d501}, D505: ${seenCounts.d505}`);
+
+    // Finalize any pending D100/D500 records before flushing (important for chunk boundaries)
+    const chunkFinalD100 = finalizePendingD100(context);
+    if (chunkFinalD100 && chunkFinalD100.data.mes_ano) {
+      if (blockLimits.d100.limit === 0 || blockLimits.d100.count < blockLimits.d100.limit) {
+        blockLimits.d100.count++;
+        batches.fretes.push({
+          ...chunkFinalD100.data,
+          filial_id: job.filial_id,
+        });
+        console.log(`Job ${jobId}: Finalized pending D100 at chunk end`);
+      }
+    }
+    
+    const chunkFinalD500 = finalizePendingD500(context);
+    if (chunkFinalD500 && chunkFinalD500.data.mes_ano) {
+      if (blockLimits.d500.limit === 0 || blockLimits.d500.count < blockLimits.d500.limit) {
+        blockLimits.d500.count++;
+        batches.fretes.push({
+          ...chunkFinalD500.data,
+          filial_id: job.filial_id,
+        });
+        console.log(`Job ${jobId}: Finalized pending D500 at chunk end`);
+      }
+    }
 
     // Final flush for this chunk
     const flushErr = await flushAllBatches();
@@ -905,7 +966,7 @@ serve(async (req) => {
           error_message: `Final flush error: ${flushErr}`,
           progress: 100,
           total_lines: totalLinesProcessed,
-          counts,
+          counts: { ...counts, seen: seenCounts },
           completed_at: new Date().toISOString() 
         })
         .eq("id", jobId);
@@ -919,7 +980,7 @@ serve(async (req) => {
       
       console.log(`Job ${jobId}: Chunk ${chunkNumber} completed, saving progress. Bytes: ${newBytesProcessed}, Lines: ${totalLinesProcessed}`);
       
-      // Save progress for resumption
+      // Save progress for resumption (include seenCounts for diagnostics)
       await supabase
         .from("import_jobs")
         .update({ 
@@ -927,7 +988,7 @@ serve(async (req) => {
           chunk_number: chunkNumber,
           progress,
           total_lines: totalLinesProcessed,
-          counts
+          counts: { ...counts, seen: seenCounts }
         })
         .eq("id", jobId);
 
@@ -962,15 +1023,16 @@ serve(async (req) => {
     // Job fully completed
     const totalRecords = counts.mercadorias + counts.energia_agua + counts.fretes;
     console.log(`Job ${jobId}: Completed! Total lines: ${totalLinesProcessed}, Total records: ${totalRecords}`);
+    console.log(`Job ${jobId}: Final seen counts - D100: ${seenCounts.d100}, D101: ${seenCounts.d101}, D105: ${seenCounts.d105}, D500: ${seenCounts.d500}, D501: ${seenCounts.d501}, D505: ${seenCounts.d505}`);
 
-    // Update job as completed
+    // Update job as completed (include seenCounts for diagnostics)
     await supabase
       .from("import_jobs")
       .update({ 
         status: "completed", 
         progress: 100,
         total_lines: totalLinesProcessed,
-        counts,
+        counts: { ...counts, seen: seenCounts },
         completed_at: new Date().toISOString() 
       })
       .eq("id", jobId);
