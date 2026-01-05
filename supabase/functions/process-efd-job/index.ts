@@ -1013,16 +1013,19 @@ serve(async (req) => {
       console.log(`Job ${jobId}: Invoking next chunk...`);
       const selfUrl = `${supabaseUrl}/functions/v1/process-efd-job`;
       
-      fetch(selfUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${supabaseKey}`,
-        },
-        body: JSON.stringify({ job_id: jobId }),
-      }).catch(err => {
+      try {
+        const nextChunkResponse = await fetch(selfUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${supabaseKey}`,
+          },
+          body: JSON.stringify({ job_id: jobId }),
+        });
+        console.log(`Job ${jobId}: Next chunk invoked, status: ${nextChunkResponse.status}`);
+      } catch (err) {
         console.error(`Job ${jobId}: Failed to invoke next chunk:`, err);
-      });
+      }
 
       return new Response(
         JSON.stringify({ 

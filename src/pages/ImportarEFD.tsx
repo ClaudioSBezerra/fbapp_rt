@@ -29,12 +29,6 @@ interface ImportCounts {
   };
 }
 
-interface FileAnalysis {
-  hasD100: boolean;
-  hasD500: boolean;
-  hasC100: boolean;
-  estimatedRecords: string;
-}
 
 interface ImportJob {
   id: string;
@@ -107,8 +101,6 @@ export default function ImportarEFD() {
   const [recordLimit, setRecordLimit] = useState<number>(0);
   const [isClearing, setIsClearing] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
-  const [fileAnalysis, setFileAnalysis] = useState<FileAnalysis | null>(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { session } = useAuth();
   const navigate = useNavigate();
@@ -275,36 +267,7 @@ export default function ImportarEFD() {
     }
   };
 
-  // Analyze file for D100/D500 records (checks first 5MB + last 5MB for large files)
-  const analyzeFile = async (file: File): Promise<FileAnalysis> => {
-    const SAMPLE_SIZE = 5 * 1024 * 1024; // 5MB
-    
-    // Read beginning of file
-    const startBlob = file.slice(0, Math.min(file.size, SAMPLE_SIZE));
-    const startText = await startBlob.text();
-    
-    // Read end of file (where D100/D500 typically appear in EFD files)
-    let endText = '';
-    if (file.size > SAMPLE_SIZE) {
-      const endStart = Math.max(0, file.size - SAMPLE_SIZE);
-      const endBlob = file.slice(endStart, file.size);
-      endText = await endBlob.text();
-    }
-    
-    const combinedText = startText + endText;
-    
-    const hasD100 = /\|D100\|/i.test(combinedText);
-    const hasD500 = /\|D500\|/i.test(combinedText);
-    const hasC100 = /\|C100\|/i.test(combinedText);
-    
-    // Rough estimate based on file size
-    const estimatedRecords = file.size > 100 * 1024 * 1024 ? 'muitos' : 
-                             file.size > 10 * 1024 * 1024 ? 'milhares' : 'centenas';
-    
-    return { hasD100, hasD500, hasC100, estimatedRecords };
-  };
-
-  const handleFileSelect = async (file: File) => {
+  const handleFileSelect = (file: File) => {
     if (!file.name.endsWith('.txt')) {
       toast.error('Por favor, selecione um arquivo .txt');
       return;
@@ -315,32 +278,6 @@ export default function ImportarEFD() {
     }
     
     setSelectedFile(file);
-    setFileAnalysis(null);
-    setIsAnalyzing(true);
-    
-    try {
-      const analysis = await analyzeFile(file);
-      setFileAnalysis(analysis);
-      
-      // Show info about detected freight records
-      if (!analysis.hasD100 && !analysis.hasD500) {
-        toast.info('Não detectamos D100/D500 na amostra inicial/final. Fretes podem ainda ser encontrados durante o processamento completo.', {
-          duration: 6000,
-        });
-      } else {
-        const types = [];
-        if (analysis.hasD100) types.push('CT-e (D100)');
-        if (analysis.hasD500) types.push('Telecom (D500)');
-        toast.success(`Detectado: ${types.join(' e ')}. Fretes serão importados.`, {
-          duration: 5000,
-        });
-      }
-    } catch (err) {
-      console.error('Error analyzing file:', err);
-      // Don't block import if analysis fails
-    } finally {
-      setIsAnalyzing(false);
-    }
   };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -579,34 +516,10 @@ export default function ImportarEFD() {
                     <p className="text-sm font-medium text-foreground">{selectedFile.name}</p>
                     <p className="text-xs text-muted-foreground">{formatFileSize(selectedFile.size)}</p>
                   </div>
-                  {/* File Analysis Results */}
-                  {isAnalyzing ? (
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                      Analisando arquivo...
-                    </div>
-                  ) : fileAnalysis && (
-                    <div className="text-xs text-center space-y-1">
-                      {fileAnalysis.hasD100 || fileAnalysis.hasD500 ? (
-                        <p className="text-positive">
-                          ✓ Detectado: {[
-                            fileAnalysis.hasC100 && 'NF-e (C100)',
-                            fileAnalysis.hasD100 && 'CT-e (D100)',
-                            fileAnalysis.hasD500 && 'Telecom (D500)'
-                          ].filter(Boolean).join(', ')}
-                        </p>
-                      ) : (
-                        <p className="text-warning flex items-center justify-center gap-1">
-                          <AlertTriangle className="h-3 w-3" />
-                          Sem registros de fretes (D100/D500) detectados
-                        </p>
-                      )}
-                    </div>
-                  )}
                   <Button 
                     variant="ghost" 
                     size="sm" 
-                    onClick={(e) => { e.stopPropagation(); setSelectedFile(null); setFileAnalysis(null); }}
+                    onClick={(e) => { e.stopPropagation(); setSelectedFile(null); }}
                   >
                     Remover
                   </Button>
