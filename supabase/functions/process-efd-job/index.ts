@@ -673,13 +673,21 @@ serve(async (req) => {
     const existingSeen = existingCounts.seen as SeenCounts || createSeenCounts();
     const seenCounts: SeenCounts = { ...existingSeen };
     
+    // CRITICAL: Restore context from previous chunk for proper resumption
+    // Without this, currentPeriod/currentCNPJ would be empty in chunks 2+ 
+    // because the 0000 record was already processed in chunk 1
+    const existingContext = existingCounts.context || null;
     let context: ProcessingContext = {
-      currentPeriod: "",
-      currentCNPJ: "",
-      efdType: null,
-      pendingD100: null,
+      currentPeriod: existingContext?.currentPeriod || "",
+      currentCNPJ: existingContext?.currentCNPJ || "",
+      efdType: existingContext?.efdType || null,
+      pendingD100: null, // Pending records are finalized at chunk end
       pendingD500: null,
     };
+    
+    if (isResuming && existingContext) {
+      console.log(`Job ${jobId}: Restored context from previous chunk - period: ${context.currentPeriod}, CNPJ: ${context.currentCNPJ}, efdType: ${context.efdType}`);
+    }
 
     // Initialize block limits
     const blockLimits = createBlockLimits(recordLimit);
@@ -980,7 +988,8 @@ serve(async (req) => {
       
       console.log(`Job ${jobId}: Chunk ${chunkNumber} completed, saving progress. Bytes: ${newBytesProcessed}, Lines: ${totalLinesProcessed}`);
       
-      // Save progress for resumption (include seenCounts for diagnostics)
+      // Save progress for resumption (include seenCounts and context for proper resumption)
+      // CRITICAL: Save context so next chunk knows the period and CNPJ
       await supabase
         .from("import_jobs")
         .update({ 
@@ -988,7 +997,15 @@ serve(async (req) => {
           chunk_number: chunkNumber,
           progress,
           total_lines: totalLinesProcessed,
-          counts: { ...counts, seen: seenCounts }
+          counts: { 
+            ...counts, 
+            seen: seenCounts,
+            context: {
+              currentPeriod: context.currentPeriod,
+              currentCNPJ: context.currentCNPJ,
+              efdType: context.efdType,
+            }
+          }
         })
         .eq("id", jobId);
 
