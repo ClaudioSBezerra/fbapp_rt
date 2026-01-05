@@ -275,16 +275,27 @@ export default function ImportarEFD() {
     }
   };
 
-  // Analyze file for D100/D500 records (checks first 5MB for performance)
+  // Analyze file for D100/D500 records (checks first 5MB + last 5MB for large files)
   const analyzeFile = async (file: File): Promise<FileAnalysis> => {
     const SAMPLE_SIZE = 5 * 1024 * 1024; // 5MB
-    const sampleSize = Math.min(file.size, SAMPLE_SIZE);
-    const blob = file.slice(0, sampleSize);
-    const text = await blob.text();
     
-    const hasD100 = /\|D100\|/i.test(text);
-    const hasD500 = /\|D500\|/i.test(text);
-    const hasC100 = /\|C100\|/i.test(text);
+    // Read beginning of file
+    const startBlob = file.slice(0, Math.min(file.size, SAMPLE_SIZE));
+    const startText = await startBlob.text();
+    
+    // Read end of file (where D100/D500 typically appear in EFD files)
+    let endText = '';
+    if (file.size > SAMPLE_SIZE) {
+      const endStart = Math.max(0, file.size - SAMPLE_SIZE);
+      const endBlob = file.slice(endStart, file.size);
+      endText = await endBlob.text();
+    }
+    
+    const combinedText = startText + endText;
+    
+    const hasD100 = /\|D100\|/i.test(combinedText);
+    const hasD500 = /\|D500\|/i.test(combinedText);
+    const hasC100 = /\|C100\|/i.test(combinedText);
     
     // Rough estimate based on file size
     const estimatedRecords = file.size > 100 * 1024 * 1024 ? 'muitos' : 
@@ -311,16 +322,16 @@ export default function ImportarEFD() {
       const analysis = await analyzeFile(file);
       setFileAnalysis(analysis);
       
-      // Show warning if no freight records detected
+      // Show info about detected freight records
       if (!analysis.hasD100 && !analysis.hasD500) {
-        toast.warning('Este arquivo parece NÃO conter registros de fretes (D100/D500). A importação de fretes ficará zerada.', {
-          duration: 8000,
+        toast.info('Não detectamos D100/D500 na amostra inicial/final. Fretes podem ainda ser encontrados durante o processamento completo.', {
+          duration: 6000,
         });
       } else {
         const types = [];
         if (analysis.hasD100) types.push('CT-e (D100)');
         if (analysis.hasD500) types.push('Telecom (D500)');
-        toast.info(`Detectado: ${types.join(' e ')}. Fretes serão importados.`, {
+        toast.success(`Detectado: ${types.join(' e ')}. Fretes serão importados.`, {
           duration: 5000,
         });
       }
