@@ -203,29 +203,59 @@ function processLine(
       break;
 
     case "C100":
-      // Layout EFD ICMS/IPI - C100 (após split com índice 0 vazio):
-      // 2=IND_OPER, 8=NUM_DOC, 12=VL_DOC, 22=VL_ICMS, 25=VL_IPI, 26=VL_PIS, 27=VL_COFINS
+      // Layout diferente para ICMS/IPI e Contribuições
       blockType = "c100";
-      if (fields.length > 27) {
-        const indOper = fields[2];
-        const tipo = indOper === "0" ? "entrada" : "saida";
-        const valorDoc = parseNumber(fields[12]); // Campo 12: VL_DOC
-        
-        if (valorDoc > 0) {
-          record = {
-            table: "mercadorias",
-            data: {
-              tipo,
-              mes_ano: context.currentPeriod,
-              ncm: null,
-              descricao: `NF-e ${fields[8] || ""}`.trim().substring(0, 200) || "NF-e",
-              valor: valorDoc,
-              pis: parseNumber(fields[26]),    // Campo 26: VL_PIS
-              cofins: parseNumber(fields[27]), // Campo 27: VL_COFINS
-              icms: parseNumber(fields[22]),   // Campo 22: VL_ICMS
-              ipi: parseNumber(fields[25]),    // Campo 25: VL_IPI
-            },
-          };
+      
+      if (context.efdType === 'contribuicoes') {
+        // Layout EFD Contribuições - C100:
+        // |C100|IND_OPER|IND_EMIT|COD_PART|COD_MOD|COD_SIT|SER|NUM_DOC|CHV_NFE|DT_DOC|DT_E_S|VL_DOC|IND_PGTO|VL_DESC|VL_ABAT_NT|VL_MERC|IND_FRT|VL_FRT|VL_SEG|VL_OUT_DA|VL_BC_ICMS|VL_ICMS|VL_BC_ICMS_ST|VL_ICMS_ST|VL_IPI|VL_PIS|VL_COFINS|VL_PIS_ST|VL_COFINS_ST|
+        // Índices (após split, pos 0 vazio): 2=IND_OPER, 8=NUM_DOC, 12=VL_DOC, 22=VL_ICMS, 25=VL_IPI, 26=VL_PIS, 27=VL_COFINS
+        if (fields.length > 12) {
+          const indOper = fields[2];
+          const tipo = indOper === "0" ? "entrada" : "saida";
+          const valorDoc = parseNumber(fields[12]); // Campo 12: VL_DOC
+          
+          if (valorDoc > 0) {
+            record = {
+              table: "mercadorias",
+              data: {
+                tipo,
+                mes_ano: context.currentPeriod,
+                ncm: null,
+                descricao: `NF-e ${fields[8] || ""}`.trim().substring(0, 200) || "NF-e",
+                valor: valorDoc,
+                pis: fields.length > 26 ? parseNumber(fields[26]) : 0,    // Campo 26: VL_PIS (se existir)
+                cofins: fields.length > 27 ? parseNumber(fields[27]) : 0, // Campo 27: VL_COFINS (se existir)
+                icms: fields.length > 22 ? parseNumber(fields[22]) : 0,   // Campo 22: VL_ICMS (se existir)
+                ipi: fields.length > 25 ? parseNumber(fields[25]) : 0,    // Campo 25: VL_IPI (se existir)
+              },
+            };
+          }
+        }
+      } else {
+        // Layout EFD ICMS/IPI - C100 (após split com índice 0 vazio):
+        // 2=IND_OPER, 8=NUM_DOC, 12=VL_DOC, 22=VL_ICMS, 25=VL_IPI, 26=VL_PIS, 27=VL_COFINS
+        if (fields.length > 27) {
+          const indOper = fields[2];
+          const tipo = indOper === "0" ? "entrada" : "saida";
+          const valorDoc = parseNumber(fields[12]); // Campo 12: VL_DOC
+          
+          if (valorDoc > 0) {
+            record = {
+              table: "mercadorias",
+              data: {
+                tipo,
+                mes_ano: context.currentPeriod,
+                ncm: null,
+                descricao: `NF-e ${fields[8] || ""}`.trim().substring(0, 200) || "NF-e",
+                valor: valorDoc,
+                pis: parseNumber(fields[26]),    // Campo 26: VL_PIS
+                cofins: parseNumber(fields[27]), // Campo 27: VL_COFINS
+                icms: parseNumber(fields[22]),   // Campo 22: VL_ICMS
+                ipi: parseNumber(fields[25]),    // Campo 25: VL_IPI
+              },
+            };
+          }
         }
       }
       break;
