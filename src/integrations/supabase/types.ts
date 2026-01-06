@@ -262,6 +262,7 @@ export type Database = {
           file_size: number
           filial_id: string | null
           id: string
+          import_scope: string
           progress: number
           record_limit: number | null
           started_at: string | null
@@ -283,6 +284,7 @@ export type Database = {
           file_size?: number
           filial_id?: string | null
           id?: string
+          import_scope?: string
           progress?: number
           record_limit?: number | null
           started_at?: string | null
@@ -304,6 +306,7 @@ export type Database = {
           file_size?: number
           filial_id?: string | null
           id?: string
+          import_scope?: string
           progress?: number
           record_limit?: number | null
           started_at?: string | null

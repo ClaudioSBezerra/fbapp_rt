@@ -66,7 +66,12 @@ serve(async (req) => {
 
     // Get metadata from JSON body (file already uploaded by frontend)
     const body = await req.json();
-    const { empresa_id: empresaId, file_path: filePath, file_name: fileName, file_size: fileSize, record_limit: recordLimit } = body;
+    const { empresa_id: empresaId, file_path: filePath, file_name: fileName, file_size: fileSize, record_limit: recordLimit, import_scope: importScopeRaw } = body;
+    
+    // Validate import_scope (default to 'all' if not provided or invalid)
+    const validScopes = ['all', 'only_c', 'only_d'];
+    const importScope = validScopes.includes(importScopeRaw) ? importScopeRaw : 'all';
+    console.log(`Import scope: ${importScope}`);
 
     if (!filePath) {
       return new Response(
@@ -213,6 +218,7 @@ serve(async (req) => {
         total_lines: 0,
         counts: { mercadorias: 0, energia_agua: 0, fretes: 0 },
         record_limit: recordLimit || 0,
+        import_scope: importScope,
       })
       .select()
       .single();

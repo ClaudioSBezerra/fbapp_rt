@@ -101,6 +101,7 @@ export default function ImportarEFD() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [jobs, setJobs] = useState<ImportJob[]>([]);
   const [recordLimit, setRecordLimit] = useState<number>(0);
+  const [importScope, setImportScope] = useState<'all' | 'only_c' | 'only_d'>('all');
   const [isClearing, setIsClearing] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -238,6 +239,7 @@ export default function ImportarEFD() {
           file_name: selectedFile.name,
           file_size: selectedFile.size,
           record_limit: recordLimit,
+          import_scope: importScope,
         },
       });
 
@@ -442,6 +444,28 @@ export default function ImportarEFD() {
             </div>
 
             <div className="space-y-2">
+              <Label htmlFor="importScope" className="flex items-center gap-2">
+                <FileText className="h-4 w-4 text-muted-foreground" />
+                Escopo da Importação
+              </Label>
+              <Select value={importScope} onValueChange={(v) => setImportScope(v as 'all' | 'only_c' | 'only_d')} disabled={uploading}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o escopo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos (C + D)</SelectItem>
+                  <SelectItem value="only_c">Somente Bloco C (Mercadorias/Energia)</SelectItem>
+                  <SelectItem value="only_d">Somente Bloco D (Fretes/Telecom)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {importScope === 'all' && 'Importará blocos C (C100, C500, C600) e D (D100, D500)'}
+                {importScope === 'only_c' && 'Importará apenas C100 (NF-e), C500 (Energia/Água), C600 (Consolidação)'}
+                {importScope === 'only_d' && 'Importará apenas D100 (CT-e) e D500 (Telecom)'}
+              </p>
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="recordLimit" className="flex items-center gap-2">
                 <Zap className="h-4 w-4 text-warning" />
                 Limite por Bloco (teste)
@@ -458,7 +482,7 @@ export default function ImportarEFD() {
               />
               <p className="text-xs text-muted-foreground">
                 {recordLimit > 0 
-                  ? `Importará até ${recordLimit} registros de cada bloco (C100, C500, C600, D100, D500)`
+                  ? `Importará até ${recordLimit} registros de cada bloco ativo`
                   : 'Importará todos os registros do arquivo'}
               </p>
             </div>
