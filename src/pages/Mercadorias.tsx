@@ -191,47 +191,26 @@ export default function Mercadorias() {
         }
       }
 
-      // Fetch limited data with manual aggregation
-      
-      // Fallback: fetch limited data with manual aggregation
-      const { data: mercadoriasData, error } = await supabase
-        .from('mercadorias')
-        .select('tipo, mes_ano, valor, pis, cofins, icms, filial_id')
-        .order('mes_ano', { ascending: false })
-        .limit(50000);
+      // Use RPC function for aggregated data (much faster than fetching all rows)
+      const { data: aggregatedResult, error } = await supabase.rpc('get_mercadorias_aggregated');
       
       if (error) {
-        console.error('Error fetching mercadorias:', error);
+        console.error('Error fetching aggregated mercadorias:', error);
         toast.error('Erro ao carregar mercadorias');
         return;
       }
 
-      if (mercadoriasData && filiaisData) {
-        // Aggregate in frontend
-        const grouped: Record<string, AggregatedRow & { tipo: string }> = {};
-        
-        mercadoriasData.forEach((item: any) => {
-          const key = `${item.tipo}_${item.filial_id}_${item.mes_ano}`;
-          if (!grouped[key]) {
-            const filial = filiaisData.find(f => f.id === item.filial_id);
-            grouped[key] = {
-              filial_id: item.filial_id,
-              filial_nome: filial?.nome_fantasia || filial?.razao_social || 'Filial',
-              mes_ano: item.mes_ano,
-              valor: 0,
-              pis: 0,
-              cofins: 0,
-              icms: 0,
-              tipo: item.tipo,
-            };
-          }
-          grouped[key].valor += Number(item.valor) || 0;
-          grouped[key].pis += Number(item.pis) || 0;
-          grouped[key].cofins += Number(item.cofins) || 0;
-          grouped[key].icms += Number(item.icms) || 0;
-        });
-
-        setAggregatedData(Object.values(grouped) as any);
+      if (aggregatedResult) {
+        setAggregatedData(aggregatedResult.map((item: any) => ({
+          filial_id: item.filial_id,
+          filial_nome: item.filial_nome || 'Filial',
+          mes_ano: item.mes_ano,
+          valor: Number(item.valor) || 0,
+          pis: Number(item.pis) || 0,
+          cofins: Number(item.cofins) || 0,
+          icms: Number(item.icms) || 0,
+          tipo: item.tipo,
+        })));
       }
     } catch (error) {
       console.error('Error fetching data:', error);

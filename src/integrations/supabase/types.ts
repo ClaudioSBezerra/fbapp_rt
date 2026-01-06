@@ -482,6 +482,19 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_mercadorias_aggregated: {
+        Args: never
+        Returns: {
+          cofins: number
+          filial_id: string
+          filial_nome: string
+          icms: number
+          mes_ano: string
+          pis: number
+          tipo: string
+          valor: number
+        }[]
+      }
       has_filial_access: {
         Args: { _filial_id: string; _user_id: string }
         Returns: boolean
