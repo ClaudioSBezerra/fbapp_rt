@@ -479,66 +479,7 @@ export type Database = {
       }
     }
     Views: {
-      mv_dashboard_stats: {
-        Row: {
-          categoria: string | null
-          cofins: number | null
-          filial_id: string | null
-          icms: number | null
-          pis: number | null
-          subtipo: string | null
-          valor: number | null
-        }
-        Relationships: []
-      }
-      mv_energia_agua_aggregated: {
-        Row: {
-          cofins: number | null
-          filial_id: string | null
-          filial_nome: string | null
-          icms: number | null
-          mes_ano: string | null
-          pis: number | null
-          tipo_operacao: string | null
-          tipo_servico: string | null
-          valor: number | null
-        }
-        Relationships: []
-      }
-      mv_fretes_aggregated: {
-        Row: {
-          cofins: number | null
-          filial_id: string | null
-          filial_nome: string | null
-          icms: number | null
-          mes_ano: string | null
-          pis: number | null
-          tipo: string | null
-          valor: number | null
-        }
-        Relationships: []
-      }
-      mv_mercadorias_aggregated: {
-        Row: {
-          cofins: number | null
-          filial_id: string | null
-          filial_nome: string | null
-          icms: number | null
-          mes_ano: string | null
-          pis: number | null
-          tipo: string | null
-          valor: number | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "mercadorias_filial_id_fkey"
-            columns: ["filial_id"]
-            isOneToOne: false
-            referencedRelation: "filiais"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
+      [_ in never]: never
     }
     Functions: {
       get_mercadorias_aggregated: {

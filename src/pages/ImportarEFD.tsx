@@ -38,7 +38,7 @@ interface ImportJob {
   file_path: string;
   file_name: string;
   file_size: number;
-  status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
+  status: 'pending' | 'processing' | 'generating' | 'completed' | 'failed' | 'cancelled';
   progress: number;
   total_lines: number;
   counts: ImportCounts;
@@ -81,6 +81,8 @@ function getStatusInfo(status: ImportJob['status']) {
       return { label: 'Aguardando', color: 'bg-muted text-muted-foreground', icon: Clock };
     case 'processing':
       return { label: 'Processando', color: 'bg-primary/10 text-primary', icon: Loader2 };
+    case 'generating':
+      return { label: 'Gerando dados...', color: 'bg-blue-500/10 text-blue-500', icon: Loader2 };
     case 'completed':
       return { label: 'Concluído', color: 'bg-positive/10 text-positive', icon: CheckCircle };
     case 'failed':

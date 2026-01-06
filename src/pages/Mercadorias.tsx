@@ -191,8 +191,8 @@ export default function Mercadorias() {
         }
       }
 
-      // Use RPC function for aggregated data (much faster than fetching all rows)
-      const { data: aggregatedResult, error } = await supabase.rpc('get_mercadorias_aggregated');
+      // Use Materialized View for aggregated data (instant load)
+      const { data: aggregatedResult, error } = await supabase.rpc('get_mv_mercadorias_aggregated');
       
       if (error) {
         console.error('Error fetching aggregated mercadorias:', error);
