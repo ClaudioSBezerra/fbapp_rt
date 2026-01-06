@@ -99,8 +99,8 @@ function allLimitsReached(limits: BlockLimits): boolean {
 
 function parseNumber(value: string | undefined): number {
   if (!value) return 0;
-  // Valores no EFD são armazenados em centavos, dividir por 100 para obter reais
-  return (parseFloat(value.replace(",", ".")) || 0) / 100;
+  // Valores no EFD usam vírgula como separador decimal (ex: "1092,82" = R$ 1.092,82)
+  return parseFloat(value.replace(",", ".")) || 0;
 }
 
 // Detecta o tipo de EFD baseado na estrutura do registro 0000
