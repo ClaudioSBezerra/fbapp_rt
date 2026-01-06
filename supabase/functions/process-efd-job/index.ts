@@ -74,15 +74,15 @@ interface BlockLimits {
   d500: { count: number; limit: number };
 }
 
-function createBlockLimits(c100Limit: number): BlockLimits {
-  // Se c100Limit = 0, significa sem limite para todos (importação completa)
-  // Se c100Limit > 0, aplica limite apenas ao C100, demais blocos sem limite
+function createBlockLimits(recordLimit: number): BlockLimits {
+  // Se recordLimit = 0, significa sem limite para todos (importação completa)
+  // Se recordLimit > 0, aplica limite a TODOS os blocos (conforme UI prometido)
   return {
-    c100: { count: 0, limit: c100Limit },  // Usa o limite definido
-    c500: { count: 0, limit: 0 },          // Sempre sem limite - importa todos
-    c600: { count: 0, limit: 0 },          // Sempre sem limite - importa todos
-    d100: { count: 0, limit: 0 },          // Sempre sem limite - importa todos
-    d500: { count: 0, limit: 0 },          // Sempre sem limite - importa todos
+    c100: { count: 0, limit: recordLimit },
+    c500: { count: 0, limit: recordLimit },
+    c600: { count: 0, limit: recordLimit },
+    d100: { count: 0, limit: recordLimit },
+    d500: { count: 0, limit: recordLimit },
   };
 }
 
@@ -1134,6 +1134,15 @@ serve(async (req) => {
     const totalRecords = counts.mercadorias + counts.energia_agua + counts.fretes;
     console.log(`Job ${jobId}: Completed! Total lines: ${totalLinesProcessed}, Total records: ${totalRecords}`);
     console.log(`Job ${jobId}: Final seen counts - D100: ${seenCounts.d100}, D101: ${seenCounts.d101}, D105: ${seenCounts.d105}, D500: ${seenCounts.d500}, D501: ${seenCounts.d501}, D505: ${seenCounts.d505}`);
+
+    // Refresh materialized views so /mercadorias shows updated data immediately
+    console.log(`Job ${jobId}: Refreshing materialized views...`);
+    const { error: refreshError } = await supabase.rpc('refresh_materialized_views');
+    if (refreshError) {
+      console.warn(`Job ${jobId}: Failed to refresh materialized views:`, refreshError);
+    } else {
+      console.log(`Job ${jobId}: Materialized views refreshed successfully`);
+    }
 
     // Update job as completed (include seenCounts for diagnostics)
     await supabase
