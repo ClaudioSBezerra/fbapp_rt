@@ -338,35 +338,20 @@ export default function ImportarEFD() {
     
     setIsClearing(true);
     try {
-      // Deletar dados das tabelas de registros importados
-      const { error: mercError } = await supabase
-        .from('mercadorias')
-        .delete()
-        .neq('id', '00000000-0000-0000-0000-000000000000');
+      const { data, error } = await supabase.functions.invoke('clear-imported-data');
       
-      const { error: energiaError } = await supabase
-        .from('energia_agua')
-        .delete()
-        .neq('id', '00000000-0000-0000-0000-000000000000');
-      
-      const { error: fretesError } = await supabase
-        .from('fretes')
-        .delete()
-        .neq('id', '00000000-0000-0000-0000-000000000000');
-      
-      // Deletar histórico de importações do usuário
-      const { error: jobsError } = await supabase
-        .from('import_jobs')
-        .delete()
-        .eq('user_id', session.user.id);
-      
-      if (mercError || energiaError || fretesError || jobsError) {
-        console.error('Erros:', { mercError, energiaError, fretesError, jobsError });
-        throw new Error('Erro ao limpar alguns dados');
+      if (error) {
+        console.error('Erro ao chamar função:', error);
+        throw error;
+      }
+
+      if (data?.error) {
+        console.error('Erro da função:', data.error);
+        throw new Error(data.error);
       }
       
       setJobs([]);
-      toast.success('Base de dados limpa com sucesso!');
+      toast.success(data?.message || 'Base de dados limpa com sucesso!');
       setShowClearConfirm(false);
     } catch (error) {
       console.error('Error clearing database:', error);
