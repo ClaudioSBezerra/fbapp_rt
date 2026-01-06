@@ -617,18 +617,58 @@ serve(async (req) => {
 
     console.log(`Job ${jobId}: Creating signed URL for ${job.file_path}`);
 
-    // Create signed URL for streaming (valid for 1 hour)
-    const { data: signedUrlData, error: signedUrlError } = await supabase.storage
-      .from("efd-files")
-      .createSignedUrl(job.file_path, 3600);
+    // Helper function to create signed URL with retry logic
+    const createSignedUrlWithRetry = async (maxRetries: number = 3): Promise<string | null> => {
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          console.log(`Job ${jobId}: Signed URL attempt ${attempt}/${maxRetries}`);
+          
+          const { data, error } = await supabase.storage
+            .from("efd-files")
+            .createSignedUrl(job.file_path, 3600);
+          
+          if (error) {
+            console.error(`Signed URL attempt ${attempt} failed:`, error);
+            
+            // Check if error message contains HTML (API returned error page)
+            if (typeof error.message === 'string' && error.message.includes('<')) {
+              console.warn('Received HTML response instead of JSON, retrying...');
+            }
+            
+            if (attempt < maxRetries) {
+              const delay = 1000 * Math.pow(2, attempt - 1); // Exponential backoff: 1s, 2s, 4s
+              console.log(`Job ${jobId}: Waiting ${delay}ms before retry...`);
+              await new Promise(resolve => setTimeout(resolve, delay));
+              continue;
+            }
+            return null;
+          }
+          
+          if (data?.signedUrl) {
+            console.log(`Job ${jobId}: Signed URL created successfully on attempt ${attempt}`);
+            return data.signedUrl;
+          }
+        } catch (e) {
+          console.error(`Signed URL attempt ${attempt} threw exception:`, e);
+          if (attempt < maxRetries) {
+            const delay = 1000 * Math.pow(2, attempt - 1);
+            await new Promise(resolve => setTimeout(resolve, delay));
+          }
+        }
+      }
+      return null;
+    };
 
-    if (signedUrlError || !signedUrlData?.signedUrl) {
-      console.error("Signed URL error:", signedUrlError);
+    // Create signed URL with retry logic
+    const signedUrl = await createSignedUrlWithRetry(3);
+
+    if (!signedUrl) {
+      console.error("Failed to create signed URL after all retries");
       await supabase
         .from("import_jobs")
         .update({ 
           status: "failed", 
-          error_message: "Failed to create signed URL: " + (signedUrlError?.message || "Unknown error"),
+          error_message: "Failed to create signed URL after 3 attempts. Please try importing the file again.",
           completed_at: new Date().toISOString() 
         })
         .eq("id", jobId);
@@ -645,7 +685,7 @@ serve(async (req) => {
       console.log(`Job ${jobId}: Using Range header: bytes=${startByte}-`);
     }
 
-    const fetchResponse = await fetch(signedUrlData.signedUrl, { headers: fetchHeaders });
+    const fetchResponse = await fetch(signedUrl, { headers: fetchHeaders });
     if (!fetchResponse.ok || !fetchResponse.body) {
       // 416 Range Not Satisfiable means we've reached end of file
       if (fetchResponse.status === 416) {
