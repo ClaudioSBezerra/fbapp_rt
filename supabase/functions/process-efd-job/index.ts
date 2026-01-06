@@ -728,10 +728,29 @@ serve(async (req) => {
     const flushBatch = async (table: keyof BatchBuffers): Promise<string | null> => {
       if (batches[table].length === 0) return null;
 
-      const { error } = await supabase.from(table).insert(batches[table]);
+      // Use upsert with ignoreDuplicates to avoid inserting duplicate records
+      // This requires unique constraints on the tables (will be added via migration after data cleanup)
+      const { error } = await supabase.from(table).upsert(batches[table], { 
+        onConflict: table === 'mercadorias' 
+          ? 'filial_id,mes_ano,tipo,descricao,valor,pis,cofins,icms,ipi'
+          : table === 'fretes'
+          ? 'filial_id,mes_ano,tipo,valor,pis,cofins,icms'
+          : 'filial_id,mes_ano,tipo_operacao,tipo_servico,valor,pis,cofins,icms',
+        ignoreDuplicates: true 
+      });
       if (error) {
-        console.error(`Insert error for ${table}:`, error);
-        return error.message;
+        // If unique constraint doesn't exist yet, fall back to insert
+        if (error.message.includes('constraint') || error.message.includes('unique')) {
+          console.log(`Job ${jobId}: Constraint not found for ${table}, using insert (duplicates may occur)`);
+          const { error: insertError } = await supabase.from(table).insert(batches[table]);
+          if (insertError) {
+            console.error(`Insert error for ${table}:`, insertError);
+            return insertError.message;
+          }
+        } else {
+          console.error(`Upsert error for ${table}:`, error);
+          return error.message;
+        }
       }
 
       counts[table] += batches[table].length;
