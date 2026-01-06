@@ -13,8 +13,20 @@ const PROGRESS_UPDATE_INTERVAL = 5000; // Update progress every 5k lines
 const MAX_LINES_PER_CHUNK = 100000; // Process max 100k lines per execution
 const MAX_EXECUTION_TIME_MS = 45000; // Stop after 45 seconds to have safety margin
 
-// Only process these record types
-const VALID_PREFIXES = ["|0000|", "|C010|", "|C100|", "|C500|", "|C600|", "|D010|", "|D100|", "|D101|", "|D105|", "|D500|", "|D501|", "|D505|"];
+// Valid prefixes by scope
+const ALL_PREFIXES = ["|0000|", "|C010|", "|C100|", "|C500|", "|C600|", "|D010|", "|D100|", "|D101|", "|D105|", "|D500|", "|D501|", "|D505|"];
+const ONLY_C_PREFIXES = ["|0000|", "|C010|", "|C100|", "|C500|", "|C600|"];
+const ONLY_D_PREFIXES = ["|0000|", "|D010|", "|D100|", "|D101|", "|D105|", "|D500|", "|D501|", "|D505|"];
+
+type ImportScope = 'all' | 'only_c' | 'only_d';
+
+function getValidPrefixes(scope: ImportScope): string[] {
+  switch (scope) {
+    case 'only_c': return ONLY_C_PREFIXES;
+    case 'only_d': return ONLY_D_PREFIXES;
+    default: return ALL_PREFIXES;
+  }
+}
 
 type EFDType = 'icms_ipi' | 'contribuicoes' | null;
 
@@ -74,23 +86,48 @@ interface BlockLimits {
   d500: { count: number; limit: number };
 }
 
-function createBlockLimits(recordLimit: number): BlockLimits {
+function createBlockLimits(recordLimit: number, scope: ImportScope): BlockLimits {
   // Se recordLimit = 0, significa sem limite para todos (importação completa)
-  // Se recordLimit > 0, aplica limite a TODOS os blocos (conforme UI prometido)
-  return {
-    c100: { count: 0, limit: recordLimit },
-    c500: { count: 0, limit: recordLimit },
-    c600: { count: 0, limit: recordLimit },
-    d100: { count: 0, limit: recordLimit },
-    d500: { count: 0, limit: recordLimit },
-  };
+  // Se recordLimit > 0, aplica limite apenas aos blocos ativos pelo scope
+  const noLimit = 0;
+  
+  // Blocos inativos recebem limit = -1 para serem ignorados
+  const inactive = -1;
+  
+  switch (scope) {
+    case 'only_c':
+      return {
+        c100: { count: 0, limit: recordLimit },
+        c500: { count: 0, limit: recordLimit },
+        c600: { count: 0, limit: recordLimit },
+        d100: { count: 0, limit: inactive },
+        d500: { count: 0, limit: inactive },
+      };
+    case 'only_d':
+      return {
+        c100: { count: 0, limit: inactive },
+        c500: { count: 0, limit: inactive },
+        c600: { count: 0, limit: inactive },
+        d100: { count: 0, limit: recordLimit },
+        d500: { count: 0, limit: recordLimit },
+      };
+    default: // 'all'
+      return {
+        c100: { count: 0, limit: recordLimit },
+        c500: { count: 0, limit: recordLimit },
+        c600: { count: 0, limit: recordLimit },
+        d100: { count: 0, limit: recordLimit },
+        d500: { count: 0, limit: recordLimit },
+      };
+  }
 }
 
 function allLimitsReached(limits: BlockLimits): boolean {
   // Pegar apenas blocos que têm limite definido (limit > 0)
+  // Ignorar blocos inativos (limit = -1) e sem limite (limit = 0)
   const blocksWithLimits = Object.values(limits).filter(b => b.limit > 0);
   
-  // Se nenhum bloco tem limite (todos = 0), nunca para antecipadamente
+  // Se nenhum bloco tem limite (todos = 0 ou -1), nunca para antecipadamente
   if (blocksWithLimits.length === 0) return false;
   
   // Retorna true apenas se TODOS os blocos COM limite atingiram seus limites
@@ -165,9 +202,10 @@ function finalizePendingD500(context: ProcessingContext): ParsedRecord | null {
 
 function processLine(
   line: string,
-  context: ProcessingContext
+  context: ProcessingContext,
+  validPrefixes: string[]
 ): { record: ParsedRecord | null; context: ProcessingContext; blockType?: string } {
-  if (!VALID_PREFIXES.some(p => line.startsWith(p))) {
+  if (!validPrefixes.some(p => line.startsWith(p))) {
     return { record: null, context };
   }
 
@@ -603,9 +641,11 @@ serve(async (req) => {
 
     console.log(`Job ${jobId}: Chunk ${chunkNumber}, ${isResuming ? `resuming from byte ${startByte}` : 'starting fresh'}`);
 
-    // Get record limit from job (0 = no limit)
+    // Get record limit and import scope from job
     const recordLimit = job.record_limit || 0;
-    console.log(`Job ${jobId}: Limit configuration - C100: ${recordLimit === 0 ? 'unlimited' : recordLimit}, C500/C600/D100/D500: unlimited`);
+    const importScope: ImportScope = (job.import_scope as ImportScope) || 'all';
+    const validPrefixes = getValidPrefixes(importScope);
+    console.log(`Job ${jobId}: Import scope: ${importScope}, Record limit: ${recordLimit === 0 ? 'unlimited' : recordLimit}`);
 
     // Update job status to processing (only on first chunk)
     if (!isResuming) {
@@ -761,7 +801,7 @@ serve(async (req) => {
     }
 
     // Initialize block limits
-    const blockLimits = createBlockLimits(recordLimit);
+    const blockLimits = createBlockLimits(recordLimit, importScope);
 
     // Track bytes processed in this chunk
     let bytesProcessedInChunk = 0;
@@ -845,7 +885,7 @@ serve(async (req) => {
         // Process remaining buffer
         if (buffer.trim()) {
           const trimmedLine = buffer.trim();
-          const result = processLine(trimmedLine, context);
+          const result = processLine(trimmedLine, context, validPrefixes);
           context = result.context;
           
           if (result.record && result.blockType) {
@@ -923,7 +963,7 @@ serve(async (req) => {
         const trimmedLine = line.trim();
         if (!trimmedLine) continue;
 
-        const result = processLine(trimmedLine, context);
+        const result = processLine(trimmedLine, context, validPrefixes);
         context = result.context;
         
         // Track seen record counts for diagnostics
