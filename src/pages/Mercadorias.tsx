@@ -14,18 +14,6 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 
-interface Mercadoria {
-  id: string;
-  tipo: string;
-  mes_ano: string;
-  ncm: string | null;
-  descricao: string | null;
-  valor: number;
-  pis: number;
-  cofins: number;
-  icms: number;
-  filial_id: string;
-}
 
 interface Aliquota {
   ano: number;
@@ -50,6 +38,7 @@ interface AggregatedRow {
   pis: number;
   cofins: number;
   icms: number;
+  tipo: string;
 }
 
 function formatCurrency(value: number): string {
@@ -152,7 +141,7 @@ function MercadoriasTable({ data, aliquotas, tipo, anoProjecao }: MercadoriasTab
 }
 
 export default function Mercadorias() {
-  const [mercadorias, setMercadorias] = useState<Mercadoria[]>([]);
+  const [aggregatedData, setAggregatedData] = useState<AggregatedRow[]>([]);
   const [aliquotas, setAliquotas] = useState<Aliquota[]>([]);
   const [filiais, setFiliais] = useState<Filial[]>([]);
   const [loading, setLoading] = useState(true);
@@ -179,90 +168,106 @@ export default function Mercadorias() {
     cofins: '',
   });
 
-  useEffect(() => {
-    async function fetchData() {
-      try {
-        const { data: aliquotasData } = await supabase
-          .from('aliquotas')
-          .select('ano, ibs_estadual, ibs_municipal, cbs, reduc_icms')
-          .order('ano');
-        if (aliquotasData) setAliquotas(aliquotasData);
+  // Fetch aggregated data directly from DB
+  const fetchAggregatedData = async () => {
+    try {
+      setLoading(true);
+      
+      // Fetch aliquotas
+      const { data: aliquotasData } = await supabase
+        .from('aliquotas')
+        .select('ano, ibs_estadual, ibs_municipal, cbs, reduc_icms')
+        .order('ano');
+      if (aliquotasData) setAliquotas(aliquotasData);
 
-        const { data: mercadoriasData } = await supabase
-          .from('mercadorias')
-          .select('id, tipo, mes_ano, ncm, descricao, valor, pis, cofins, icms, filial_id')
-          .order('mes_ano', { ascending: false });
-        if (mercadoriasData) setMercadorias(mercadoriasData);
-
-        const { data: filiaisData } = await supabase
-          .from('filiais')
-          .select('id, cnpj, razao_social, nome_fantasia');
-        if (filiaisData) {
-          setFiliais(filiaisData);
-          if (filiaisData.length > 0 && !selectedFilial) {
-            setSelectedFilial(filiaisData[0].id);
-          }
+      // Fetch filiais
+      const { data: filiaisData } = await supabase
+        .from('filiais')
+        .select('id, cnpj, razao_social, nome_fantasia');
+      if (filiaisData) {
+        setFiliais(filiaisData);
+        if (filiaisData.length > 0 && !selectedFilial) {
+          setSelectedFilial(filiaisData[0].id);
         }
-      } catch (error) {
-        console.error('Error fetching data:', error);
-        toast.error('Erro ao carregar dados');
-      } finally {
-        setLoading(false);
       }
+
+      // Fetch limited data with manual aggregation
+      
+      // Fallback: fetch limited data with manual aggregation
+      const { data: mercadoriasData, error } = await supabase
+        .from('mercadorias')
+        .select('tipo, mes_ano, valor, pis, cofins, icms, filial_id')
+        .order('mes_ano', { ascending: false })
+        .limit(50000);
+      
+      if (error) {
+        console.error('Error fetching mercadorias:', error);
+        toast.error('Erro ao carregar mercadorias');
+        return;
+      }
+
+      if (mercadoriasData && filiaisData) {
+        // Aggregate in frontend
+        const grouped: Record<string, AggregatedRow & { tipo: string }> = {};
+        
+        mercadoriasData.forEach((item: any) => {
+          const key = `${item.tipo}_${item.filial_id}_${item.mes_ano}`;
+          if (!grouped[key]) {
+            const filial = filiaisData.find(f => f.id === item.filial_id);
+            grouped[key] = {
+              filial_id: item.filial_id,
+              filial_nome: filial?.nome_fantasia || filial?.razao_social || 'Filial',
+              mes_ano: item.mes_ano,
+              valor: 0,
+              pis: 0,
+              cofins: 0,
+              icms: 0,
+              tipo: item.tipo,
+            };
+          }
+          grouped[key].valor += Number(item.valor) || 0;
+          grouped[key].pis += Number(item.pis) || 0;
+          grouped[key].cofins += Number(item.cofins) || 0;
+          grouped[key].icms += Number(item.icms) || 0;
+        });
+
+        setAggregatedData(Object.values(grouped) as any);
+      }
+    } catch (error) {
+      console.error('Error fetching data:', error);
+      toast.error('Erro ao carregar dados');
+    } finally {
+      setLoading(false);
     }
-    fetchData();
-  }, [user]);
-
-  // Get unique mes_ano options
-  const mesAnoOptions = useMemo(() => {
-    const unique = [...new Set(mercadorias.map(m => m.mes_ano))];
-    return unique.sort((a, b) => b.localeCompare(a));
-  }, [mercadorias]);
-
-  // Aggregate data by filial + mes_ano
-  const aggregateData = (items: Mercadoria[]): AggregatedRow[] => {
-    const grouped: Record<string, AggregatedRow> = {};
-    
-    items.forEach(item => {
-      const key = `${item.filial_id}_${item.mes_ano}`;
-      if (!grouped[key]) {
-        const filial = filiais.find(f => f.id === item.filial_id);
-        grouped[key] = {
-          filial_id: item.filial_id,
-          filial_nome: filial?.nome_fantasia || filial?.razao_social || 'Filial',
-          mes_ano: item.mes_ano,
-          valor: 0,
-          pis: 0,
-          cofins: 0,
-          icms: 0,
-        };
-      }
-      grouped[key].valor += item.valor;
-      grouped[key].pis += item.pis;
-      grouped[key].cofins += item.cofins;
-      grouped[key].icms += item.icms || 0;
-    });
-
-    return Object.values(grouped).sort((a, b) => b.mes_ano.localeCompare(a.mes_ano));
   };
 
-  // Filter and aggregate
-  const filteredMercadorias = useMemo(() => {
-    return mercadorias.filter(m => {
+  useEffect(() => {
+    fetchAggregatedData();
+  }, [user]);
+
+  // Get unique mes_ano options from aggregated data
+  const mesAnoOptions = useMemo(() => {
+    const unique = [...new Set(aggregatedData.map(m => m.mes_ano))];
+    return unique.sort((a, b) => b.localeCompare(a));
+  }, [aggregatedData]);
+
+  // Filter aggregated data
+  const filteredData = useMemo(() => {
+    return aggregatedData.filter(m => {
       if (filterFilial !== 'all' && m.filial_id !== filterFilial) return false;
       if (filterMesAno !== 'all' && m.mes_ano !== filterMesAno) return false;
       return true;
     });
-  }, [mercadorias, filterFilial, filterMesAno]);
+  }, [aggregatedData, filterFilial, filterMesAno]);
 
   const entradasAgregadas = useMemo(() => 
-    aggregateData(filteredMercadorias.filter(m => m.tipo === 'entrada')), 
-    [filteredMercadorias, filiais]
+    filteredData.filter(m => m.tipo === 'entrada').sort((a, b) => b.mes_ano.localeCompare(a.mes_ano)), 
+    [filteredData]
   );
 
   const saidasAgregadas = useMemo(() => 
-    aggregateData(filteredMercadorias.filter(m => m.tipo === 'saida')), 
-    [filteredMercadorias, filiais]
+    filteredData.filter(m => m.tipo === 'saida').sort((a, b) => b.mes_ano.localeCompare(a.mes_ano)), 
+    [filteredData]
   );
 
   const handleNewMercadoria = async () => {
@@ -288,11 +293,8 @@ export default function Mercadorias() {
       setNewDialogOpen(false);
       setNewMercadoria({ tipo: 'entrada', mes_ano: new Date().toISOString().slice(0, 7), ncm: '', descricao: '', valor: '', pis: '', cofins: '' });
 
-      const { data: mercadoriasData } = await supabase
-        .from('mercadorias')
-        .select('id, tipo, mes_ano, ncm, descricao, valor, pis, cofins, icms, filial_id')
-        .order('mes_ano', { ascending: false });
-      if (mercadoriasData) setMercadorias(mercadoriasData);
+      // Reload aggregated data
+      fetchAggregatedData();
     } catch (error) {
       console.error('Error adding mercadoria:', error);
       toast.error('Erro ao adicionar mercadoria');
@@ -306,7 +308,7 @@ export default function Mercadorias() {
   }, [aliquotas, anoProjecao]);
 
   const totaisEntradas = useMemo(() => {
-    const entradas = filteredMercadorias.filter((m) => m.tipo === 'entrada');
+    const entradas = filteredData.filter((m) => m.tipo === 'entrada');
     const valor = entradas.reduce((acc, m) => acc + m.valor, 0);
     const icms = entradas.reduce((acc, m) => acc + (m.icms || 0), 0);
     const pisCofins = entradas.reduce((acc, m) => acc + m.pis + m.cofins, 0);
@@ -317,10 +319,10 @@ export default function Mercadorias() {
     const cbsProjetado = aliquota ? valor * (aliquota.cbs / 100) : 0;
     
     return { valor, icms, pisCofins, icmsProjetado, ibsProjetado, cbsProjetado };
-  }, [filteredMercadorias, aliquotaSelecionada]);
+  }, [filteredData, aliquotaSelecionada]);
 
   const totaisSaidas = useMemo(() => {
-    const saidas = filteredMercadorias.filter((m) => m.tipo === 'saida');
+    const saidas = filteredData.filter((m) => m.tipo === 'saida');
     const valor = saidas.reduce((acc, m) => acc + m.valor, 0);
     const icms = saidas.reduce((acc, m) => acc + (m.icms || 0), 0);
     const pisCofins = saidas.reduce((acc, m) => acc + m.pis + m.cofins, 0);
@@ -331,7 +333,7 @@ export default function Mercadorias() {
     const cbsProjetado = aliquota ? valor * (aliquota.cbs / 100) : 0;
     
     return { valor, icms, pisCofins, icmsProjetado, ibsProjetado, cbsProjetado };
-  }, [filteredMercadorias, aliquotaSelecionada]);
+  }, [filteredData, aliquotaSelecionada]);
   const hasFiliais = filiais.length > 0;
 
   const handleClearDatabase = async () => {
@@ -346,7 +348,7 @@ export default function Mercadorias() {
       await supabase.from('import_jobs').delete().eq('user_id', user.id);
       
       // Reload data
-      setMercadorias([]);
+      setAggregatedData([]);
       toast.success('Base de dados SPED limpa com sucesso!');
       setShowClearConfirm(false);
     } catch (error) {
