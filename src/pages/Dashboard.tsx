@@ -89,42 +89,41 @@ export default function Dashboard() {
     const loadStats = async () => {
       try {
         const [
-          { data: mercadorias },
-          { data: fretes },
-          { data: energiaAgua },
+          { data: dashboardStats },
           { data: empresas },
           { data: aliquotasData },
         ] = await Promise.all([
-          supabase.from('mercadorias').select('tipo, valor, icms, pis, cofins'),
-          supabase.from('fretes').select('tipo, valor, icms, pis, cofins'),
-          supabase.from('energia_agua').select('tipo_operacao, valor, icms, pis, cofins'),
+          supabase.rpc('get_mv_dashboard_stats'),
           supabase.from('empresas').select('id'),
           supabase.from('aliquotas').select('ano, ibs_estadual, ibs_municipal, cbs, reduc_icms').order('ano'),
         ]);
 
         if (aliquotasData) setAliquotas(aliquotasData);
 
-        const mercadoriasEntradas = (mercadorias || []).filter((m) => m.tipo === 'entrada');
-        const mercadoriasSaidas = (mercadorias || []).filter((m) => m.tipo === 'saida');
-
-        const fretesEntradas = (fretes || []).filter((f) => f.tipo === 'entrada');
-        const fretesSaidas = (fretes || []).filter((f) => f.tipo === 'saida');
-
-        const energiaCreditos = (energiaAgua || []).filter((e) => e.tipo_operacao === 'credito');
-        const energiaDebitos = (energiaAgua || []).filter((e) => e.tipo_operacao === 'debito');
+        // Process aggregated data from materialized view
+        const statsData = dashboardStats || [];
+        
+        const sumCategory = (categoria: string, subtipo: string) => {
+          const items = statsData.filter((s: any) => s.categoria === categoria && s.subtipo === subtipo);
+          return items.reduce((acc: any, item: any) => ({
+            valor: acc.valor + (Number(item.valor) || 0),
+            icms: acc.icms + (Number(item.icms) || 0),
+            pisCofins: acc.pisCofins + (Number(item.pis) || 0) + (Number(item.cofins) || 0),
+          }), { valor: 0, icms: 0, pisCofins: 0 });
+        };
 
         setStats({
           mercadorias: {
-            entradas: calcularTotais(mercadoriasEntradas),
-            saidas: calcularTotais(mercadoriasSaidas),
+            entradas: sumCategory('mercadorias', 'entrada'),
+            saidas: sumCategory('mercadorias', 'saida'),
           },
           fretes: {
-            entradas: calcularTotais(fretesEntradas),
-            saidas: calcularTotais(fretesSaidas),
+            entradas: sumCategory('fretes', 'entrada'),
+            saidas: sumCategory('fretes', 'saida'),
           },
           energiaAgua: {
-            creditos: calcularTotais(energiaCreditos),
-            debitos: calcularTotais(energiaDebitos),
+            creditos: sumCategory('energia_agua', 'credito'),
+            debitos: sumCategory('energia_agua', 'debito'),
           },
           totalEmpresas: empresas?.length || 0,
         });
