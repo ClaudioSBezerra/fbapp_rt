@@ -104,6 +104,12 @@ export default function ImportarEFD() {
   const [importScope, setImportScope] = useState<'all' | 'only_c' | 'only_d'>('all');
   const [isClearing, setIsClearing] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [clearProgress, setClearProgress] = useState<{
+    status: 'counting' | 'deleting' | 'done';
+    currentTable: string;
+    estimated: number;
+    deleted: number;
+  } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { session } = useAuth();
   const navigate = useNavigate();
@@ -339,6 +345,13 @@ export default function ImportarEFD() {
     if (!session?.user?.id) return;
     
     setIsClearing(true);
+    setClearProgress({ 
+      status: 'counting', 
+      currentTable: 'Contando registros...', 
+      estimated: 0, 
+      deleted: 0 
+    });
+
     try {
       const { data, error } = await supabase.functions.invoke('clear-imported-data');
       
@@ -351,13 +364,32 @@ export default function ImportarEFD() {
         console.error('Erro da função:', data.error);
         throw new Error(data.error);
       }
+
+      // Update progress to show completion
+      const totalDeleted = (data?.deleted?.mercadorias || 0) + 
+                          (data?.deleted?.energia_agua || 0) + 
+                          (data?.deleted?.fretes || 0);
       
-      setJobs([]);
-      toast.success(data?.message || 'Base de dados limpa com sucesso!');
-      setShowClearConfirm(false);
+      setClearProgress({
+        status: 'done',
+        currentTable: 'Concluído!',
+        estimated: totalDeleted,
+        deleted: totalDeleted
+      });
+
+      // Wait a bit to show completion, then close
+      setTimeout(() => {
+        setJobs([]);
+        toast.success(data?.message || 'Base de dados limpa com sucesso!');
+        setShowClearConfirm(false);
+        setClearProgress(null);
+      }, 1500);
+      
     } catch (error) {
       console.error('Error clearing database:', error);
       toast.error('Erro ao limpar base de dados');
+      setClearProgress(null);
+      setShowClearConfirm(false);
     } finally {
       setIsClearing(false);
     }
@@ -366,7 +398,12 @@ export default function ImportarEFD() {
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
       {/* Clear Database Confirmation Dialog */}
-      <AlertDialog open={showClearConfirm} onOpenChange={setShowClearConfirm}>
+      <AlertDialog open={showClearConfirm} onOpenChange={(open) => {
+        if (!isClearing) {
+          setShowClearConfirm(open);
+          if (!open) setClearProgress(null);
+        }
+      }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2 text-destructive">
@@ -375,29 +412,68 @@ export default function ImportarEFD() {
             </AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div>
-                <p>Esta ação irá remover permanentemente todos os dados importados:</p>
-                <ul className="list-disc list-inside mt-2 space-y-1">
-                  <li>Mercadorias</li>
-                  <li>Energia e Água</li>
-                  <li>Fretes</li>
-                  <li>Histórico de importações</li>
-                </ul>
-                <p className="mt-3 font-semibold text-destructive">
-                  Esta ação não pode ser desfeita!
-                </p>
+                {clearProgress ? (
+                  <div className="space-y-4 py-4">
+                    <div className="flex items-center gap-2">
+                      {clearProgress.status === 'done' ? (
+                        <CheckCircle className="h-5 w-5 text-positive" />
+                      ) : (
+                        <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                      )}
+                      <span className="font-medium">{clearProgress.currentTable}</span>
+                    </div>
+                    <Progress 
+                      value={clearProgress.estimated > 0 
+                        ? (clearProgress.deleted / clearProgress.estimated) * 100 
+                        : clearProgress.status === 'done' ? 100 : 0
+                      } 
+                      className="h-3" 
+                    />
+                    {clearProgress.status === 'done' && (
+                      <p className="text-sm text-muted-foreground text-center">
+                        {clearProgress.deleted.toLocaleString('pt-BR')} registros removidos
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <p>Esta ação irá remover permanentemente todos os dados importados:</p>
+                    <ul className="list-disc list-inside mt-2 space-y-1">
+                      <li>Mercadorias</li>
+                      <li>Energia e Água</li>
+                      <li>Fretes</li>
+                      <li>Histórico de importações</li>
+                    </ul>
+                    <p className="mt-3 font-semibold text-destructive">
+                      Esta ação não pode ser desfeita!
+                    </p>
+                  </>
+                )}
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={isClearing}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={handleClearDatabase}
-              disabled={isClearing}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {isClearing && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-              Confirmar Limpeza
-            </AlertDialogAction>
+            {!clearProgress && (
+              <>
+                <AlertDialogCancel disabled={isClearing}>Cancelar</AlertDialogCancel>
+                <AlertDialogAction 
+                  onClick={handleClearDatabase}
+                  disabled={isClearing}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  {isClearing && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                  Confirmar Limpeza
+                </AlertDialogAction>
+              </>
+            )}
+            {clearProgress?.status === 'done' && (
+              <AlertDialogAction onClick={() => {
+                setShowClearConfirm(false);
+                setClearProgress(null);
+              }}>
+                Fechar
+              </AlertDialogAction>
+            )}
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -53,7 +53,8 @@ serve(async (req) => {
       console.log("No tenants found for user");
       return new Response(JSON.stringify({ 
         success: true, 
-        message: "Nenhum dado para limpar" 
+        message: "Nenhum dado para limpar",
+        deleted: { mercadorias: 0, energia_agua: 0, fretes: 0, import_jobs: 0 }
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -72,7 +73,8 @@ serve(async (req) => {
       console.log("No groups found");
       return new Response(JSON.stringify({ 
         success: true, 
-        message: "Nenhum dado para limpar" 
+        message: "Nenhum dado para limpar",
+        deleted: { mercadorias: 0, energia_agua: 0, fretes: 0, import_jobs: 0 }
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -91,7 +93,8 @@ serve(async (req) => {
       console.log("No companies found");
       return new Response(JSON.stringify({ 
         success: true, 
-        message: "Nenhum dado para limpar" 
+        message: "Nenhum dado para limpar",
+        deleted: { mercadorias: 0, energia_agua: 0, fretes: 0, import_jobs: 0 }
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -112,95 +115,128 @@ serve(async (req) => {
     if (filialIds.length === 0) {
       return new Response(JSON.stringify({ 
         success: true, 
-        message: "Nenhuma filial encontrada" 
+        message: "Nenhuma filial encontrada",
+        deleted: { mercadorias: 0, energia_agua: 0, fretes: 0, import_jobs: 0 }
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
+    // Contar registros antes de deletar (para estimativa)
+    const [mercadoriasCount, energiaCount, fretesCount] = await Promise.all([
+      supabaseAdmin.from('mercadorias').select('*', { count: 'exact', head: true }).in('filial_id', filialIds),
+      supabaseAdmin.from('energia_agua').select('*', { count: 'exact', head: true }).in('filial_id', filialIds),
+      supabaseAdmin.from('fretes').select('*', { count: 'exact', head: true }).in('filial_id', filialIds),
+    ]);
+
+    const estimated = {
+      mercadorias: mercadoriasCount.count || 0,
+      energia_agua: energiaCount.count || 0,
+      fretes: fretesCount.count || 0,
+    };
+
+    console.log(`Estimated records to delete: mercadorias=${estimated.mercadorias}, energia_agua=${estimated.energia_agua}, fretes=${estimated.fretes}`);
+
     let totalDeleted = { mercadorias: 0, energia_agua: 0, fretes: 0, import_jobs: 0 };
 
-    // Deletar mercadorias em lotes para evitar timeout
+    // Deletar mercadorias em lotes usando RPC
     const batchSize = 10000;
     let hasMore = true;
     let iterations = 0;
     const maxIterations = 500; // Limite de segurança
 
-    console.log("Starting mercadorias deletion in batches...");
+    console.log("Starting mercadorias deletion using RPC batches...");
     
     while (hasMore && iterations < maxIterations) {
       iterations++;
       
-      const { data: toDelete, error: selectError } = await supabaseAdmin
-        .from('mercadorias')
-        .select('id')
-        .in('filial_id', filialIds)
-        .limit(batchSize);
+      const { data: deletedCount, error: deleteError } = await supabaseAdmin
+        .rpc('delete_mercadorias_batch', {
+          _filial_ids: filialIds,
+          _batch_size: batchSize
+        });
 
-      if (selectError) {
-        console.error(`Batch ${iterations} select error:`, selectError);
+      if (deleteError) {
+        console.error(`Batch ${iterations} delete error:`, deleteError);
         break;
       }
 
-      if (!toDelete || toDelete.length === 0) {
+      if (deletedCount === 0 || deletedCount === null) {
         hasMore = false;
-        console.log(`Batch ${iterations}: No more records to delete`);
+        console.log(`Batch ${iterations}: No more mercadorias to delete`);
       } else {
-        const ids = toDelete.map(r => r.id);
-        const { error: deleteError } = await supabaseAdmin
-          .from('mercadorias')
-          .delete()
-          .in('id', ids);
-
-        if (deleteError) {
-          console.error(`Batch ${iterations} delete error:`, deleteError);
-          break;
-        }
-
-        totalDeleted.mercadorias += ids.length;
-        console.log(`Batch ${iterations}: Deleted ${ids.length} mercadorias (total: ${totalDeleted.mercadorias})`);
+        totalDeleted.mercadorias += deletedCount;
+        console.log(`Batch ${iterations}: Deleted ${deletedCount} mercadorias (total: ${totalDeleted.mercadorias})`);
       }
     }
 
-    // Deletar energia_agua
-    console.log("Deleting energia_agua...");
-    const { error: energiaError } = await supabaseAdmin
-      .from('energia_agua')
-      .delete()
-      .in('filial_id', filialIds);
+    // Deletar energia_agua usando RPC
+    console.log("Starting energia_agua deletion using RPC batches...");
+    hasMore = true;
+    iterations = 0;
+    
+    while (hasMore && iterations < maxIterations) {
+      iterations++;
+      
+      const { data: deletedCount, error: deleteError } = await supabaseAdmin
+        .rpc('delete_energia_agua_batch', {
+          _filial_ids: filialIds,
+          _batch_size: batchSize
+        });
 
-    if (energiaError) {
-      console.error("Error deleting energia_agua:", energiaError);
+      if (deleteError) {
+        console.error(`Energia batch ${iterations} delete error:`, deleteError);
+        break;
+      }
+
+      if (deletedCount === 0 || deletedCount === null) {
+        hasMore = false;
+        console.log(`Energia batch ${iterations}: No more records to delete`);
+      } else {
+        totalDeleted.energia_agua += deletedCount;
+        console.log(`Energia batch ${iterations}: Deleted ${deletedCount} (total: ${totalDeleted.energia_agua})`);
+      }
     }
 
-    // Contar após deletar
-    const { count: energiaRemaining } = await supabaseAdmin
-      .from('energia_agua')
-      .select('*', { count: 'exact', head: true })
-      .in('filial_id', filialIds);
+    // Deletar fretes usando RPC
+    console.log("Starting fretes deletion using RPC batches...");
+    hasMore = true;
+    iterations = 0;
     
-    console.log(`Energia/agua remaining after delete: ${energiaRemaining || 0}`);
+    while (hasMore && iterations < maxIterations) {
+      iterations++;
+      
+      const { data: deletedCount, error: deleteError } = await supabaseAdmin
+        .rpc('delete_fretes_batch', {
+          _filial_ids: filialIds,
+          _batch_size: batchSize
+        });
 
-    // Deletar fretes
-    console.log("Deleting fretes...");
-    const { error: fretesError } = await supabaseAdmin
-      .from('fretes')
-      .delete()
-      .in('filial_id', filialIds);
+      if (deleteError) {
+        console.error(`Fretes batch ${iterations} delete error:`, deleteError);
+        break;
+      }
 
-    if (fretesError) {
-      console.error("Error deleting fretes:", fretesError);
+      if (deletedCount === 0 || deletedCount === null) {
+        hasMore = false;
+        console.log(`Fretes batch ${iterations}: No more records to delete`);
+      } else {
+        totalDeleted.fretes += deletedCount;
+        console.log(`Fretes batch ${iterations}: Deleted ${deletedCount} (total: ${totalDeleted.fretes})`);
+      }
     }
 
     // Deletar import_jobs do usuário
     console.log("Deleting import_jobs...");
-    const { error: jobsError } = await supabaseAdmin
+    const { error: jobsError, count: jobsCount } = await supabaseAdmin
       .from('import_jobs')
-      .delete()
+      .delete({ count: 'exact' })
       .eq('user_id', user.id);
 
     if (jobsError) {
       console.error("Error deleting import_jobs:", jobsError);
+    } else {
+      totalDeleted.import_jobs = jobsCount || 0;
     }
 
     // Atualizar Materialized Views
@@ -212,12 +248,13 @@ serve(async (req) => {
       console.error("Error refreshing materialized views:", mvError);
     }
 
-    const message = `Deletados: ${totalDeleted.mercadorias.toLocaleString('pt-BR')} mercadorias`;
+    const message = `Deletados: ${totalDeleted.mercadorias.toLocaleString('pt-BR')} mercadorias, ${totalDeleted.energia_agua.toLocaleString('pt-BR')} energia/água, ${totalDeleted.fretes.toLocaleString('pt-BR')} fretes`;
     console.log(`Cleanup completed: ${message}`);
 
     return new Response(JSON.stringify({ 
       success: true, 
       deleted: totalDeleted,
+      estimated,
       message
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
