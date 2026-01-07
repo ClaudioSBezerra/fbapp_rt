@@ -485,6 +485,18 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      delete_energia_agua_batch: {
+        Args: { _batch_size?: number; _filial_ids: string[] }
+        Returns: number
+      }
+      delete_fretes_batch: {
+        Args: { _batch_size?: number; _filial_ids: string[] }
+        Returns: number
+      }
+      delete_mercadorias_batch: {
+        Args: { _batch_size?: number; _filial_ids: string[] }
+        Returns: number
+      }
       get_mercadorias_aggregated: {
         Args: never
         Returns: {
