@@ -51,7 +51,9 @@ function formatCurrency(value: number): string {
 
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr);
-  return new Intl.DateTimeFormat('pt-BR', { month: 'short', year: 'numeric' }).format(date);
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+  return `${month}/${year}`;
 }
 
 function formatCNPJ(cnpj: string): string {
@@ -272,26 +274,26 @@ export default function EnergiaAgua() {
       <div className="overflow-x-auto">
         <Table>
           <TableHeader>
-            <TableRow>
-              <TableHead>Filial</TableHead>
-              <TableHead>Mês/Ano</TableHead>
-              <TableHead className="text-right">Valor</TableHead>
-              <TableHead className="text-right">ICMS</TableHead>
-              <TableHead className="text-right">
+            <TableRow className="text-xs">
+              <TableHead className="text-xs">Filial</TableHead>
+              <TableHead className="text-xs whitespace-nowrap">Mês/Ano</TableHead>
+              <TableHead className="text-right text-xs">Valor</TableHead>
+              <TableHead className="text-right text-xs">ICMS</TableHead>
+              <TableHead className="text-right text-xs whitespace-nowrap">
                 ICMS Proj. {aliquotaSelecionada && <span className="text-muted-foreground font-normal">(-{aliquotaSelecionada.reduc_icms}%)</span>}
               </TableHead>
-              <TableHead className="text-right text-pis-cofins">PIS+COFINS</TableHead>
-              <TableHead className="text-right text-pis-cofins">
+              <TableHead className="text-right text-xs text-pis-cofins">PIS+COFINS</TableHead>
+              <TableHead className="text-right text-xs text-pis-cofins whitespace-nowrap">
                 PIS+COFINS Proj. {aliquotaSelecionada && <span className="text-muted-foreground font-normal">(-{aliquotaSelecionada.reduc_piscofins}%)</span>}
               </TableHead>
-              <TableHead className="text-right font-semibold bg-muted/30">Tot. Imp. Atuais</TableHead>
-              <TableHead className="text-right">Base IBS/CBS</TableHead>
-              <TableHead className="text-right text-ibs-cbs">IBS Projetado</TableHead>
-              <TableHead className="text-right text-ibs-cbs">CBS Projetado</TableHead>
-              <TableHead className="text-right font-semibold text-ibs-cbs bg-muted/30">Total Reforma</TableHead>
-              <TableHead className="text-right">
+              <TableHead className="text-right text-xs font-semibold bg-muted/30 whitespace-nowrap">Tot. Imp. Atuais</TableHead>
+              <TableHead className="text-right text-xs whitespace-nowrap">Base IBS/CBS</TableHead>
+              <TableHead className="text-right text-xs text-ibs-cbs whitespace-nowrap">IBS Projetado</TableHead>
+              <TableHead className="text-right text-xs text-ibs-cbs whitespace-nowrap">CBS Projetado</TableHead>
+              <TableHead className="text-right text-xs font-semibold text-ibs-cbs bg-muted/30 whitespace-nowrap">Total Reforma</TableHead>
+              <TableHead className="text-right text-xs">
                 <Tooltip>
-                  <TooltipTrigger className="cursor-help underline decoration-dotted decoration-muted-foreground inline-flex items-center gap-1">
+                  <TooltipTrigger className="cursor-help underline decoration-dotted decoration-muted-foreground inline-flex items-center gap-1 whitespace-nowrap">
                     Dif. Projetado
                     <HelpCircle className="h-3 w-3 text-muted-foreground" />
                   </TooltipTrigger>
@@ -302,9 +304,9 @@ export default function EnergiaAgua() {
                   </TooltipContent>
                 </Tooltip>
               </TableHead>
-              <TableHead className="text-right">
+              <TableHead className="text-right text-xs">
                 <Tooltip>
-                  <TooltipTrigger className="cursor-help underline decoration-dotted decoration-muted-foreground inline-flex items-center gap-1">
+                  <TooltipTrigger className="cursor-help underline decoration-dotted decoration-muted-foreground inline-flex items-center gap-1 whitespace-nowrap">
                     Dif. Real
                     <HelpCircle className="h-3 w-3 text-muted-foreground" />
                   </TooltipTrigger>
@@ -334,23 +336,23 @@ export default function EnergiaAgua() {
               const diferencaReal = (vlIcms + vlPisCofins) - (vlIcmsProjetado + vlPisCofinsProjetado + vlIbsProjetado + vlCbsProjetado);
 
               return (
-                <TableRow key={`${row.filial_id}-${row.mes_ano}-${index}`}>
-                  <TableCell className="font-medium">{row.filial_nome}</TableCell>
-                  <TableCell>{formatDate(row.mes_ano)}</TableCell>
-                  <TableCell className="text-right font-mono">{formatCurrency(row.valor)}</TableCell>
-                  <TableCell className="text-right font-mono">{formatCurrency(vlIcms)}</TableCell>
-                  <TableCell className="text-right font-mono">{formatCurrency(vlIcmsProjetado)}</TableCell>
-                  <TableCell className="text-right font-mono text-pis-cofins">{formatCurrency(vlPisCofins)}</TableCell>
-                  <TableCell className="text-right font-mono text-pis-cofins">{formatCurrency(vlPisCofinsProjetado)}</TableCell>
-                  <TableCell className="text-right font-mono font-semibold bg-muted/30">{formatCurrency(totalImpostosAtuais)}</TableCell>
-                  <TableCell className="text-right font-mono">{formatCurrency(baseIbsCbs)}</TableCell>
-                  <TableCell className="text-right font-mono text-ibs-cbs">{formatCurrency(vlIbsProjetado)}</TableCell>
-                  <TableCell className="text-right font-mono text-ibs-cbs">{formatCurrency(vlCbsProjetado)}</TableCell>
-                  <TableCell className="text-right font-mono font-semibold text-ibs-cbs bg-muted/30">{formatCurrency(totalReforma)}</TableCell>
+                <TableRow key={`${row.filial_id}-${row.mes_ano}-${index}`} className="text-xs">
+                  <TableCell className="font-medium text-xs whitespace-nowrap">{row.filial_nome}</TableCell>
+                  <TableCell className="text-xs whitespace-nowrap">{formatDate(row.mes_ano)}</TableCell>
+                  <TableCell className="text-right font-mono text-xs">{formatCurrency(row.valor)}</TableCell>
+                  <TableCell className="text-right font-mono text-xs">{formatCurrency(vlIcms)}</TableCell>
+                  <TableCell className="text-right font-mono text-xs">{formatCurrency(vlIcmsProjetado)}</TableCell>
+                  <TableCell className="text-right font-mono text-xs text-pis-cofins">{formatCurrency(vlPisCofins)}</TableCell>
+                  <TableCell className="text-right font-mono text-xs text-pis-cofins">{formatCurrency(vlPisCofinsProjetado)}</TableCell>
+                  <TableCell className="text-right font-mono text-xs font-semibold bg-muted/30">{formatCurrency(totalImpostosAtuais)}</TableCell>
+                  <TableCell className="text-right font-mono text-xs">{formatCurrency(baseIbsCbs)}</TableCell>
+                  <TableCell className="text-right font-mono text-xs text-ibs-cbs">{formatCurrency(vlIbsProjetado)}</TableCell>
+                  <TableCell className="text-right font-mono text-xs text-ibs-cbs">{formatCurrency(vlCbsProjetado)}</TableCell>
+                  <TableCell className="text-right font-mono text-xs font-semibold text-ibs-cbs bg-muted/30">{formatCurrency(totalReforma)}</TableCell>
                   <TableCell className="text-right">
                     <Badge
                       variant={diferencaProjetado > 0 ? 'destructive' : diferencaProjetado < 0 ? 'default' : 'secondary'}
-                      className={diferencaProjetado < 0 ? 'bg-positive text-positive-foreground' : ''}
+                      className={`text-xs ${diferencaProjetado < 0 ? 'bg-positive text-positive-foreground' : ''}`}
                     >
                       {diferencaProjetado > 0 ? '+' : ''}
                       {formatCurrency(diferencaProjetado)}
@@ -359,7 +361,7 @@ export default function EnergiaAgua() {
                   <TableCell className="text-right">
                     <Badge
                       variant={diferencaReal > 0 ? 'destructive' : diferencaReal < 0 ? 'default' : 'secondary'}
-                      className={diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}
+                      className={`text-xs ${diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}`}
                     >
                       {diferencaReal > 0 ? '+' : ''}
                       {formatCurrency(diferencaReal)}
