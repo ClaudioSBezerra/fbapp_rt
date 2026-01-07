@@ -362,8 +362,8 @@ export default function Fretes() {
     <div className="space-y-6 animate-fade-in">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Fretes</h1>
-          <p className="text-muted-foreground">
+          <h1 className="text-xl font-bold text-foreground">Fretes</h1>
+          <p className="text-sm text-muted-foreground">
             Comparativo PIS+COFINS vs IBS+CBS agregado por Filial e Mês
           </p>
         </div>
@@ -385,11 +385,11 @@ export default function Fretes() {
         <CardContent className="pt-4">
           <div className="flex items-center gap-4 flex-wrap">
             <div className="flex items-center gap-2">
-              <Filter className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-medium">Filtros:</span>
+              <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-xs font-medium">Filtros:</span>
             </div>
             <div className="flex items-center gap-2">
-              <Label className="text-sm">Filial:</Label>
+              <Label className="text-xs">Filial:</Label>
               <Select value={filterFilial} onValueChange={setFilterFilial}>
                 <SelectTrigger className="w-[200px]">
                   <SelectValue placeholder="Todas" />
@@ -405,7 +405,7 @@ export default function Fretes() {
               </Select>
             </div>
             <div className="flex items-center gap-2">
-              <Label className="text-sm">Mês/Ano:</Label>
+              <Label className="text-xs">Mês/Ano:</Label>
               <Select value={filterMesAno} onValueChange={setFilterMesAno}>
                 <SelectTrigger className="w-[150px]">
                   <SelectValue placeholder="Todos" />
@@ -421,8 +421,8 @@ export default function Fretes() {
               </Select>
             </div>
             <div className="flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-muted-foreground" />
-              <Label className="text-sm">Ano Projeção:</Label>
+              <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+              <Label className="text-xs">Ano Projeção:</Label>
               <Select value={anoProjecao.toString()} onValueChange={(v) => setAnoProjecao(parseInt(v))}>
                 <SelectTrigger className="w-[120px]">
                   <SelectValue placeholder="Ano" />
@@ -441,60 +441,60 @@ export default function Fretes() {
       <div className="grid gap-4 md:grid-cols-2">
         <Card className="border-border/50">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <ArrowDownRight className="h-4 w-4" />
+            <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-2">
+              <ArrowDownRight className="h-3.5 w-3.5" />
               Total Entradas (Fretes s/ Compras) - Projeção {anoProjecao}
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2">
+          <CardContent className="space-y-1.5">
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">Valor (VL_DOC):</span>
-              <span className="text-lg font-bold">{formatCurrency(totaisEntradas.valor)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">ICMS:</span>
-              <span className="text-lg font-bold">{formatCurrency(totaisEntradas.icms)}</span>
+              <span className="text-[10px] text-muted-foreground">Valor (VL_DOC):</span>
+              <span className="text-sm font-bold">{formatCurrency(totaisEntradas.valor)}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">ICMS Projetado:</span>
-              <span className="text-lg font-bold">{formatCurrency(totaisEntradas.icmsProjetado)}</span>
+              <span className="text-[10px] text-muted-foreground">ICMS:</span>
+              <span className="text-sm font-bold">{formatCurrency(totaisEntradas.icms)}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">PIS+COFINS:</span>
-              <span className="text-lg font-bold text-pis-cofins">{formatCurrency(totaisEntradas.pisCofins)}</span>
+              <span className="text-[10px] text-muted-foreground">ICMS Projetado:</span>
+              <span className="text-sm font-bold">{formatCurrency(totaisEntradas.icmsProjetado)}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">PIS+COFINS Projetado:</span>
-              <span className="text-lg font-bold text-pis-cofins">{formatCurrency(totaisEntradas.pisCofinsProjetado)}</span>
-            </div>
-            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-1 rounded">
-              <span className="text-sm font-medium">Tot. Impostos Atuais:</span>
-              <span className="text-lg font-bold">{formatCurrency(totaisEntradas.totalImpostosAtuais)}</span>
+              <span className="text-[10px] text-muted-foreground">PIS+COFINS:</span>
+              <span className="text-sm font-bold text-pis-cofins">{formatCurrency(totaisEntradas.pisCofins)}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">Base IBS/CBS:</span>
-              <span className="text-lg font-bold">{formatCurrency(totaisEntradas.baseIbsCbs)}</span>
+              <span className="text-[10px] text-muted-foreground">PIS+COFINS Projetado:</span>
+              <span className="text-sm font-bold text-pis-cofins">{formatCurrency(totaisEntradas.pisCofinsProjetado)}</span>
+            </div>
+            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
+              <span className="text-[10px] font-medium">Tot. Impostos Atuais:</span>
+              <span className="text-sm font-bold">{formatCurrency(totaisEntradas.totalImpostosAtuais)}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">IBS Projetado:</span>
-              <span className="text-lg font-bold text-ibs-cbs">{formatCurrency(totaisEntradas.ibsProjetado)}</span>
+              <span className="text-[10px] text-muted-foreground">Base IBS/CBS:</span>
+              <span className="text-sm font-bold">{formatCurrency(totaisEntradas.baseIbsCbs)}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">CBS Projetado:</span>
-              <span className="text-lg font-bold text-ibs-cbs">{formatCurrency(totaisEntradas.cbsProjetado)}</span>
+              <span className="text-[10px] text-muted-foreground">IBS Projetado:</span>
+              <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totaisEntradas.ibsProjetado)}</span>
             </div>
-            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-1 rounded">
-              <span className="text-sm font-medium text-ibs-cbs">Total Reforma:</span>
-              <span className="text-lg font-bold text-ibs-cbs">{formatCurrency(totaisEntradas.totalReforma)}</span>
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] text-muted-foreground">CBS Projetado:</span>
+              <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totaisEntradas.cbsProjetado)}</span>
             </div>
-            <div className="flex justify-between items-center pt-2 border-t">
-              <span className="text-sm text-muted-foreground">Dif. Projetado:</span>
+            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
+              <span className="text-[10px] font-medium text-ibs-cbs">Total Reforma:</span>
+              <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totaisEntradas.totalReforma)}</span>
+            </div>
+            <div className="flex justify-between items-center pt-1 border-t">
+              <span className="text-[10px] text-muted-foreground">Dif. Projetado:</span>
               <Badge variant={totaisEntradas.diferencaProjetado > 0 ? 'destructive' : totaisEntradas.diferencaProjetado < 0 ? 'default' : 'secondary'} className={totaisEntradas.diferencaProjetado < 0 ? 'bg-positive text-positive-foreground' : ''}>
                 {totaisEntradas.diferencaProjetado > 0 ? '+' : ''}{formatCurrency(totaisEntradas.diferencaProjetado)}
               </Badge>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">Dif. Real:</span>
+              <span className="text-[10px] text-muted-foreground">Dif. Real:</span>
               <Badge variant={totaisEntradas.diferencaReal > 0 ? 'destructive' : totaisEntradas.diferencaReal < 0 ? 'default' : 'secondary'} className={totaisEntradas.diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}>
                 {totaisEntradas.diferencaReal > 0 ? '+' : ''}{formatCurrency(totaisEntradas.diferencaReal)}
               </Badge>
@@ -504,60 +504,60 @@ export default function Fretes() {
 
         <Card className="border-border/50">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <ArrowUpRight className="h-4 w-4" />
+            <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-2">
+              <ArrowUpRight className="h-3.5 w-3.5" />
               Total Saídas (Fretes s/ Vendas) - Projeção {anoProjecao}
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2">
+          <CardContent className="space-y-1.5">
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">Valor (VL_DOC):</span>
-              <span className="text-lg font-bold">{formatCurrency(totaisSaidas.valor)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">ICMS:</span>
-              <span className="text-lg font-bold">{formatCurrency(totaisSaidas.icms)}</span>
+              <span className="text-[10px] text-muted-foreground">Valor (VL_DOC):</span>
+              <span className="text-sm font-bold">{formatCurrency(totaisSaidas.valor)}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">ICMS Projetado:</span>
-              <span className="text-lg font-bold">{formatCurrency(totaisSaidas.icmsProjetado)}</span>
+              <span className="text-[10px] text-muted-foreground">ICMS:</span>
+              <span className="text-sm font-bold">{formatCurrency(totaisSaidas.icms)}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">PIS+COFINS:</span>
-              <span className="text-lg font-bold text-pis-cofins">{formatCurrency(totaisSaidas.pisCofins)}</span>
+              <span className="text-[10px] text-muted-foreground">ICMS Projetado:</span>
+              <span className="text-sm font-bold">{formatCurrency(totaisSaidas.icmsProjetado)}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">PIS+COFINS Projetado:</span>
-              <span className="text-lg font-bold text-pis-cofins">{formatCurrency(totaisSaidas.pisCofinsProjetado)}</span>
-            </div>
-            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-1 rounded">
-              <span className="text-sm font-medium">Tot. Impostos Atuais:</span>
-              <span className="text-lg font-bold">{formatCurrency(totaisSaidas.totalImpostosAtuais)}</span>
+              <span className="text-[10px] text-muted-foreground">PIS+COFINS:</span>
+              <span className="text-sm font-bold text-pis-cofins">{formatCurrency(totaisSaidas.pisCofins)}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">Base IBS/CBS:</span>
-              <span className="text-lg font-bold">{formatCurrency(totaisSaidas.baseIbsCbs)}</span>
+              <span className="text-[10px] text-muted-foreground">PIS+COFINS Projetado:</span>
+              <span className="text-sm font-bold text-pis-cofins">{formatCurrency(totaisSaidas.pisCofinsProjetado)}</span>
+            </div>
+            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
+              <span className="text-[10px] font-medium">Tot. Impostos Atuais:</span>
+              <span className="text-sm font-bold">{formatCurrency(totaisSaidas.totalImpostosAtuais)}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">IBS Projetado:</span>
-              <span className="text-lg font-bold text-ibs-cbs">{formatCurrency(totaisSaidas.ibsProjetado)}</span>
+              <span className="text-[10px] text-muted-foreground">Base IBS/CBS:</span>
+              <span className="text-sm font-bold">{formatCurrency(totaisSaidas.baseIbsCbs)}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">CBS Projetado:</span>
-              <span className="text-lg font-bold text-ibs-cbs">{formatCurrency(totaisSaidas.cbsProjetado)}</span>
+              <span className="text-[10px] text-muted-foreground">IBS Projetado:</span>
+              <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totaisSaidas.ibsProjetado)}</span>
             </div>
-            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-1 rounded">
-              <span className="text-sm font-medium text-ibs-cbs">Total Reforma:</span>
-              <span className="text-lg font-bold text-ibs-cbs">{formatCurrency(totaisSaidas.totalReforma)}</span>
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] text-muted-foreground">CBS Projetado:</span>
+              <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totaisSaidas.cbsProjetado)}</span>
             </div>
-            <div className="flex justify-between items-center pt-2 border-t">
-              <span className="text-sm text-muted-foreground">Dif. Projetado:</span>
+            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
+              <span className="text-[10px] font-medium text-ibs-cbs">Total Reforma:</span>
+              <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totaisSaidas.totalReforma)}</span>
+            </div>
+            <div className="flex justify-between items-center pt-1 border-t">
+              <span className="text-[10px] text-muted-foreground">Dif. Projetado:</span>
               <Badge variant={totaisSaidas.diferencaProjetado > 0 ? 'destructive' : totaisSaidas.diferencaProjetado < 0 ? 'default' : 'secondary'} className={totaisSaidas.diferencaProjetado < 0 ? 'bg-positive text-positive-foreground' : ''}>
                 {totaisSaidas.diferencaProjetado > 0 ? '+' : ''}{formatCurrency(totaisSaidas.diferencaProjetado)}
               </Badge>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">Dif. Real:</span>
+              <span className="text-[10px] text-muted-foreground">Dif. Real:</span>
               <Badge variant={totaisSaidas.diferencaReal > 0 ? 'destructive' : totaisSaidas.diferencaReal < 0 ? 'default' : 'secondary'} className={totaisSaidas.diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}>
                 {totaisSaidas.diferencaReal > 0 ? '+' : ''}{formatCurrency(totaisSaidas.diferencaReal)}
               </Badge>
@@ -580,8 +580,8 @@ export default function Fretes() {
         <TabsContent value="entradas" className="mt-4">
           <Card className="border-border/50">
             <CardHeader>
-              <CardTitle className="text-lg">Fretes sobre Compras (Entradas)</CardTitle>
-              <CardDescription>Agregado por Filial e Mês/Ano</CardDescription>
+              <CardTitle className="text-sm">Fretes sobre Compras (Entradas)</CardTitle>
+              <CardDescription className="text-xs">Agregado por Filial e Mês/Ano</CardDescription>
             </CardHeader>
             <CardContent>
               {renderTable(entradasAgregadas, 'entrada')}
@@ -591,8 +591,8 @@ export default function Fretes() {
         <TabsContent value="saidas" className="mt-4">
           <Card className="border-border/50">
             <CardHeader>
-              <CardTitle className="text-lg">Fretes sobre Vendas (Saídas)</CardTitle>
-              <CardDescription>Agregado por Filial e Mês/Ano</CardDescription>
+              <CardTitle className="text-sm">Fretes sobre Vendas (Saídas)</CardTitle>
+              <CardDescription className="text-xs">Agregado por Filial e Mês/Ano</CardDescription>
             </CardHeader>
             <CardContent>
               {renderTable(saidasAgregadas, 'saida')}
