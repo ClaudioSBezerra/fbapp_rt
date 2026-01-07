@@ -8,10 +8,10 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, ArrowUpRight, ArrowDownRight, Building2, Filter, Trash2, AlertTriangle, Calendar, HelpCircle, Download } from 'lucide-react';
+import { Plus, ArrowUpRight, ArrowDownRight, Building2, Filter, Calendar, HelpCircle, Download } from 'lucide-react';
 import { exportToExcel } from '@/lib/exportToExcel';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
@@ -207,8 +207,6 @@ export default function Mercadorias() {
   const [newDialogOpen, setNewDialogOpen] = useState(false);
   const [selectedFilial, setSelectedFilial] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
-  const [isClearing, setIsClearing] = useState(false);
-  const [showClearConfirm, setShowClearConfirm] = useState(false);
   const { user } = useAuth();
 
   // Filters
@@ -425,28 +423,6 @@ export default function Mercadorias() {
     toast.success('Arquivo Excel exportado com sucesso!');
   };
 
-  const handleClearDatabase = async () => {
-    if (!user?.id) return;
-    
-    setIsClearing(true);
-    try {
-      // Delete all mercadorias, energia_agua, fretes
-      await supabase.from('mercadorias').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      await supabase.from('energia_agua').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      await supabase.from('fretes').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      await supabase.from('import_jobs').delete().eq('user_id', user.id);
-      
-      // Reload data
-      setAggregatedData([]);
-      toast.success('Base de dados SPED limpa com sucesso!');
-      setShowClearConfirm(false);
-    } catch (error) {
-      console.error('Error clearing database:', error);
-      toast.error('Erro ao limpar base de dados');
-    } finally {
-      setIsClearing(false);
-    }
-  };
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -464,15 +440,6 @@ export default function Mercadorias() {
           >
             <Download className="h-4 w-4 mr-2" />
             Exportar Excel
-          </Button>
-          <Button 
-            variant="outline" 
-            size="sm"
-            className="text-destructive border-destructive hover:bg-destructive hover:text-destructive-foreground"
-            onClick={() => setShowClearConfirm(true)}
-          >
-            <Trash2 className="h-4 w-4 mr-2" />
-            Limpar Base SPED
           </Button>
           <Button size="sm" onClick={() => setNewDialogOpen(true)} disabled={!hasFiliais}>
             <Plus className="h-4 w-4 mr-2" />
@@ -773,36 +740,6 @@ export default function Mercadorias() {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={showClearConfirm} onOpenChange={setShowClearConfirm}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-destructive" />
-              Limpar Base Importada do SPED
-            </AlertDialogTitle>
-            <AlertDialogDescription className="space-y-2">
-              <p>Esta ação irá <strong>remover permanentemente</strong> todos os dados importados:</p>
-              <ul className="list-disc list-inside text-sm space-y-1 mt-2">
-                <li>Todas as mercadorias (entradas e saídas)</li>
-                <li>Todos os registros de energia e água</li>
-                <li>Todos os registros de fretes</li>
-                <li>Histórico de importações</li>
-              </ul>
-              <p className="mt-3 text-destructive font-medium">Esta ação não pode ser desfeita!</p>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isClearing}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleClearDatabase}
-              disabled={isClearing}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {isClearing ? 'Limpando...' : 'Sim, limpar tudo'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
