@@ -285,7 +285,7 @@ export default function Fretes() {
               const baseIbsCbs = row.valor - vlIcmsProjetado - vlPisCofinsProjetado;
               const vlIbsProjetado = aliquota ? baseIbsCbs * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
               const vlCbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
-              const diferenca = (vlIbsProjetado + vlCbsProjetado) - vlPisCofins;
+              const diferenca = (vlIcmsProjetado + vlPisCofinsProjetado) - (vlIbsProjetado + vlCbsProjetado);
 
               return (
                 <TableRow key={`${row.filial_id}-${row.mes_ano}-${index}`}>

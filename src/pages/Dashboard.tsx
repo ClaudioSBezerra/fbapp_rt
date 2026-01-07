@@ -228,9 +228,22 @@ export default function Dashboard() {
     debitos: { ...stats.energiaAgua.debitos, ...calcularProjecoes(stats.energiaAgua.debitos, aliquotaSelecionada) },
   }), [stats.energiaAgua, aliquotaSelecionada]);
 
+  // Impostos antigos projetados (saídas - entradas)
+  const impostosAntigosProjetados = 
+    (totaisConsolidados.saidas.icmsProjetado + totaisConsolidados.saidas.pisCofinsProjetado) - 
+    (totaisConsolidados.entradas.icmsProjetado + totaisConsolidados.entradas.pisCofinsProjetado);
+
+  // Impostos novos projetados (saídas - entradas)
+  const impostosNovosProjetados = 
+    (totaisConsolidados.saidas.ibsProjetado + totaisConsolidados.saidas.cbsProjetado) - 
+    (totaisConsolidados.entradas.ibsProjetado + totaisConsolidados.entradas.cbsProjetado);
+
+  // Diferença: antigos - novos (positivo = economia)
+  const diferencaImposto = impostosAntigosProjetados - impostosNovosProjetados;
+
+  // Para os cards
   const impostoAtualTotal = totaisConsolidados.saidas.icms + totaisConsolidados.saidas.pisCofins - (totaisConsolidados.entradas.icms + totaisConsolidados.entradas.pisCofins);
-  const impostoProjetadoTotal = totaisConsolidados.saidas.icmsProjetado + totaisConsolidados.saidas.ibsProjetado + totaisConsolidados.saidas.cbsProjetado - (totaisConsolidados.entradas.icmsProjetado + totaisConsolidados.entradas.ibsProjetado + totaisConsolidados.entradas.cbsProjetado);
-  const diferencaImposto = impostoProjetadoTotal - impostoAtualTotal;
+  const impostoProjetadoTotal = impostosAntigosProjetados + impostosNovosProjetados;
 
   // Dados para gráfico de evolução
   const dadosEvolucao = useMemo(() => {
