@@ -99,6 +99,7 @@ function MercadoriasTable({ data, aliquotas, tipo, anoProjecao }: MercadoriasTab
             <TableHead className="text-right">ICMS Projetado</TableHead>
             <TableHead className="text-right text-pis-cofins">PIS+COFINS</TableHead>
             <TableHead className="text-right text-pis-cofins">PIS+COFINS Projetado</TableHead>
+            <TableHead className="text-right">Base IBS/CBS</TableHead>
             <TableHead className="text-right text-ibs-cbs">IBS Projetado</TableHead>
             <TableHead className="text-right text-ibs-cbs">CBS Projetado</TableHead>
             <TableHead className="text-right">Diferença</TableHead>
@@ -112,8 +113,9 @@ function MercadoriasTable({ data, aliquotas, tipo, anoProjecao }: MercadoriasTab
             const vlIcmsProjetado = aliquota ? vlIcms * (1 - (aliquota.reduc_icms / 100)) : vlIcms;
             const vlPisCofins = row.pis + row.cofins;
             const vlPisCofinsProjetado = aliquota ? vlPisCofins * (1 - (aliquota.reduc_piscofins / 100)) : vlPisCofins;
-            const vlIbsProjetado = aliquota ? row.valor * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
-            const vlCbsProjetado = aliquota ? row.valor * (aliquota.cbs / 100) : 0;
+            const baseIbsCbs = row.valor - vlIcmsProjetado - vlPisCofinsProjetado;
+            const vlIbsProjetado = aliquota ? baseIbsCbs * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
+            const vlCbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
             const diferenca = (vlIbsProjetado + vlCbsProjetado) - vlPisCofins;
 
             return (
@@ -125,6 +127,7 @@ function MercadoriasTable({ data, aliquotas, tipo, anoProjecao }: MercadoriasTab
                 <TableCell className="text-right font-mono">{formatCurrency(vlIcmsProjetado)}</TableCell>
                 <TableCell className="text-right font-mono text-pis-cofins">{formatCurrency(vlPisCofins)}</TableCell>
                 <TableCell className="text-right font-mono text-pis-cofins">{formatCurrency(vlPisCofinsProjetado)}</TableCell>
+                <TableCell className="text-right font-mono">{formatCurrency(baseIbsCbs)}</TableCell>
                 <TableCell className="text-right font-mono text-ibs-cbs">{formatCurrency(vlIbsProjetado)}</TableCell>
                 <TableCell className="text-right font-mono text-ibs-cbs">{formatCurrency(vlCbsProjetado)}</TableCell>
                 <TableCell className="text-right">
@@ -299,10 +302,11 @@ export default function Mercadorias() {
     const aliquota = aliquotaSelecionada;
     const icmsProjetado = aliquota ? icms * (1 - (aliquota.reduc_icms / 100)) : icms;
     const pisCofinsProjetado = aliquota ? pisCofins * (1 - (aliquota.reduc_piscofins / 100)) : pisCofins;
-    const ibsProjetado = aliquota ? valor * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
-    const cbsProjetado = aliquota ? valor * (aliquota.cbs / 100) : 0;
+    const baseIbsCbs = valor - icmsProjetado - pisCofinsProjetado;
+    const ibsProjetado = aliquota ? baseIbsCbs * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
+    const cbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
     
-    return { valor, icms, pisCofins, icmsProjetado, pisCofinsProjetado, ibsProjetado, cbsProjetado };
+    return { valor, icms, pisCofins, icmsProjetado, pisCofinsProjetado, baseIbsCbs, ibsProjetado, cbsProjetado };
   }, [filteredData, aliquotaSelecionada]);
 
   const totaisSaidas = useMemo(() => {
@@ -314,10 +318,11 @@ export default function Mercadorias() {
     const aliquota = aliquotaSelecionada;
     const icmsProjetado = aliquota ? icms * (1 - (aliquota.reduc_icms / 100)) : icms;
     const pisCofinsProjetado = aliquota ? pisCofins * (1 - (aliquota.reduc_piscofins / 100)) : pisCofins;
-    const ibsProjetado = aliquota ? valor * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
-    const cbsProjetado = aliquota ? valor * (aliquota.cbs / 100) : 0;
+    const baseIbsCbs = valor - icmsProjetado - pisCofinsProjetado;
+    const ibsProjetado = aliquota ? baseIbsCbs * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
+    const cbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
     
-    return { valor, icms, pisCofins, icmsProjetado, pisCofinsProjetado, ibsProjetado, cbsProjetado };
+    return { valor, icms, pisCofins, icmsProjetado, pisCofinsProjetado, baseIbsCbs, ibsProjetado, cbsProjetado };
   }, [filteredData, aliquotaSelecionada]);
   const hasFiliais = filiais.length > 0;
 
@@ -471,6 +476,10 @@ export default function Mercadorias() {
               <span className="text-lg font-bold text-pis-cofins">{formatCurrency(totaisEntradas.pisCofinsProjetado)}</span>
             </div>
             <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">Base IBS/CBS:</span>
+              <span className="text-lg font-bold">{formatCurrency(totaisEntradas.baseIbsCbs)}</span>
+            </div>
+            <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">IBS Projetado:</span>
               <span className="text-lg font-bold text-ibs-cbs">{formatCurrency(totaisEntradas.ibsProjetado)}</span>
             </div>
@@ -506,6 +515,10 @@ export default function Mercadorias() {
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">PIS+COFINS Projetado:</span>
               <span className="text-lg font-bold text-pis-cofins">{formatCurrency(totaisSaidas.pisCofinsProjetado)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">Base IBS/CBS:</span>
+              <span className="text-lg font-bold">{formatCurrency(totaisSaidas.baseIbsCbs)}</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">IBS Projetado:</span>
