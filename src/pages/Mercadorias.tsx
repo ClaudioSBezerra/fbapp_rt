@@ -104,7 +104,8 @@ function MercadoriasTable({ data, aliquotas, tipo, anoProjecao }: MercadoriasTab
             <TableHead className="text-right text-ibs-cbs">IBS Projetado</TableHead>
             <TableHead className="text-right text-ibs-cbs">CBS Projetado</TableHead>
             <TableHead className="text-right font-semibold text-ibs-cbs bg-muted/30">Total Reforma</TableHead>
-            <TableHead className="text-right">Diferença</TableHead>
+            <TableHead className="text-right">Dif. Projetado</TableHead>
+            <TableHead className="text-right">Dif. Real</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -120,7 +121,8 @@ function MercadoriasTable({ data, aliquotas, tipo, anoProjecao }: MercadoriasTab
             const vlIbsProjetado = aliquota ? baseIbsCbs * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
             const vlCbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
             const totalReforma = vlIbsProjetado + vlCbsProjetado;
-            const diferenca = totalImpostosAtuais - totalReforma;
+            const diferencaProjetado = totalImpostosAtuais - totalReforma;
+            const diferencaReal = (vlIcms + vlPisCofins) - (vlIcmsProjetado + vlPisCofinsProjetado + vlIbsProjetado + vlCbsProjetado);
 
             return (
               <TableRow key={`${row.filial_id}-${row.mes_ano}-${index}`}>
@@ -138,10 +140,18 @@ function MercadoriasTable({ data, aliquotas, tipo, anoProjecao }: MercadoriasTab
                 <TableCell className="text-right font-mono font-semibold text-ibs-cbs bg-muted/30">{formatCurrency(totalReforma)}</TableCell>
                 <TableCell className="text-right">
                   <Badge
-                    variant={diferenca > 0 ? 'destructive' : diferenca < 0 ? 'default' : 'secondary'}
-                    className={diferenca < 0 ? 'bg-positive text-positive-foreground' : ''}
+                    variant={diferencaProjetado > 0 ? 'destructive' : diferencaProjetado < 0 ? 'default' : 'secondary'}
+                    className={diferencaProjetado < 0 ? 'bg-positive text-positive-foreground' : ''}
                   >
-                    {diferenca > 0 ? '+' : ''}{formatCurrency(diferenca)}
+                    {diferencaProjetado > 0 ? '+' : ''}{formatCurrency(diferencaProjetado)}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-right">
+                  <Badge
+                    variant={diferencaReal > 0 ? 'destructive' : diferencaReal < 0 ? 'default' : 'secondary'}
+                    className={diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}
+                  >
+                    {diferencaReal > 0 ? '+' : ''}{formatCurrency(diferencaReal)}
                   </Badge>
                 </TableCell>
               </TableRow>
@@ -314,8 +324,10 @@ export default function Mercadorias() {
     
     const totalImpostosAtuais = icmsProjetado + pisCofinsProjetado;
     const totalReforma = ibsProjetado + cbsProjetado;
+    const diferencaProjetado = totalImpostosAtuais - totalReforma;
+    const diferencaReal = (icms + pisCofins) - (icmsProjetado + pisCofinsProjetado + ibsProjetado + cbsProjetado);
     
-    return { valor, icms, pisCofins, icmsProjetado, pisCofinsProjetado, baseIbsCbs, ibsProjetado, cbsProjetado, totalImpostosAtuais, totalReforma };
+    return { valor, icms, pisCofins, icmsProjetado, pisCofinsProjetado, baseIbsCbs, ibsProjetado, cbsProjetado, totalImpostosAtuais, totalReforma, diferencaProjetado, diferencaReal };
   }, [filteredData, aliquotaSelecionada]);
 
   const totaisSaidas = useMemo(() => {
@@ -332,8 +344,10 @@ export default function Mercadorias() {
     const cbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
     const totalImpostosAtuais = icmsProjetado + pisCofinsProjetado;
     const totalReforma = ibsProjetado + cbsProjetado;
+    const diferencaProjetado = totalImpostosAtuais - totalReforma;
+    const diferencaReal = (icms + pisCofins) - (icmsProjetado + pisCofinsProjetado + ibsProjetado + cbsProjetado);
     
-    return { valor, icms, pisCofins, icmsProjetado, pisCofinsProjetado, baseIbsCbs, ibsProjetado, cbsProjetado, totalImpostosAtuais, totalReforma };
+    return { valor, icms, pisCofins, icmsProjetado, pisCofinsProjetado, baseIbsCbs, ibsProjetado, cbsProjetado, totalImpostosAtuais, totalReforma, diferencaProjetado, diferencaReal };
   }, [filteredData, aliquotaSelecionada]);
   const hasFiliais = filiais.length > 0;
 
@@ -506,6 +520,18 @@ export default function Mercadorias() {
               <span className="text-sm font-medium text-ibs-cbs">Total Reforma:</span>
               <span className="text-lg font-bold text-ibs-cbs">{formatCurrency(totaisEntradas.totalReforma)}</span>
             </div>
+            <div className="flex justify-between items-center pt-2 border-t">
+              <span className="text-sm text-muted-foreground">Dif. Projetado:</span>
+              <Badge variant={totaisEntradas.diferencaProjetado > 0 ? 'destructive' : totaisEntradas.diferencaProjetado < 0 ? 'default' : 'secondary'} className={totaisEntradas.diferencaProjetado < 0 ? 'bg-positive text-positive-foreground' : ''}>
+                {totaisEntradas.diferencaProjetado > 0 ? '+' : ''}{formatCurrency(totaisEntradas.diferencaProjetado)}
+              </Badge>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">Dif. Real:</span>
+              <Badge variant={totaisEntradas.diferencaReal > 0 ? 'destructive' : totaisEntradas.diferencaReal < 0 ? 'default' : 'secondary'} className={totaisEntradas.diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}>
+                {totaisEntradas.diferencaReal > 0 ? '+' : ''}{formatCurrency(totaisEntradas.diferencaReal)}
+              </Badge>
+            </div>
           </CardContent>
         </Card>
         <Card className="border-border/50">
@@ -554,6 +580,18 @@ export default function Mercadorias() {
             <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-1 rounded">
               <span className="text-sm font-medium text-ibs-cbs">Total Reforma:</span>
               <span className="text-lg font-bold text-ibs-cbs">{formatCurrency(totaisSaidas.totalReforma)}</span>
+            </div>
+            <div className="flex justify-between items-center pt-2 border-t">
+              <span className="text-sm text-muted-foreground">Dif. Projetado:</span>
+              <Badge variant={totaisSaidas.diferencaProjetado > 0 ? 'destructive' : totaisSaidas.diferencaProjetado < 0 ? 'default' : 'secondary'} className={totaisSaidas.diferencaProjetado < 0 ? 'bg-positive text-positive-foreground' : ''}>
+                {totaisSaidas.diferencaProjetado > 0 ? '+' : ''}{formatCurrency(totaisSaidas.diferencaProjetado)}
+              </Badge>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">Dif. Real:</span>
+              <Badge variant={totaisSaidas.diferencaReal > 0 ? 'destructive' : totaisSaidas.diferencaReal < 0 ? 'default' : 'secondary'} className={totaisSaidas.diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}>
+                {totaisSaidas.diferencaReal > 0 ? '+' : ''}{formatCurrency(totaisSaidas.diferencaReal)}
+              </Badge>
             </div>
           </CardContent>
         </Card>

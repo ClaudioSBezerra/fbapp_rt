@@ -77,8 +77,10 @@ function calcularProjecoes(
   const cbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
   const totalImpostosAtuais = icmsProjetado + pisCofinsProjetado;
   const totalReforma = ibsProjetado + cbsProjetado;
+  const diferencaProjetado = totalImpostosAtuais - totalReforma;
+  const diferencaReal = (totais.icms + totais.pisCofins) - (icmsProjetado + pisCofinsProjetado + ibsProjetado + cbsProjetado);
 
-  return { icmsProjetado, pisCofinsProjetado, baseIbsCbs, ibsProjetado, cbsProjetado, totalImpostosAtuais, totalReforma };
+  return { icmsProjetado, pisCofinsProjetado, baseIbsCbs, ibsProjetado, cbsProjetado, totalImpostosAtuais, totalReforma, diferencaProjetado, diferencaReal };
 }
 
 export default function Dashboard() {
@@ -315,7 +317,7 @@ export default function Dashboard() {
   }: {
     title: string;
     icon: React.ElementType;
-    totais: TotaisCategoria & { icmsProjetado: number; pisCofinsProjetado: number; baseIbsCbs: number; ibsProjetado: number; cbsProjetado: number; totalImpostosAtuais: number; totalReforma: number };
+    totais: TotaisCategoria & { icmsProjetado: number; pisCofinsProjetado: number; baseIbsCbs: number; ibsProjetado: number; cbsProjetado: number; totalImpostosAtuais: number; totalReforma: number; diferencaProjetado: number; diferencaReal: number };
     variant: 'entrada' | 'saida';
   }) => (
     <Card className="border-border/50">
@@ -366,6 +368,18 @@ export default function Dashboard() {
         <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-1 rounded">
           <span className="text-xs font-medium text-ibs-cbs">Total Reforma:</span>
           <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totais.totalReforma)}</span>
+        </div>
+        <div className="flex justify-between items-center pt-2 border-t">
+          <span className="text-xs text-muted-foreground">Dif. Projetado:</span>
+          <span className={`text-sm font-bold ${totais.diferencaProjetado > 0 ? 'text-destructive' : totais.diferencaProjetado < 0 ? 'text-positive' : ''}`}>
+            {totais.diferencaProjetado > 0 ? '+' : ''}{formatCurrency(totais.diferencaProjetado)}
+          </span>
+        </div>
+        <div className="flex justify-between items-center">
+          <span className="text-xs text-muted-foreground">Dif. Real:</span>
+          <span className={`text-sm font-bold ${totais.diferencaReal > 0 ? 'text-destructive' : totais.diferencaReal < 0 ? 'text-positive' : ''}`}>
+            {totais.diferencaReal > 0 ? '+' : ''}{formatCurrency(totais.diferencaReal)}
+          </span>
         </div>
       </CardContent>
     </Card>

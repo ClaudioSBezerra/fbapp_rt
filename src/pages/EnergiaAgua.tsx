@@ -227,8 +227,10 @@ export default function EnergiaAgua() {
     
     const totalImpostosAtuais = icmsProjetado + pisCofinsProjetado;
     const totalReforma = ibsProjetado + cbsProjetado;
+    const diferencaProjetado = totalImpostosAtuais - totalReforma;
+    const diferencaReal = (icms + pisCofins) - (icmsProjetado + pisCofinsProjetado + ibsProjetado + cbsProjetado);
     
-    return { valor, icms, pisCofins, icmsProjetado, pisCofinsProjetado, baseIbsCbs, ibsProjetado, cbsProjetado, totalImpostosAtuais, totalReforma };
+    return { valor, icms, pisCofins, icmsProjetado, pisCofinsProjetado, baseIbsCbs, ibsProjetado, cbsProjetado, totalImpostosAtuais, totalReforma, diferencaProjetado, diferencaReal };
   }, [creditosAgregados, aliquotaSelecionada]);
 
   const totaisDebitos = useMemo(() => {
@@ -244,8 +246,10 @@ export default function EnergiaAgua() {
     const cbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
     const totalImpostosAtuais = icmsProjetado + pisCofinsProjetado;
     const totalReforma = ibsProjetado + cbsProjetado;
+    const diferencaProjetado = totalImpostosAtuais - totalReforma;
+    const diferencaReal = (icms + pisCofins) - (icmsProjetado + pisCofinsProjetado + ibsProjetado + cbsProjetado);
     
-    return { valor, icms, pisCofins, icmsProjetado, pisCofinsProjetado, baseIbsCbs, ibsProjetado, cbsProjetado, totalImpostosAtuais, totalReforma };
+    return { valor, icms, pisCofins, icmsProjetado, pisCofinsProjetado, baseIbsCbs, ibsProjetado, cbsProjetado, totalImpostosAtuais, totalReforma, diferencaProjetado, diferencaReal };
   }, [debitosAgregados, aliquotaSelecionada]);
 
   const hasFiliais = filiais.length > 0;
@@ -280,7 +284,8 @@ export default function EnergiaAgua() {
               <TableHead className="text-right text-ibs-cbs">IBS Projetado</TableHead>
               <TableHead className="text-right text-ibs-cbs">CBS Projetado</TableHead>
               <TableHead className="text-right font-semibold text-ibs-cbs bg-muted/30">Total Reforma</TableHead>
-              <TableHead className="text-right">Diferença</TableHead>
+              <TableHead className="text-right">Dif. Projetado</TableHead>
+              <TableHead className="text-right">Dif. Real</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -296,7 +301,8 @@ export default function EnergiaAgua() {
               const vlIbsProjetado = aliquota ? baseIbsCbs * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
               const vlCbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
               const totalReforma = vlIbsProjetado + vlCbsProjetado;
-              const diferenca = totalImpostosAtuais - totalReforma;
+              const diferencaProjetado = totalImpostosAtuais - totalReforma;
+              const diferencaReal = (vlIcms + vlPisCofins) - (vlIcmsProjetado + vlPisCofinsProjetado + vlIbsProjetado + vlCbsProjetado);
 
               return (
                 <TableRow key={`${row.filial_id}-${row.mes_ano}-${index}`}>
@@ -314,11 +320,20 @@ export default function EnergiaAgua() {
                   <TableCell className="text-right font-mono font-semibold text-ibs-cbs bg-muted/30">{formatCurrency(totalReforma)}</TableCell>
                   <TableCell className="text-right">
                     <Badge
-                      variant={diferenca > 0 ? 'destructive' : diferenca < 0 ? 'default' : 'secondary'}
-                      className={diferenca < 0 ? 'bg-positive text-positive-foreground' : ''}
+                      variant={diferencaProjetado > 0 ? 'destructive' : diferencaProjetado < 0 ? 'default' : 'secondary'}
+                      className={diferencaProjetado < 0 ? 'bg-positive text-positive-foreground' : ''}
                     >
-                      {diferenca > 0 ? '+' : ''}
-                      {formatCurrency(diferenca)}
+                      {diferencaProjetado > 0 ? '+' : ''}
+                      {formatCurrency(diferencaProjetado)}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Badge
+                      variant={diferencaReal > 0 ? 'destructive' : diferencaReal < 0 ? 'default' : 'secondary'}
+                      className={diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}
+                    >
+                      {diferencaReal > 0 ? '+' : ''}
+                      {formatCurrency(diferencaReal)}
                     </Badge>
                   </TableCell>
                 </TableRow>
@@ -452,6 +467,18 @@ export default function EnergiaAgua() {
               <span className="text-sm font-medium text-ibs-cbs">Total Reforma:</span>
               <span className="text-lg font-bold text-ibs-cbs">{formatCurrency(totaisCreditos.totalReforma)}</span>
             </div>
+            <div className="flex justify-between items-center pt-2 border-t">
+              <span className="text-sm text-muted-foreground">Dif. Projetado:</span>
+              <Badge variant={totaisCreditos.diferencaProjetado > 0 ? 'destructive' : totaisCreditos.diferencaProjetado < 0 ? 'default' : 'secondary'} className={totaisCreditos.diferencaProjetado < 0 ? 'bg-positive text-positive-foreground' : ''}>
+                {totaisCreditos.diferencaProjetado > 0 ? '+' : ''}{formatCurrency(totaisCreditos.diferencaProjetado)}
+              </Badge>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">Dif. Real:</span>
+              <Badge variant={totaisCreditos.diferencaReal > 0 ? 'destructive' : totaisCreditos.diferencaReal < 0 ? 'default' : 'secondary'} className={totaisCreditos.diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}>
+                {totaisCreditos.diferencaReal > 0 ? '+' : ''}{formatCurrency(totaisCreditos.diferencaReal)}
+              </Badge>
+            </div>
           </CardContent>
         </Card>
 
@@ -502,6 +529,18 @@ export default function EnergiaAgua() {
             <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-1 rounded">
               <span className="text-sm font-medium text-ibs-cbs">Total Reforma:</span>
               <span className="text-lg font-bold text-ibs-cbs">{formatCurrency(totaisDebitos.totalReforma)}</span>
+            </div>
+            <div className="flex justify-between items-center pt-2 border-t">
+              <span className="text-sm text-muted-foreground">Dif. Projetado:</span>
+              <Badge variant={totaisDebitos.diferencaProjetado > 0 ? 'destructive' : totaisDebitos.diferencaProjetado < 0 ? 'default' : 'secondary'} className={totaisDebitos.diferencaProjetado < 0 ? 'bg-positive text-positive-foreground' : ''}>
+                {totaisDebitos.diferencaProjetado > 0 ? '+' : ''}{formatCurrency(totaisDebitos.diferencaProjetado)}
+              </Badge>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">Dif. Real:</span>
+              <Badge variant={totaisDebitos.diferencaReal > 0 ? 'destructive' : totaisDebitos.diferencaReal < 0 ? 'default' : 'secondary'} className={totaisDebitos.diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}>
+                {totaisDebitos.diferencaReal > 0 ? '+' : ''}{formatCurrency(totaisDebitos.diferencaReal)}
+              </Badge>
             </div>
           </CardContent>
         </Card>
