@@ -404,7 +404,9 @@ function processLine(
         if (fields.length > 20) {
           const indOper = fields[2];
           const tipo = indOper === "0" ? "entrada" : "saida";
-          const cnpjTransportadora = fields[4]?.replace(/\D/g, "") || null;
+          // Extrair CNPJ dos primeiros 14 dígitos da chave do CT-e (campos 7-20 da CHV_CTE)
+          const chvCte = fields[10] || "";
+          const cnpjTransportadora = chvCte.length >= 20 ? chvCte.substring(6, 20) : null;
           const valorDoc = parseNumber(fields[15]);
 
           if (valorDoc > 0) {
