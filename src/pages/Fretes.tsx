@@ -3,11 +3,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, ArrowDownRight, ArrowUpRight, Truck, Filter, Calendar, HelpCircle, Download } from 'lucide-react';
+import { ArrowDownRight, ArrowUpRight, Truck, Filter, Calendar, HelpCircle, Download } from 'lucide-react';
 import { exportToExcel } from '@/lib/exportToExcel';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { supabase } from '@/integrations/supabase/client';
@@ -70,9 +69,6 @@ export default function Fretes() {
   const [aliquotas, setAliquotas] = useState<Aliquota[]>([]);
   const [filiais, setFiliais] = useState<Filial[]>([]);
   const [loading, setLoading] = useState(true);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [selectedFilial, setSelectedFilial] = useState<string>('');
   const { user } = useAuth();
 
   // Filters
@@ -80,17 +76,6 @@ export default function Fretes() {
   const [filterMesAno, setFilterMesAno] = useState<string>('all');
   const [anoProjecao, setAnoProjecao] = useState<number>(2027);
   const ANOS_PROJECAO = [2027, 2028, 2029, 2030, 2031, 2032, 2033];
-
-  const [newItem, setNewItem] = useState({
-    tipo: 'entrada',
-    mes_ano: new Date().toISOString().slice(0, 7),
-    ncm: '',
-    descricao: '',
-    cnpj_transportadora: '',
-    valor: '',
-    pis: '',
-    cofins: '',
-  });
 
   const fetchAggregatedData = async () => {
     const { data, error } = await supabase.rpc('get_mv_fretes_aggregated');
@@ -130,9 +115,6 @@ export default function Fretes() {
 
         if (filiaisData) {
           setFiliais(filiaisData);
-          if (filiaisData.length > 0 && !selectedFilial) {
-            setSelectedFilial(filiaisData[0].id);
-          }
         }
       } catch (error) {
         console.error('Error fetching data:', error);
@@ -169,51 +151,6 @@ export default function Fretes() {
     filteredData.filter(i => i.tipo === 'saida'), 
     [filteredData]
   );
-
-  const handleNewItem = async () => {
-    if (!selectedFilial) {
-      toast.error('Selecione uma filial');
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      const { error } = await supabase.from('fretes').insert({
-        filial_id: selectedFilial,
-        tipo: newItem.tipo,
-        mes_ano: `${newItem.mes_ano}-01`,
-        ncm: newItem.ncm || null,
-        descricao: newItem.descricao || null,
-        cnpj_transportadora: newItem.cnpj_transportadora || null,
-        valor: parseFloat(newItem.valor) || 0,
-        pis: parseFloat(newItem.pis) || 0,
-        cofins: parseFloat(newItem.cofins) || 0,
-      });
-
-      if (error) throw error;
-
-      toast.success('Frete adicionado com sucesso');
-      setDialogOpen(false);
-      setNewItem({
-        tipo: 'entrada',
-        mes_ano: new Date().toISOString().slice(0, 7),
-        ncm: '',
-        descricao: '',
-        cnpj_transportadora: '',
-        valor: '',
-        pis: '',
-        cofins: '',
-      });
-
-      // Refresh materialized view data
-      await fetchAggregatedData();
-    } catch (error) {
-      console.error('Error adding item:', error);
-      toast.error('Erro ao adicionar frete');
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
   const aliquotaSelecionada = useMemo(() => {
     return aliquotas.find((a) => a.ano === anoProjecao) || null;
@@ -435,10 +372,6 @@ export default function Fretes() {
           >
             <Download className="h-4 w-4 mr-2" />
             Exportar Excel
-          </Button>
-          <Button size="sm" onClick={() => setDialogOpen(true)} disabled={!hasFiliais}>
-            <Plus className="h-4 w-4 mr-2" />
-            Novo Frete
           </Button>
         </div>
       </div>
@@ -664,136 +597,6 @@ export default function Fretes() {
         </TabsContent>
       </Tabs>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Novo Frete</DialogTitle>
-            <DialogDescription>
-              Adicione um novo registro de frete
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="filial">Filial</Label>
-              <Select value={selectedFilial} onValueChange={setSelectedFilial}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione a filial" />
-                </SelectTrigger>
-                <SelectContent>
-                  {filiais.map((filial) => (
-                    <SelectItem key={filial.id} value={filial.id}>
-                      {filial.nome_fantasia || filial.razao_social} - {formatCNPJ(filial.cnpj)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="tipo">Tipo</Label>
-                <Select
-                  value={newItem.tipo}
-                  onValueChange={(v) => setNewItem({ ...newItem, tipo: v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="entrada">Entrada</SelectItem>
-                    <SelectItem value="saida">Saída</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="mes_ano">Mês/Ano</Label>
-                <Input
-                  id="mes_ano"
-                  type="month"
-                  value={newItem.mes_ano}
-                  onChange={(e) => setNewItem({ ...newItem, mes_ano: e.target.value })}
-                />
-              </div>
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="ncm">NCM (opcional)</Label>
-              <Input
-                id="ncm"
-                value={newItem.ncm}
-                onChange={(e) => setNewItem({ ...newItem, ncm: e.target.value })}
-                placeholder="00000000"
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="cnpj_transportadora">CNPJ Transportadora (opcional)</Label>
-              <Input
-                id="cnpj_transportadora"
-                value={newItem.cnpj_transportadora}
-                onChange={(e) => setNewItem({ ...newItem, cnpj_transportadora: e.target.value })}
-                placeholder="00.000.000/0000-00"
-              />
-            </div>
-
-            <div className="grid grid-cols-3 gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="valor">Valor</Label>
-                <Input
-                  id="valor"
-                  type="number"
-                  step="0.01"
-                  value={newItem.valor}
-                  onChange={(e) => setNewItem({ ...newItem, valor: e.target.value })}
-                  placeholder="0,00"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="pis">PIS</Label>
-                <Input
-                  id="pis"
-                  type="number"
-                  step="0.01"
-                  value={newItem.pis}
-                  onChange={(e) => setNewItem({ ...newItem, pis: e.target.value })}
-                  placeholder="0,00"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="cofins">COFINS</Label>
-                <Input
-                  id="cofins"
-                  type="number"
-                  step="0.01"
-                  value={newItem.cofins}
-                  onChange={(e) => setNewItem({ ...newItem, cofins: e.target.value })}
-                  placeholder="0,00"
-                />
-              </div>
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="descricao">Descrição (opcional)</Label>
-              <Input
-                id="descricao"
-                value={newItem.descricao}
-                onChange={(e) => setNewItem({ ...newItem, descricao: e.target.value })}
-                placeholder="Descrição do frete"
-              />
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
-              Cancelar
-            </Button>
-            <Button onClick={handleNewItem} disabled={submitting}>
-              {submitting ? 'Salvando...' : 'Salvar'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
