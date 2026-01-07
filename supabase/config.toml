@@ -23,3 +23,6 @@ verify_jwt = false
 
 [functions.get-tenant-structure]
 verify_jwt = false
+
+[functions.reset-all-data]
+verify_jwt = false
