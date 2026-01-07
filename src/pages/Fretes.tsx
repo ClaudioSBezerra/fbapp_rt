@@ -223,7 +223,7 @@ export default function Fretes() {
     const ibsProjetado = aliquota ? baseIbsCbs * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
     const cbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
     
-    const totalImpostosAtuais = icmsProjetado + pisCofinsProjetado;
+    const totalImpostosAtuais = icms + pisCofins;
     const totalReforma = ibsProjetado + cbsProjetado;
     const diferencaProjetado = totalImpostosAtuais - totalReforma;
     const diferencaReal = (icms + pisCofins) - (icmsProjetado + pisCofinsProjetado + ibsProjetado + cbsProjetado);
@@ -242,7 +242,7 @@ export default function Fretes() {
     const baseIbsCbs = valor - icmsProjetado - pisCofinsProjetado;
     const ibsProjetado = aliquota ? baseIbsCbs * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
     const cbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
-    const totalImpostosAtuais = icmsProjetado + pisCofinsProjetado;
+    const totalImpostosAtuais = icms + pisCofins;
     const totalReforma = ibsProjetado + cbsProjetado;
     const diferencaProjetado = totalImpostosAtuais - totalReforma;
     const diferencaReal = (icms + pisCofins) - (icmsProjetado + pisCofinsProjetado + ibsProjetado + cbsProjetado);
@@ -298,7 +298,7 @@ export default function Fretes() {
               const vlIcmsProjetado = aliquota ? vlIcms * (1 - (aliquota.reduc_icms / 100)) : vlIcms;
               const vlPisCofins = row.pis + row.cofins;
               const vlPisCofinsProjetado = aliquota ? vlPisCofins * (1 - (aliquota.reduc_piscofins / 100)) : vlPisCofins;
-              const totalImpostosAtuais = vlIcmsProjetado + vlPisCofinsProjetado;
+              const totalImpostosAtuais = vlIcms + vlPisCofins;
               const baseIbsCbs = row.valor - vlIcmsProjetado - vlPisCofinsProjetado;
               const vlIbsProjetado = aliquota ? baseIbsCbs * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
               const vlCbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
