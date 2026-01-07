@@ -183,7 +183,7 @@ serve(async (req) => {
         .insert({
           empresa_id: empresaId,
           cnpj: header.cnpj,
-          razao_social: header.razaoSocial,
+          razao_social: `Filial ${header.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5")}`,
           nome_fantasia: null,
         })
         .select()
