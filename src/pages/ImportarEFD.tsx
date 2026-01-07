@@ -110,6 +110,8 @@ export default function ImportarEFD() {
     estimated: number;
     deleted: number;
   } | null>(null);
+  const [progressAnimation, setProgressAnimation] = useState(0);
+  const [statusMessage, setStatusMessage] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { session } = useAuth();
   const navigate = useNavigate();
@@ -341,13 +343,49 @@ export default function ImportarEFD() {
   const activeJobs = jobs.filter(j => j.status === 'pending' || j.status === 'processing');
   const completedJobs = jobs.filter(j => j.status === 'completed' || j.status === 'failed' || j.status === 'cancelled');
 
+  // Animated progress effect for database clearing
+  useEffect(() => {
+    if (!clearProgress || clearProgress.status === 'done') return;
+    
+    const messages = [
+      'Contando registros...',
+      'Deletando mercadorias...',
+      'Deletando energia e água...',
+      'Deletando fretes...',
+      'Atualizando índices...',
+    ];
+    
+    let messageIndex = 0;
+    let progress = 0;
+    
+    setStatusMessage(messages[0]);
+    setProgressAnimation(0);
+    
+    const messageInterval = setInterval(() => {
+      messageIndex = Math.min(messageIndex + 1, messages.length - 1);
+      setStatusMessage(messages[messageIndex]);
+    }, 4000);
+    
+    const progressInterval = setInterval(() => {
+      progress = Math.min(progress + 2, 90);
+      setProgressAnimation(progress);
+    }, 500);
+    
+    return () => {
+      clearInterval(messageInterval);
+      clearInterval(progressInterval);
+    };
+  }, [clearProgress?.status]);
+
   const handleClearDatabase = async () => {
     if (!session?.user?.id) return;
     
     setIsClearing(true);
+    setProgressAnimation(0);
+    setStatusMessage('Contando registros...');
     setClearProgress({ 
-      status: 'counting', 
-      currentTable: 'Contando registros...', 
+      status: 'deleting', 
+      currentTable: '', 
       estimated: 0, 
       deleted: 0 
     });
@@ -370,6 +408,7 @@ export default function ImportarEFD() {
                           (data?.deleted?.energia_agua || 0) + 
                           (data?.deleted?.fretes || 0);
       
+      setProgressAnimation(100);
       setClearProgress({
         status: 'done',
         currentTable: 'Concluído!',
@@ -420,20 +459,19 @@ export default function ImportarEFD() {
                       ) : (
                         <Loader2 className="h-5 w-5 animate-spin text-primary" />
                       )}
-                      <span className="font-medium">{clearProgress.currentTable}</span>
+                      <span className="font-medium">
+                        {clearProgress.status === 'done' ? 'Concluído!' : statusMessage}
+                      </span>
                     </div>
                     <Progress 
-                      value={clearProgress.estimated > 0 
-                        ? (clearProgress.deleted / clearProgress.estimated) * 100 
-                        : clearProgress.status === 'done' ? 100 : 0
-                      } 
+                      value={clearProgress.status === 'done' ? 100 : progressAnimation} 
                       className="h-3" 
                     />
-                    {clearProgress.status === 'done' && (
-                      <p className="text-sm text-muted-foreground text-center">
-                        {clearProgress.deleted.toLocaleString('pt-BR')} registros removidos
-                      </p>
-                    )}
+                    <p className="text-xs text-muted-foreground text-center">
+                      {clearProgress.status === 'done' 
+                        ? `${clearProgress.deleted.toLocaleString('pt-BR')} registros removidos`
+                        : 'Isso pode levar alguns minutos para bases grandes...'}
+                    </p>
                   </div>
                 ) : (
                   <>
