@@ -8,7 +8,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, ArrowUpRight, ArrowDownRight, Building2, Filter, Trash2, AlertTriangle, Calendar, HelpCircle } from 'lucide-react';
+import { Plus, ArrowUpRight, ArrowDownRight, Building2, Filter, Trash2, AlertTriangle, Calendar, HelpCircle, Download } from 'lucide-react';
+import { exportToExcel } from '@/lib/exportToExcel';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { supabase } from '@/integrations/supabase/client';
@@ -386,6 +387,44 @@ export default function Mercadorias() {
   }, [filteredData, aliquotaSelecionada]);
   const hasFiliais = filiais.length > 0;
 
+  const handleExportExcel = () => {
+    const aliquota = aliquotaSelecionada;
+    const dataToExport = filteredData.map(row => {
+      const vlIcms = row.icms;
+      const vlIcmsProjetado = aliquota ? vlIcms * (1 - (aliquota.reduc_icms / 100)) : vlIcms;
+      const vlPisCofins = row.pis + row.cofins;
+      const vlPisCofinsProjetado = aliquota ? vlPisCofins * (1 - (aliquota.reduc_piscofins / 100)) : vlPisCofins;
+      const totalImpostosAtuais = vlIcms + vlPisCofins;
+      const baseIbsCbs = row.valor - vlIcmsProjetado - vlPisCofinsProjetado;
+      const vlIbsProjetado = aliquota ? baseIbsCbs * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
+      const vlCbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
+      const totalReforma = vlIbsProjetado + vlCbsProjetado;
+      const diferencaProjetado = totalImpostosAtuais - totalReforma;
+      const diferencaReal = (vlIcms + vlPisCofins) - (vlIcmsProjetado + vlPisCofinsProjetado + vlIbsProjetado + vlCbsProjetado);
+
+      return {
+        'Tipo': row.tipo === 'entrada' ? 'Entrada' : 'Saída',
+        'Filial': cleanFilialName(row.filial_nome),
+        'Mês/Ano': formatDate(row.mes_ano),
+        'Valor': row.valor,
+        'ICMS': vlIcms,
+        'ICMS Projetado': vlIcmsProjetado,
+        'PIS+COFINS': vlPisCofins,
+        'PIS+COFINS Projetado': vlPisCofinsProjetado,
+        'Total Impostos Atuais': totalImpostosAtuais,
+        'Base IBS/CBS': baseIbsCbs,
+        'IBS Projetado': vlIbsProjetado,
+        'CBS Projetado': vlCbsProjetado,
+        'Total Reforma': totalReforma,
+        'Diferença Projetado': diferencaProjetado,
+        'Diferença Real': diferencaReal,
+      };
+    });
+
+    exportToExcel(dataToExport, `mercadorias_${anoProjecao}`, 'Mercadorias');
+    toast.success('Arquivo Excel exportado com sucesso!');
+  };
+
   const handleClearDatabase = async () => {
     if (!user?.id) return;
     
@@ -417,6 +456,15 @@ export default function Mercadorias() {
           <p className="text-muted-foreground">Comparativo PIS+COFINS vs IBS+CBS agregado por Filial e Mês</p>
         </div>
         <div className="flex items-center gap-2">
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={handleExportExcel}
+            disabled={filteredData.length === 0}
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Exportar Excel
+          </Button>
           <Button 
             variant="outline" 
             size="sm"
