@@ -75,7 +75,7 @@ function calcularProjecoes(
   const baseIbsCbs = totais.valor - icmsProjetado - pisCofinsProjetado;
   const ibsProjetado = aliquota ? baseIbsCbs * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
   const cbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
-  const totalImpostosAtuais = icmsProjetado + pisCofinsProjetado;
+  const totalImpostosAtuais = totais.icms + totais.pisCofins;
   const totalReforma = ibsProjetado + cbsProjetado;
   const diferencaProjetado = totalImpostosAtuais - totalReforma;
   const diferencaReal = (totais.icms + totais.pisCofins) - (icmsProjetado + pisCofinsProjetado + ibsProjetado + cbsProjetado);
