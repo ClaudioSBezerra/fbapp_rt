@@ -121,25 +121,40 @@ serve(async (req) => {
       );
     }
 
-    // Extract header from file (stream only first few KB to extract header)
+    // Extract header from file using Range request (only first 16KB, not entire file)
     console.log(`Extracting header from file: ${filePath}`);
     
-    const { data: fileData, error: downloadError } = await supabase.storage
+    // Generate signed URL to use with Range request
+    const { data: signedUrlData, error: signedUrlError } = await supabase.storage
       .from("efd-files")
-      .download(filePath);
+      .createSignedUrl(filePath, 60); // URL valid for 60 seconds
 
-    if (downloadError || !fileData) {
-      console.error("Download error:", downloadError);
+    if (signedUrlError || !signedUrlData?.signedUrl) {
+      console.error("Signed URL error:", signedUrlError);
       await supabase.storage.from("efd-files").remove([filePath]);
       return new Response(
-        JSON.stringify({ error: "Failed to download file for header extraction" }),
+        JSON.stringify({ error: "Failed to create signed URL for file" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Read only first 8KB to extract header (not entire file)
-    const firstChunk = fileData.slice(0, 8192);
-    const text = await firstChunk.text();
+    // Download only the first 16KB using Range request (avoids loading entire file into memory)
+    const rangeResponse = await fetch(signedUrlData.signedUrl, {
+      headers: {
+        "Range": "bytes=0-16383" // First 16KB only
+      }
+    });
+
+    if (!rangeResponse.ok && rangeResponse.status !== 206) {
+      console.error("Range request failed:", rangeResponse.status);
+      await supabase.storage.from("efd-files").remove([filePath]);
+      return new Response(
+        JSON.stringify({ error: "Failed to download file header" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const text = await rangeResponse.text();
     const lines = text.split("\n");
     
     let header: EfdHeader | null = null;
