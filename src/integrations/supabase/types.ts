@@ -499,11 +499,12 @@ export type Database = {
         }[]
       }
       get_mv_dashboard_stats: {
-        Args: never
+        Args: { _mes_ano?: string }
         Returns: {
           categoria: string
           cofins: number
           icms: number
+          mes_ano: string
           pis: number
           subtipo: string
           valor: number

@@ -1,10 +1,12 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Package, Truck, Zap, Building2, Loader2, TrendingUp, TrendingDown, Calendar } from 'lucide-react';
+import { Package, Truck, Zap, Building2, Loader2, TrendingUp, TrendingDown, Calendar, CalendarDays } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { format, parseISO } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
 interface TotaisCategoria {
   valor: number;
@@ -84,16 +86,49 @@ export default function Dashboard() {
   const [aliquotas, setAliquotas] = useState<Aliquota[]>([]);
   const [loading, setLoading] = useState(true);
   const [anoProjecao, setAnoProjecao] = useState<number>(2027);
+  const [periodosDisponiveis, setPeriodosDisponiveis] = useState<string[]>([]);
+  const [periodoSelecionado, setPeriodoSelecionado] = useState<string>('');
 
+  // Load available periods first
   useEffect(() => {
+    const loadPeriodos = async () => {
+      try {
+        // Get all data without filter to extract available periods
+        const { data: allStats } = await supabase.rpc('get_mv_dashboard_stats');
+        
+        if (allStats && allStats.length > 0) {
+          const periodos = [...new Set(allStats.map((s: any) => s.mes_ano))]
+            .filter(Boolean)
+            .sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+          
+          setPeriodosDisponiveis(periodos);
+          
+          // Default to most recent period
+          if (periodos.length > 0 && !periodoSelecionado) {
+            setPeriodoSelecionado(periodos[0]);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading periods:', error);
+      }
+    };
+
+    loadPeriodos();
+  }, []);
+
+  // Load stats when period changes
+  useEffect(() => {
+    if (!periodoSelecionado) return;
+    
     const loadStats = async () => {
+      setLoading(true);
       try {
         const [
           { data: dashboardStats },
           { data: empresas },
           { data: aliquotasData },
         ] = await Promise.all([
-          supabase.rpc('get_mv_dashboard_stats'),
+          supabase.rpc('get_mv_dashboard_stats', { _mes_ano: periodoSelecionado }),
           supabase.from('empresas').select('id'),
           supabase.from('aliquotas').select('ano, ibs_estadual, ibs_municipal, cbs, reduc_icms').order('ano'),
         ]);
@@ -109,7 +144,8 @@ export default function Dashboard() {
             valor: acc.valor + (Number(item.valor) || 0),
             icms: acc.icms + (Number(item.icms) || 0),
             pisCofins: acc.pisCofins + (Number(item.pis) || 0) + (Number(item.cofins) || 0),
-          }), { valor: 0, icms: 0, pisCofins: 0 });
+            count: acc.count + 1,
+          }), { valor: 0, icms: 0, pisCofins: 0, count: 0 });
         };
 
         setStats({
@@ -135,7 +171,16 @@ export default function Dashboard() {
     };
 
     loadStats();
-  }, []);
+  }, [periodoSelecionado]);
+
+  const formatPeriodo = (periodo: string) => {
+    try {
+      const date = parseISO(periodo);
+      return format(date, 'MMMM/yyyy', { locale: ptBR });
+    } catch {
+      return periodo;
+    }
+  };
 
   const aliquotaSelecionada = useMemo(() => {
     return aliquotas.find((a) => a.ano === anoProjecao) || null;
@@ -293,21 +338,42 @@ export default function Dashboard() {
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
-          <p className="text-muted-foreground">Visão geral consolidada da carga tributária atual vs projetada</p>
+          <p className="text-muted-foreground">
+            Visão consolidada da carga tributária 
+            {periodoSelecionado && ` - ${formatPeriodo(periodoSelecionado)}`}
+          </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Calendar className="h-4 w-4 text-muted-foreground" />
-          <Label className="text-sm font-medium">Ano Projeção:</Label>
-          <Select value={anoProjecao.toString()} onValueChange={(v) => setAnoProjecao(parseInt(v))}>
-            <SelectTrigger className="w-[120px]">
-              <SelectValue placeholder="Ano" />
-            </SelectTrigger>
-            <SelectContent>
-              {ANOS_PROJECAO.map((ano) => (
-                <SelectItem key={ano} value={ano.toString()}>{ano}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex items-center gap-2">
+            <CalendarDays className="h-4 w-4 text-muted-foreground" />
+            <Label className="text-sm font-medium">Período:</Label>
+            <Select value={periodoSelecionado} onValueChange={setPeriodoSelecionado}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Selecione o período" />
+              </SelectTrigger>
+              <SelectContent>
+                {periodosDisponiveis.map((periodo) => (
+                  <SelectItem key={periodo} value={periodo}>
+                    {formatPeriodo(periodo)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center gap-2">
+            <Calendar className="h-4 w-4 text-muted-foreground" />
+            <Label className="text-sm font-medium">Ano Projeção:</Label>
+            <Select value={anoProjecao.toString()} onValueChange={(v) => setAnoProjecao(parseInt(v))}>
+              <SelectTrigger className="w-[120px]">
+                <SelectValue placeholder="Ano" />
+              </SelectTrigger>
+              <SelectContent>
+                {ANOS_PROJECAO.map((ano) => (
+                  <SelectItem key={ano} value={ano.toString()}>{ano}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       </div>
 
