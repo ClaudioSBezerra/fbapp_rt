@@ -266,8 +266,12 @@ export default function Fretes() {
               </TableHead>
               <TableHead className="text-right text-xs font-semibold bg-muted/30 whitespace-nowrap">Tot. Imp. Atuais</TableHead>
               <TableHead className="text-right text-xs whitespace-nowrap">Base IBS/CBS</TableHead>
-              <TableHead className="text-right text-xs text-ibs-cbs whitespace-nowrap">IBS Projetado</TableHead>
-              <TableHead className="text-right text-xs text-ibs-cbs whitespace-nowrap">CBS Projetado</TableHead>
+              <TableHead className="text-right text-xs text-ibs-cbs whitespace-nowrap">
+                IBS Proj. {aliquotaSelecionada && <span className="text-muted-foreground font-normal">({(aliquotaSelecionada.ibs_estadual + aliquotaSelecionada.ibs_municipal).toFixed(1)}%)</span>}
+              </TableHead>
+              <TableHead className="text-right text-xs text-ibs-cbs whitespace-nowrap">
+                CBS Proj. {aliquotaSelecionada && <span className="text-muted-foreground font-normal">({aliquotaSelecionada.cbs.toFixed(1)}%)</span>}
+              </TableHead>
               <TableHead className="text-right text-xs font-semibold text-ibs-cbs bg-muted/30 whitespace-nowrap">Total Reforma</TableHead>
               <TableHead className="text-right text-xs">
                 <Tooltip>
