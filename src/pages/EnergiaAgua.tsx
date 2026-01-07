@@ -365,8 +365,8 @@ export default function EnergiaAgua() {
     <div className="space-y-6 animate-fade-in">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Energia e Água</h1>
-          <p className="text-muted-foreground">
+          <h1 className="text-xl font-bold text-foreground">Energia e Água</h1>
+          <p className="text-sm text-muted-foreground">
             Comparativo PIS+COFINS vs IBS+CBS agregado por Filial e Mês
           </p>
         </div>
@@ -388,11 +388,11 @@ export default function EnergiaAgua() {
         <CardContent className="pt-4">
           <div className="flex items-center gap-4 flex-wrap">
             <div className="flex items-center gap-2">
-              <Filter className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-medium">Filtros:</span>
+              <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-xs font-medium">Filtros:</span>
             </div>
             <div className="flex items-center gap-2">
-              <Label className="text-sm">Filial:</Label>
+              <Label className="text-xs">Filial:</Label>
               <Select value={filterFilial} onValueChange={setFilterFilial}>
                 <SelectTrigger className="w-[200px]">
                   <SelectValue placeholder="Todas" />
@@ -408,7 +408,7 @@ export default function EnergiaAgua() {
               </Select>
             </div>
             <div className="flex items-center gap-2">
-              <Label className="text-sm">Mês/Ano:</Label>
+              <Label className="text-xs">Mês/Ano:</Label>
               <Select value={filterMesAno} onValueChange={setFilterMesAno}>
                 <SelectTrigger className="w-[150px]">
                   <SelectValue placeholder="Todos" />
@@ -424,8 +424,8 @@ export default function EnergiaAgua() {
               </Select>
             </div>
             <div className="flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-muted-foreground" />
-              <Label className="text-sm">Ano Projeção:</Label>
+              <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+              <Label className="text-xs">Ano Projeção:</Label>
               <Select value={anoProjecao.toString()} onValueChange={(v) => setAnoProjecao(parseInt(v))}>
                 <SelectTrigger className="w-[120px]">
                   <SelectValue placeholder="Ano" />
@@ -444,60 +444,60 @@ export default function EnergiaAgua() {
       <div className="grid gap-4 md:grid-cols-2">
         <Card className="border-border/50">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <ArrowDownRight className="h-4 w-4" />
+            <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-2">
+              <ArrowDownRight className="h-3.5 w-3.5" />
               Total Créditos - Projeção {anoProjecao}
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2">
+          <CardContent className="space-y-1.5">
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">Valor (VL_DOC):</span>
-              <span className="text-lg font-bold">{formatCurrency(totaisCreditos.valor)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">ICMS:</span>
-              <span className="text-lg font-bold">{formatCurrency(totaisCreditos.icms)}</span>
+              <span className="text-[10px] text-muted-foreground">Valor (VL_DOC):</span>
+              <span className="text-sm font-bold">{formatCurrency(totaisCreditos.valor)}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">ICMS Projetado:</span>
-              <span className="text-lg font-bold">{formatCurrency(totaisCreditos.icmsProjetado)}</span>
+              <span className="text-[10px] text-muted-foreground">ICMS:</span>
+              <span className="text-sm font-bold">{formatCurrency(totaisCreditos.icms)}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">PIS+COFINS:</span>
-              <span className="text-lg font-bold text-pis-cofins">{formatCurrency(totaisCreditos.pisCofins)}</span>
+              <span className="text-[10px] text-muted-foreground">ICMS Projetado:</span>
+              <span className="text-sm font-bold">{formatCurrency(totaisCreditos.icmsProjetado)}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">PIS+COFINS Projetado:</span>
-              <span className="text-lg font-bold text-pis-cofins">{formatCurrency(totaisCreditos.pisCofinsProjetado)}</span>
-            </div>
-            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-1 rounded">
-              <span className="text-sm font-medium">Tot. Impostos Atuais:</span>
-              <span className="text-lg font-bold">{formatCurrency(totaisCreditos.totalImpostosAtuais)}</span>
+              <span className="text-[10px] text-muted-foreground">PIS+COFINS:</span>
+              <span className="text-sm font-bold text-pis-cofins">{formatCurrency(totaisCreditos.pisCofins)}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">Base IBS/CBS:</span>
-              <span className="text-lg font-bold">{formatCurrency(totaisCreditos.baseIbsCbs)}</span>
+              <span className="text-[10px] text-muted-foreground">PIS+COFINS Projetado:</span>
+              <span className="text-sm font-bold text-pis-cofins">{formatCurrency(totaisCreditos.pisCofinsProjetado)}</span>
+            </div>
+            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
+              <span className="text-[10px] font-medium">Tot. Impostos Atuais:</span>
+              <span className="text-sm font-bold">{formatCurrency(totaisCreditos.totalImpostosAtuais)}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">IBS Projetado:</span>
-              <span className="text-lg font-bold text-ibs-cbs">{formatCurrency(totaisCreditos.ibsProjetado)}</span>
+              <span className="text-[10px] text-muted-foreground">Base IBS/CBS:</span>
+              <span className="text-sm font-bold">{formatCurrency(totaisCreditos.baseIbsCbs)}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">CBS Projetado:</span>
-              <span className="text-lg font-bold text-ibs-cbs">{formatCurrency(totaisCreditos.cbsProjetado)}</span>
+              <span className="text-[10px] text-muted-foreground">IBS Projetado:</span>
+              <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totaisCreditos.ibsProjetado)}</span>
             </div>
-            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-1 rounded">
-              <span className="text-sm font-medium text-ibs-cbs">Total Reforma:</span>
-              <span className="text-lg font-bold text-ibs-cbs">{formatCurrency(totaisCreditos.totalReforma)}</span>
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] text-muted-foreground">CBS Projetado:</span>
+              <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totaisCreditos.cbsProjetado)}</span>
             </div>
-            <div className="flex justify-between items-center pt-2 border-t">
-              <span className="text-sm text-muted-foreground">Dif. Projetado:</span>
+            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
+              <span className="text-[10px] font-medium text-ibs-cbs">Total Reforma:</span>
+              <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totaisCreditos.totalReforma)}</span>
+            </div>
+            <div className="flex justify-between items-center pt-1 border-t">
+              <span className="text-[10px] text-muted-foreground">Dif. Projetado:</span>
               <Badge variant={totaisCreditos.diferencaProjetado > 0 ? 'destructive' : totaisCreditos.diferencaProjetado < 0 ? 'default' : 'secondary'} className={totaisCreditos.diferencaProjetado < 0 ? 'bg-positive text-positive-foreground' : ''}>
                 {totaisCreditos.diferencaProjetado > 0 ? '+' : ''}{formatCurrency(totaisCreditos.diferencaProjetado)}
               </Badge>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">Dif. Real:</span>
+              <span className="text-[10px] text-muted-foreground">Dif. Real:</span>
               <Badge variant={totaisCreditos.diferencaReal > 0 ? 'destructive' : totaisCreditos.diferencaReal < 0 ? 'default' : 'secondary'} className={totaisCreditos.diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}>
                 {totaisCreditos.diferencaReal > 0 ? '+' : ''}{formatCurrency(totaisCreditos.diferencaReal)}
               </Badge>
@@ -507,60 +507,60 @@ export default function EnergiaAgua() {
 
         <Card className="border-border/50">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <ArrowUpRight className="h-4 w-4" />
+            <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-2">
+              <ArrowUpRight className="h-3.5 w-3.5" />
               Total Débitos - Projeção {anoProjecao}
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2">
+          <CardContent className="space-y-1.5">
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">Valor (VL_DOC):</span>
-              <span className="text-lg font-bold">{formatCurrency(totaisDebitos.valor)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">ICMS:</span>
-              <span className="text-lg font-bold">{formatCurrency(totaisDebitos.icms)}</span>
+              <span className="text-[10px] text-muted-foreground">Valor (VL_DOC):</span>
+              <span className="text-sm font-bold">{formatCurrency(totaisDebitos.valor)}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">ICMS Projetado:</span>
-              <span className="text-lg font-bold">{formatCurrency(totaisDebitos.icmsProjetado)}</span>
+              <span className="text-[10px] text-muted-foreground">ICMS:</span>
+              <span className="text-sm font-bold">{formatCurrency(totaisDebitos.icms)}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">PIS+COFINS:</span>
-              <span className="text-lg font-bold text-pis-cofins">{formatCurrency(totaisDebitos.pisCofins)}</span>
+              <span className="text-[10px] text-muted-foreground">ICMS Projetado:</span>
+              <span className="text-sm font-bold">{formatCurrency(totaisDebitos.icmsProjetado)}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">PIS+COFINS Projetado:</span>
-              <span className="text-lg font-bold text-pis-cofins">{formatCurrency(totaisDebitos.pisCofinsProjetado)}</span>
-            </div>
-            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-1 rounded">
-              <span className="text-sm font-medium">Tot. Impostos Atuais:</span>
-              <span className="text-lg font-bold">{formatCurrency(totaisDebitos.totalImpostosAtuais)}</span>
+              <span className="text-[10px] text-muted-foreground">PIS+COFINS:</span>
+              <span className="text-sm font-bold text-pis-cofins">{formatCurrency(totaisDebitos.pisCofins)}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">Base IBS/CBS:</span>
-              <span className="text-lg font-bold">{formatCurrency(totaisDebitos.baseIbsCbs)}</span>
+              <span className="text-[10px] text-muted-foreground">PIS+COFINS Projetado:</span>
+              <span className="text-sm font-bold text-pis-cofins">{formatCurrency(totaisDebitos.pisCofinsProjetado)}</span>
+            </div>
+            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
+              <span className="text-[10px] font-medium">Tot. Impostos Atuais:</span>
+              <span className="text-sm font-bold">{formatCurrency(totaisDebitos.totalImpostosAtuais)}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">IBS Projetado:</span>
-              <span className="text-lg font-bold text-ibs-cbs">{formatCurrency(totaisDebitos.ibsProjetado)}</span>
+              <span className="text-[10px] text-muted-foreground">Base IBS/CBS:</span>
+              <span className="text-sm font-bold">{formatCurrency(totaisDebitos.baseIbsCbs)}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">CBS Projetado:</span>
-              <span className="text-lg font-bold text-ibs-cbs">{formatCurrency(totaisDebitos.cbsProjetado)}</span>
+              <span className="text-[10px] text-muted-foreground">IBS Projetado:</span>
+              <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totaisDebitos.ibsProjetado)}</span>
             </div>
-            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-1 rounded">
-              <span className="text-sm font-medium text-ibs-cbs">Total Reforma:</span>
-              <span className="text-lg font-bold text-ibs-cbs">{formatCurrency(totaisDebitos.totalReforma)}</span>
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] text-muted-foreground">CBS Projetado:</span>
+              <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totaisDebitos.cbsProjetado)}</span>
             </div>
-            <div className="flex justify-between items-center pt-2 border-t">
-              <span className="text-sm text-muted-foreground">Dif. Projetado:</span>
+            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
+              <span className="text-[10px] font-medium text-ibs-cbs">Total Reforma:</span>
+              <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totaisDebitos.totalReforma)}</span>
+            </div>
+            <div className="flex justify-between items-center pt-1 border-t">
+              <span className="text-[10px] text-muted-foreground">Dif. Projetado:</span>
               <Badge variant={totaisDebitos.diferencaProjetado > 0 ? 'destructive' : totaisDebitos.diferencaProjetado < 0 ? 'default' : 'secondary'} className={totaisDebitos.diferencaProjetado < 0 ? 'bg-positive text-positive-foreground' : ''}>
                 {totaisDebitos.diferencaProjetado > 0 ? '+' : ''}{formatCurrency(totaisDebitos.diferencaProjetado)}
               </Badge>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">Dif. Real:</span>
+              <span className="text-[10px] text-muted-foreground">Dif. Real:</span>
               <Badge variant={totaisDebitos.diferencaReal > 0 ? 'destructive' : totaisDebitos.diferencaReal < 0 ? 'default' : 'secondary'} className={totaisDebitos.diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}>
                 {totaisDebitos.diferencaReal > 0 ? '+' : ''}{formatCurrency(totaisDebitos.diferencaReal)}
               </Badge>
@@ -583,8 +583,8 @@ export default function EnergiaAgua() {
         <TabsContent value="creditos" className="mt-4">
           <Card className="border-border/50">
             <CardHeader>
-              <CardTitle className="text-lg">Créditos de Energia e Água</CardTitle>
-              <CardDescription>Agregado por Filial e Mês/Ano</CardDescription>
+              <CardTitle className="text-sm">Créditos de Energia e Água</CardTitle>
+              <CardDescription className="text-xs">Agregado por Filial e Mês/Ano</CardDescription>
             </CardHeader>
             <CardContent>
               {renderTable(creditosAgregados, 'credito')}
@@ -594,8 +594,8 @@ export default function EnergiaAgua() {
         <TabsContent value="debitos" className="mt-4">
           <Card className="border-border/50">
             <CardHeader>
-              <CardTitle className="text-lg">Débitos de Energia e Água</CardTitle>
-              <CardDescription>Agregado por Filial e Mês/Ano</CardDescription>
+              <CardTitle className="text-sm">Débitos de Energia e Água</CardTitle>
+              <CardDescription className="text-xs">Agregado por Filial e Mês/Ano</CardDescription>
             </CardHeader>
             <CardContent>
               {renderTable(debitosAgregados, 'debito')}
