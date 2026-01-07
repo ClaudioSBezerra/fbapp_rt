@@ -13,6 +13,7 @@ interface Aliquota {
   ibs_municipal: number;
   cbs: number;
   reduc_icms: number;
+  reduc_piscofins: number;
   is_active: boolean;
 }
 
@@ -79,6 +80,7 @@ export default function Aliquotas() {
                   <TableHead className="text-right">CBS (%)</TableHead>
                   <TableHead className="text-right">Total IBS+CBS (%)</TableHead>
                   <TableHead className="text-right">Redução ICMS (%)</TableHead>
+                  <TableHead className="text-right">Redução PIS/COFINS (%)</TableHead>
                   <TableHead className="text-center">Status</TableHead>
                 </TableRow>
               </TableHeader>
@@ -114,6 +116,9 @@ export default function Aliquotas() {
                       </TableCell>
                       <TableCell className="text-right font-mono">
                         {aliquota.reduc_icms.toFixed(2)}%
+                      </TableCell>
+                      <TableCell className="text-right font-mono">
+                        {aliquota.reduc_piscofins.toFixed(2)}%
                       </TableCell>
                       <TableCell className="text-center">
                         <Badge

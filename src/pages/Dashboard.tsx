@@ -21,6 +21,7 @@ interface Aliquota {
   ibs_municipal: number;
   cbs: number;
   reduc_icms: number;
+  reduc_piscofins: number;
 }
 
 interface DashboardStats {
@@ -130,7 +131,7 @@ export default function Dashboard() {
         ] = await Promise.all([
           supabase.rpc('get_mv_dashboard_stats', { _mes_ano: periodoSelecionado }),
           supabase.from('empresas').select('id'),
-          supabase.from('aliquotas').select('ano, ibs_estadual, ibs_municipal, cbs, reduc_icms').order('ano'),
+          supabase.from('aliquotas').select('ano, ibs_estadual, ibs_municipal, cbs, reduc_icms, reduc_piscofins').order('ano'),
         ]);
 
         if (aliquotasData) setAliquotas(aliquotasData);

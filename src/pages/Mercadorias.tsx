@@ -21,6 +21,7 @@ interface Aliquota {
   ibs_municipal: number;
   cbs: number;
   reduc_icms: number;
+  reduc_piscofins: number;
 }
 
 interface Filial {
@@ -176,7 +177,7 @@ export default function Mercadorias() {
       // Fetch aliquotas
       const { data: aliquotasData } = await supabase
         .from('aliquotas')
-        .select('ano, ibs_estadual, ibs_municipal, cbs, reduc_icms')
+        .select('ano, ibs_estadual, ibs_municipal, cbs, reduc_icms, reduc_piscofins')
         .order('ano');
       if (aliquotasData) setAliquotas(aliquotasData);
 
