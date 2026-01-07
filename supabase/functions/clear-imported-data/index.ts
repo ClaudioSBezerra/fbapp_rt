@@ -13,7 +13,7 @@ serve(async (req) => {
 
   try {
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
+    if (!authHeader?.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "Missing authorization header" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -24,21 +24,25 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     
-    // Cliente autenticado para verificar usuário
+    // Validar JWT usando getClaims (mais confiável que getUser)
     const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } },
     });
     
-    const { data: { user }, error: authError } = await supabaseAuth.auth.getUser();
-    if (authError || !user) {
-      console.error("Auth error:", authError);
+    const token = authHeader.replace("Bearer ", "");
+    const { data: claimsData, error: claimsError } = await supabaseAuth.auth.getClaims(token);
+    
+    if (claimsError || !claimsData?.claims?.sub) {
+      console.error("Auth error:", claimsError);
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    
+    const userId = claimsData.claims.sub as string;
 
-    console.log(`Starting database cleanup for user ${user.id}`);
+    console.log(`Starting database cleanup for user ${userId}`);
 
     // Cliente com service role para bypass RLS
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
@@ -47,7 +51,7 @@ serve(async (req) => {
     const { data: userTenants } = await supabaseAdmin
       .from('user_tenants')
       .select('tenant_id')
-      .eq('user_id', user.id);
+      .eq('user_id', userId);
 
     if (!userTenants || userTenants.length === 0) {
       console.log("No tenants found for user");
@@ -152,7 +156,7 @@ serve(async (req) => {
       
       const { data: deletedCount, error: deleteError } = await supabaseAdmin
         .rpc('delete_mercadorias_batch', {
-          _user_id: user.id,
+          _user_id: userId,
           _filial_ids: filialIds,
           _batch_size: batchSize
         });
@@ -181,7 +185,7 @@ serve(async (req) => {
       
       const { data: deletedCount, error: deleteError } = await supabaseAdmin
         .rpc('delete_energia_agua_batch', {
-          _user_id: user.id,
+          _user_id: userId,
           _filial_ids: filialIds,
           _batch_size: batchSize
         });
@@ -210,7 +214,7 @@ serve(async (req) => {
       
       const { data: deletedCount, error: deleteError } = await supabaseAdmin
         .rpc('delete_fretes_batch', {
-          _user_id: user.id,
+          _user_id: userId,
           _filial_ids: filialIds,
           _batch_size: batchSize
         });
@@ -234,7 +238,7 @@ serve(async (req) => {
     const { error: jobsError, count: jobsCount } = await supabaseAdmin
       .from('import_jobs')
       .delete({ count: 'exact' })
-      .eq('user_id', user.id);
+      .eq('user_id', userId);
 
     if (jobsError) {
       console.error("Error deleting import_jobs:", jobsError);
@@ -261,7 +265,7 @@ serve(async (req) => {
     const tenantId = tenantIds[0]; // Primeiro tenant do usuário
     try {
       await supabaseAdmin.from('audit_logs').insert({
-        user_id: user.id,
+        user_id: userId,
         tenant_id: tenantId,
         action: 'clear_imported_data',
         table_name: 'mercadorias,energia_agua,fretes,filiais,import_jobs',
