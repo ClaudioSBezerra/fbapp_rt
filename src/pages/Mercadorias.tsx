@@ -8,7 +8,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, ArrowUpRight, ArrowDownRight, Building2, Filter, Trash2, AlertTriangle, Calendar } from 'lucide-react';
+import { Plus, ArrowUpRight, ArrowDownRight, Building2, Filter, Trash2, AlertTriangle, Calendar, HelpCircle } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -108,8 +109,32 @@ function MercadoriasTable({ data, aliquotas, tipo, anoProjecao }: MercadoriasTab
             <TableHead className="text-right text-ibs-cbs">IBS Projetado</TableHead>
             <TableHead className="text-right text-ibs-cbs">CBS Projetado</TableHead>
             <TableHead className="text-right font-semibold text-ibs-cbs bg-muted/30">Total Reforma</TableHead>
-            <TableHead className="text-right">Dif. Projetado</TableHead>
-            <TableHead className="text-right">Dif. Real</TableHead>
+            <TableHead className="text-right">
+              <Tooltip>
+                <TooltipTrigger className="cursor-help underline decoration-dotted decoration-muted-foreground inline-flex items-center gap-1">
+                  Dif. Projetado
+                  <HelpCircle className="h-3 w-3 text-muted-foreground" />
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-xs">
+                  <p className="font-semibold mb-1">Fórmula:</p>
+                  <p className="font-mono text-xs">(ICMS + PIS/COFINS) − (IBS + CBS)</p>
+                  <p className="text-muted-foreground text-xs mt-1">Compara impostos atuais com os novos impostos da reforma</p>
+                </TooltipContent>
+              </Tooltip>
+            </TableHead>
+            <TableHead className="text-right">
+              <Tooltip>
+                <TooltipTrigger className="cursor-help underline decoration-dotted decoration-muted-foreground inline-flex items-center gap-1">
+                  Dif. Real
+                  <HelpCircle className="h-3 w-3 text-muted-foreground" />
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-xs">
+                  <p className="font-semibold mb-1">Fórmula:</p>
+                  <p className="font-mono text-xs">(ICMS + PIS/COFINS) − (ICMS Proj. + PIS/COFINS Proj. + IBS + CBS)</p>
+                  <p className="text-muted-foreground text-xs mt-1">Compara impostos atuais com TODOS os impostos projetados (transição + novos)</p>
+                </TooltipContent>
+              </Tooltip>
+            </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
