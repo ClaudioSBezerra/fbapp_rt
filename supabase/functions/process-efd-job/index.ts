@@ -44,9 +44,11 @@ interface PendingRecord {
 interface ProcessingContext {
   currentPeriod: string;
   currentCNPJ: string;
+  currentFilialId: string | null;
   efdType: EFDType;
   pendingD100: PendingRecord | null;
   pendingD500: PendingRecord | null;
+  filialMap: Map<string, string>; // CNPJ -> filial_id
 }
 
 interface BatchBuffers {
@@ -203,8 +205,9 @@ function finalizePendingD500(context: ProcessingContext): ParsedRecord | null {
 function processLine(
   line: string,
   context: ProcessingContext,
-  validPrefixes: string[]
-): { record: ParsedRecord | null; context: ProcessingContext; blockType?: string } {
+  validPrefixes: string[],
+  updateFilial?: (cnpj: string) => Promise<string | null>
+): { record: ParsedRecord | null; context: ProcessingContext; blockType?: string; filialUpdate?: string } {
   if (!validPrefixes.some(p => line.startsWith(p))) {
     return { record: null, context };
   }
@@ -237,7 +240,10 @@ function processLine(
     case "C010":
     case "D010":
       if (fields.length > 2 && fields[2]) {
-        context.currentCNPJ = fields[2].replace(/\D/g, "");
+        const cnpj = fields[2].replace(/\D/g, "");
+        context.currentCNPJ = cnpj;
+        // Return the CNPJ to be processed for filial lookup/creation
+        return { record: null, context, filialUpdate: cnpj };
       }
       break;
 
@@ -790,16 +796,37 @@ serve(async (req) => {
     // Without this, currentPeriod/currentCNPJ would be empty in chunks 2+ 
     // because the 0000 record was already processed in chunk 1
     const existingContext = existingCounts.context || null;
+    
+    // Pre-load filiais for the empresa
+    const { data: existingFiliais } = await supabase
+      .from("filiais")
+      .select("id, cnpj")
+      .eq("empresa_id", job.empresa_id);
+    
+    const filialMap = new Map<string, string>(
+      existingFiliais?.map((f: { cnpj: string; id: string }) => [f.cnpj, f.id]) || []
+    );
+    console.log(`Job ${jobId}: Pre-loaded ${filialMap.size} filiais for empresa ${job.empresa_id}`);
+    
+    // Restore filial map from context if resuming
+    if (existingContext?.filialMapEntries) {
+      for (const [cnpj, id] of existingContext.filialMapEntries) {
+        filialMap.set(cnpj, id);
+      }
+    }
+    
     let context: ProcessingContext = {
       currentPeriod: existingContext?.currentPeriod || "",
       currentCNPJ: existingContext?.currentCNPJ || "",
+      currentFilialId: existingContext?.currentFilialId || job.filial_id,
       efdType: existingContext?.efdType || null,
       pendingD100: null, // Pending records are finalized at chunk end
       pendingD500: null,
+      filialMap,
     };
     
     if (isResuming && existingContext) {
-      console.log(`Job ${jobId}: Restored context from previous chunk - period: ${context.currentPeriod}, CNPJ: ${context.currentCNPJ}, efdType: ${context.efdType}`);
+      console.log(`Job ${jobId}: Restored context from previous chunk - period: ${context.currentPeriod}, CNPJ: ${context.currentCNPJ}, filialId: ${context.currentFilialId}, efdType: ${context.efdType}`);
     }
 
     // Initialize block limits
@@ -890,6 +917,31 @@ serve(async (req) => {
           const result = processLine(trimmedLine, context, validPrefixes);
           context = result.context;
           
+          // Handle filial update from C010/D010
+          if (result.filialUpdate) {
+            const cnpj = result.filialUpdate;
+            if (context.filialMap.has(cnpj)) {
+              context.currentFilialId = context.filialMap.get(cnpj)!;
+            } else {
+              // Create new filial
+              const { data: newFilial } = await supabase
+                .from("filiais")
+                .insert({
+                  empresa_id: job.empresa_id,
+                  cnpj: cnpj,
+                  razao_social: `Filial ${cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5")}`,
+                })
+                .select("id")
+                .single();
+              
+              if (newFilial) {
+                context.filialMap.set(cnpj, newFilial.id);
+                context.currentFilialId = newFilial.id;
+                console.log(`Job ${jobId}: Created new filial ${cnpj} -> ${newFilial.id}`);
+              }
+            }
+          }
+          
           if (result.record && result.blockType) {
             // Validar que mes_ano não está vazio
             if (!result.record.data.mes_ano) {
@@ -902,7 +954,7 @@ serve(async (req) => {
                 const { table, data } = result.record;
                 batches[table].push({
                   ...data,
-                  filial_id: job.filial_id,
+                  filial_id: context.currentFilialId || job.filial_id,
                 });
               }
             }
@@ -918,7 +970,7 @@ serve(async (req) => {
             blockLimits.d100.count++;
             batches.fretes.push({
               ...finalD100.data,
-              filial_id: job.filial_id,
+              filial_id: context.currentFilialId || job.filial_id,
             });
             console.log(`Job ${jobId}: Finalized pending D100 at end of file`);
           }
@@ -930,7 +982,7 @@ serve(async (req) => {
             blockLimits.d500.count++;
             batches.fretes.push({
               ...finalD500.data,
-              filial_id: job.filial_id,
+              filial_id: context.currentFilialId || job.filial_id,
             });
             console.log(`Job ${jobId}: Finalized pending D500 at end of file`);
           }
@@ -967,6 +1019,32 @@ serve(async (req) => {
 
         const result = processLine(trimmedLine, context, validPrefixes);
         context = result.context;
+        
+        // Handle filial update from C010/D010
+        if (result.filialUpdate) {
+          const cnpj = result.filialUpdate;
+          if (context.filialMap.has(cnpj)) {
+            context.currentFilialId = context.filialMap.get(cnpj)!;
+            console.log(`Job ${jobId}: Switched to filial ${cnpj} -> ${context.currentFilialId}`);
+          } else {
+            // Create new filial
+            const { data: newFilial } = await supabase
+              .from("filiais")
+              .insert({
+                empresa_id: job.empresa_id,
+                cnpj: cnpj,
+                razao_social: `Filial ${cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5")}`,
+              })
+              .select("id")
+              .single();
+            
+            if (newFilial) {
+              context.filialMap.set(cnpj, newFilial.id);
+              context.currentFilialId = newFilial.id;
+              console.log(`Job ${jobId}: Created new filial ${cnpj} -> ${newFilial.id}`);
+            }
+          }
+        }
         
         // Track seen record counts for diagnostics
         if (result.blockType) {
@@ -1008,7 +1086,7 @@ serve(async (req) => {
           const { table, data } = result.record;
           batches[table].push({
             ...data,
-            filial_id: job.filial_id,
+            filial_id: context.currentFilialId || job.filial_id,
           });
 
           if (batches[table].length >= BATCH_SIZE) {
@@ -1078,7 +1156,7 @@ serve(async (req) => {
         blockLimits.d100.count++;
         batches.fretes.push({
           ...chunkFinalD100.data,
-          filial_id: job.filial_id,
+          filial_id: context.currentFilialId || job.filial_id,
         });
         console.log(`Job ${jobId}: Finalized pending D100 at chunk end`);
       }
@@ -1090,7 +1168,7 @@ serve(async (req) => {
         blockLimits.d500.count++;
         batches.fretes.push({
           ...chunkFinalD500.data,
-          filial_id: job.filial_id,
+          filial_id: context.currentFilialId || job.filial_id,
         });
         console.log(`Job ${jobId}: Finalized pending D500 at chunk end`);
       }
@@ -1121,7 +1199,7 @@ serve(async (req) => {
       console.log(`Job ${jobId}: Chunk ${chunkNumber} completed, saving progress. Bytes: ${newBytesProcessed}, Lines: ${totalLinesProcessed}`);
       
       // Save progress for resumption (include seenCounts and context for proper resumption)
-      // CRITICAL: Save context so next chunk knows the period and CNPJ
+      // CRITICAL: Save context so next chunk knows the period, CNPJ, and filialId
       await supabase
         .from("import_jobs")
         .update({ 
@@ -1135,7 +1213,9 @@ serve(async (req) => {
             context: {
               currentPeriod: context.currentPeriod,
               currentCNPJ: context.currentCNPJ,
+              currentFilialId: context.currentFilialId,
               efdType: context.efdType,
+              filialMapEntries: Array.from(context.filialMap.entries()),
             }
           }
         })
