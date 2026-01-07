@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.clear-imported-data]
 verify_jwt = false
+
+[functions.join-tenant]
+verify_jwt = false
