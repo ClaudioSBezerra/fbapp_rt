@@ -51,8 +51,8 @@ const ANOS_PROJECAO = [2027, 2028, 2029, 2030, 2031, 2032, 2033];
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(value);
 }
 
