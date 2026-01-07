@@ -75,8 +75,10 @@ function calcularProjecoes(
   const baseIbsCbs = totais.valor - icmsProjetado - pisCofinsProjetado;
   const ibsProjetado = aliquota ? baseIbsCbs * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
   const cbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
+  const totalImpostosAtuais = icmsProjetado + pisCofinsProjetado;
+  const totalReforma = ibsProjetado + cbsProjetado;
 
-  return { icmsProjetado, pisCofinsProjetado, baseIbsCbs, ibsProjetado, cbsProjetado };
+  return { icmsProjetado, pisCofinsProjetado, baseIbsCbs, ibsProjetado, cbsProjetado, totalImpostosAtuais, totalReforma };
 }
 
 export default function Dashboard() {
@@ -313,7 +315,7 @@ export default function Dashboard() {
   }: {
     title: string;
     icon: React.ElementType;
-    totais: TotaisCategoria & { icmsProjetado: number; pisCofinsProjetado: number; baseIbsCbs: number; ibsProjetado: number; cbsProjetado: number };
+    totais: TotaisCategoria & { icmsProjetado: number; pisCofinsProjetado: number; baseIbsCbs: number; ibsProjetado: number; cbsProjetado: number; totalImpostosAtuais: number; totalReforma: number };
     variant: 'entrada' | 'saida';
   }) => (
     <Card className="border-border/50">
@@ -345,6 +347,10 @@ export default function Dashboard() {
           <span className="text-xs text-muted-foreground">PIS+COFINS Projetado ({anoProjecao}):</span>
           <span className="text-sm font-semibold text-pis-cofins">{formatCurrency(totais.pisCofinsProjetado)}</span>
         </div>
+        <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-1 rounded">
+          <span className="text-xs font-medium">Tot. Impostos Atuais:</span>
+          <span className="text-sm font-bold">{formatCurrency(totais.totalImpostosAtuais)}</span>
+        </div>
         <div className="flex justify-between items-center">
           <span className="text-xs text-muted-foreground">Base IBS/CBS:</span>
           <span className="text-sm font-semibold">{formatCurrency(totais.baseIbsCbs)}</span>
@@ -356,6 +362,10 @@ export default function Dashboard() {
         <div className="flex justify-between items-center">
           <span className="text-xs text-muted-foreground">CBS Projetado ({anoProjecao}):</span>
           <span className="text-sm font-semibold text-ibs-cbs">{formatCurrency(totais.cbsProjetado)}</span>
+        </div>
+        <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-1 rounded">
+          <span className="text-xs font-medium text-ibs-cbs">Total Reforma:</span>
+          <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totais.totalReforma)}</span>
         </div>
       </CardContent>
     </Card>

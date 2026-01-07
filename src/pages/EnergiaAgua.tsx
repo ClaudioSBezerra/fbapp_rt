@@ -225,7 +225,10 @@ export default function EnergiaAgua() {
     const ibsProjetado = aliquota ? baseIbsCbs * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
     const cbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
     
-    return { valor, icms, pisCofins, icmsProjetado, pisCofinsProjetado, baseIbsCbs, ibsProjetado, cbsProjetado };
+    const totalImpostosAtuais = icmsProjetado + pisCofinsProjetado;
+    const totalReforma = ibsProjetado + cbsProjetado;
+    
+    return { valor, icms, pisCofins, icmsProjetado, pisCofinsProjetado, baseIbsCbs, ibsProjetado, cbsProjetado, totalImpostosAtuais, totalReforma };
   }, [creditosAgregados, aliquotaSelecionada]);
 
   const totaisDebitos = useMemo(() => {
@@ -239,8 +242,10 @@ export default function EnergiaAgua() {
     const baseIbsCbs = valor - icmsProjetado - pisCofinsProjetado;
     const ibsProjetado = aliquota ? baseIbsCbs * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
     const cbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
+    const totalImpostosAtuais = icmsProjetado + pisCofinsProjetado;
+    const totalReforma = ibsProjetado + cbsProjetado;
     
-    return { valor, icms, pisCofins, icmsProjetado, pisCofinsProjetado, baseIbsCbs, ibsProjetado, cbsProjetado };
+    return { valor, icms, pisCofins, icmsProjetado, pisCofinsProjetado, baseIbsCbs, ibsProjetado, cbsProjetado, totalImpostosAtuais, totalReforma };
   }, [debitosAgregados, aliquotaSelecionada]);
 
   const hasFiliais = filiais.length > 0;
@@ -270,9 +275,11 @@ export default function EnergiaAgua() {
               <TableHead className="text-right">ICMS Projetado</TableHead>
               <TableHead className="text-right text-pis-cofins">PIS+COFINS</TableHead>
               <TableHead className="text-right text-pis-cofins">PIS+COFINS Projetado</TableHead>
+              <TableHead className="text-right font-semibold bg-muted/30">Tot. Imp. Atuais</TableHead>
               <TableHead className="text-right">Base IBS/CBS</TableHead>
               <TableHead className="text-right text-ibs-cbs">IBS Projetado</TableHead>
               <TableHead className="text-right text-ibs-cbs">CBS Projetado</TableHead>
+              <TableHead className="text-right font-semibold text-ibs-cbs bg-muted/30">Total Reforma</TableHead>
               <TableHead className="text-right">Diferença</TableHead>
             </TableRow>
           </TableHeader>
@@ -284,10 +291,12 @@ export default function EnergiaAgua() {
               const vlIcmsProjetado = aliquota ? vlIcms * (1 - (aliquota.reduc_icms / 100)) : vlIcms;
               const vlPisCofins = row.pis + row.cofins;
               const vlPisCofinsProjetado = aliquota ? vlPisCofins * (1 - (aliquota.reduc_piscofins / 100)) : vlPisCofins;
+              const totalImpostosAtuais = vlIcmsProjetado + vlPisCofinsProjetado;
               const baseIbsCbs = row.valor - vlIcmsProjetado - vlPisCofinsProjetado;
               const vlIbsProjetado = aliquota ? baseIbsCbs * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
               const vlCbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
-              const diferenca = (vlIcmsProjetado + vlPisCofinsProjetado) - (vlIbsProjetado + vlCbsProjetado);
+              const totalReforma = vlIbsProjetado + vlCbsProjetado;
+              const diferenca = totalImpostosAtuais - totalReforma;
 
               return (
                 <TableRow key={`${row.filial_id}-${row.mes_ano}-${index}`}>
@@ -298,9 +307,11 @@ export default function EnergiaAgua() {
                   <TableCell className="text-right font-mono">{formatCurrency(vlIcmsProjetado)}</TableCell>
                   <TableCell className="text-right font-mono text-pis-cofins">{formatCurrency(vlPisCofins)}</TableCell>
                   <TableCell className="text-right font-mono text-pis-cofins">{formatCurrency(vlPisCofinsProjetado)}</TableCell>
+                  <TableCell className="text-right font-mono font-semibold bg-muted/30">{formatCurrency(totalImpostosAtuais)}</TableCell>
                   <TableCell className="text-right font-mono">{formatCurrency(baseIbsCbs)}</TableCell>
                   <TableCell className="text-right font-mono text-ibs-cbs">{formatCurrency(vlIbsProjetado)}</TableCell>
                   <TableCell className="text-right font-mono text-ibs-cbs">{formatCurrency(vlCbsProjetado)}</TableCell>
+                  <TableCell className="text-right font-mono font-semibold text-ibs-cbs bg-muted/30">{formatCurrency(totalReforma)}</TableCell>
                   <TableCell className="text-right">
                     <Badge
                       variant={diferenca > 0 ? 'destructive' : diferenca < 0 ? 'default' : 'secondary'}
@@ -421,6 +432,10 @@ export default function EnergiaAgua() {
               <span className="text-sm text-muted-foreground">PIS+COFINS Projetado:</span>
               <span className="text-lg font-bold text-pis-cofins">{formatCurrency(totaisCreditos.pisCofinsProjetado)}</span>
             </div>
+            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-1 rounded">
+              <span className="text-sm font-medium">Tot. Impostos Atuais:</span>
+              <span className="text-lg font-bold">{formatCurrency(totaisCreditos.totalImpostosAtuais)}</span>
+            </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">Base IBS/CBS:</span>
               <span className="text-lg font-bold">{formatCurrency(totaisCreditos.baseIbsCbs)}</span>
@@ -432,6 +447,10 @@ export default function EnergiaAgua() {
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">CBS Projetado:</span>
               <span className="text-lg font-bold text-ibs-cbs">{formatCurrency(totaisCreditos.cbsProjetado)}</span>
+            </div>
+            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-1 rounded">
+              <span className="text-sm font-medium text-ibs-cbs">Total Reforma:</span>
+              <span className="text-lg font-bold text-ibs-cbs">{formatCurrency(totaisCreditos.totalReforma)}</span>
             </div>
           </CardContent>
         </Card>
@@ -464,6 +483,10 @@ export default function EnergiaAgua() {
               <span className="text-sm text-muted-foreground">PIS+COFINS Projetado:</span>
               <span className="text-lg font-bold text-pis-cofins">{formatCurrency(totaisDebitos.pisCofinsProjetado)}</span>
             </div>
+            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-1 rounded">
+              <span className="text-sm font-medium">Tot. Impostos Atuais:</span>
+              <span className="text-lg font-bold">{formatCurrency(totaisDebitos.totalImpostosAtuais)}</span>
+            </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">Base IBS/CBS:</span>
               <span className="text-lg font-bold">{formatCurrency(totaisDebitos.baseIbsCbs)}</span>
@@ -475,6 +498,10 @@ export default function EnergiaAgua() {
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">CBS Projetado:</span>
               <span className="text-lg font-bold text-ibs-cbs">{formatCurrency(totaisDebitos.cbsProjetado)}</span>
+            </div>
+            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-1 rounded">
+              <span className="text-sm font-medium text-ibs-cbs">Total Reforma:</span>
+              <span className="text-lg font-bold text-ibs-cbs">{formatCurrency(totaisDebitos.totalReforma)}</span>
             </div>
           </CardContent>
         </Card>

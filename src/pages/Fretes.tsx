@@ -223,7 +223,10 @@ export default function Fretes() {
     const ibsProjetado = aliquota ? baseIbsCbs * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
     const cbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
     
-    return { valor, icms, pisCofins, icmsProjetado, pisCofinsProjetado, baseIbsCbs, ibsProjetado, cbsProjetado };
+    const totalImpostosAtuais = icmsProjetado + pisCofinsProjetado;
+    const totalReforma = ibsProjetado + cbsProjetado;
+    
+    return { valor, icms, pisCofins, icmsProjetado, pisCofinsProjetado, baseIbsCbs, ibsProjetado, cbsProjetado, totalImpostosAtuais, totalReforma };
   }, [entradasAgregadas, aliquotaSelecionada]);
 
   const totaisSaidas = useMemo(() => {
@@ -237,8 +240,10 @@ export default function Fretes() {
     const baseIbsCbs = valor - icmsProjetado - pisCofinsProjetado;
     const ibsProjetado = aliquota ? baseIbsCbs * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
     const cbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
+    const totalImpostosAtuais = icmsProjetado + pisCofinsProjetado;
+    const totalReforma = ibsProjetado + cbsProjetado;
     
-    return { valor, icms, pisCofins, icmsProjetado, pisCofinsProjetado, baseIbsCbs, ibsProjetado, cbsProjetado };
+    return { valor, icms, pisCofins, icmsProjetado, pisCofinsProjetado, baseIbsCbs, ibsProjetado, cbsProjetado, totalImpostosAtuais, totalReforma };
   }, [saidasAgregadas, aliquotaSelecionada]);
 
   const hasFiliais = filiais.length > 0;
@@ -268,9 +273,11 @@ export default function Fretes() {
               <TableHead className="text-right">ICMS Projetado</TableHead>
               <TableHead className="text-right text-pis-cofins">PIS+COFINS</TableHead>
               <TableHead className="text-right text-pis-cofins">PIS+COFINS Projetado</TableHead>
+              <TableHead className="text-right font-semibold bg-muted/30">Tot. Imp. Atuais</TableHead>
               <TableHead className="text-right">Base IBS/CBS</TableHead>
               <TableHead className="text-right text-ibs-cbs">IBS Projetado</TableHead>
               <TableHead className="text-right text-ibs-cbs">CBS Projetado</TableHead>
+              <TableHead className="text-right font-semibold text-ibs-cbs bg-muted/30">Total Reforma</TableHead>
               <TableHead className="text-right">Diferença</TableHead>
             </TableRow>
           </TableHeader>
@@ -282,10 +289,12 @@ export default function Fretes() {
               const vlIcmsProjetado = aliquota ? vlIcms * (1 - (aliquota.reduc_icms / 100)) : vlIcms;
               const vlPisCofins = row.pis + row.cofins;
               const vlPisCofinsProjetado = aliquota ? vlPisCofins * (1 - (aliquota.reduc_piscofins / 100)) : vlPisCofins;
+              const totalImpostosAtuais = vlIcmsProjetado + vlPisCofinsProjetado;
               const baseIbsCbs = row.valor - vlIcmsProjetado - vlPisCofinsProjetado;
               const vlIbsProjetado = aliquota ? baseIbsCbs * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
               const vlCbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
-              const diferenca = (vlIcmsProjetado + vlPisCofinsProjetado) - (vlIbsProjetado + vlCbsProjetado);
+              const totalReforma = vlIbsProjetado + vlCbsProjetado;
+              const diferenca = totalImpostosAtuais - totalReforma;
 
               return (
                 <TableRow key={`${row.filial_id}-${row.mes_ano}-${index}`}>
@@ -296,9 +305,11 @@ export default function Fretes() {
                   <TableCell className="text-right font-mono">{formatCurrency(vlIcmsProjetado)}</TableCell>
                   <TableCell className="text-right font-mono text-pis-cofins">{formatCurrency(vlPisCofins)}</TableCell>
                   <TableCell className="text-right font-mono text-pis-cofins">{formatCurrency(vlPisCofinsProjetado)}</TableCell>
+                  <TableCell className="text-right font-mono font-semibold bg-muted/30">{formatCurrency(totalImpostosAtuais)}</TableCell>
                   <TableCell className="text-right font-mono">{formatCurrency(baseIbsCbs)}</TableCell>
                   <TableCell className="text-right font-mono text-ibs-cbs">{formatCurrency(vlIbsProjetado)}</TableCell>
                   <TableCell className="text-right font-mono text-ibs-cbs">{formatCurrency(vlCbsProjetado)}</TableCell>
+                  <TableCell className="text-right font-mono font-semibold text-ibs-cbs bg-muted/30">{formatCurrency(totalReforma)}</TableCell>
                   <TableCell className="text-right">
                     <Badge
                       variant={diferenca > 0 ? 'destructive' : diferenca < 0 ? 'default' : 'secondary'}
@@ -419,6 +430,10 @@ export default function Fretes() {
               <span className="text-sm text-muted-foreground">PIS+COFINS Projetado:</span>
               <span className="text-lg font-bold text-pis-cofins">{formatCurrency(totaisEntradas.pisCofinsProjetado)}</span>
             </div>
+            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-1 rounded">
+              <span className="text-sm font-medium">Tot. Impostos Atuais:</span>
+              <span className="text-lg font-bold">{formatCurrency(totaisEntradas.totalImpostosAtuais)}</span>
+            </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">Base IBS/CBS:</span>
               <span className="text-lg font-bold">{formatCurrency(totaisEntradas.baseIbsCbs)}</span>
@@ -430,6 +445,10 @@ export default function Fretes() {
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">CBS Projetado:</span>
               <span className="text-lg font-bold text-ibs-cbs">{formatCurrency(totaisEntradas.cbsProjetado)}</span>
+            </div>
+            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-1 rounded">
+              <span className="text-sm font-medium text-ibs-cbs">Total Reforma:</span>
+              <span className="text-lg font-bold text-ibs-cbs">{formatCurrency(totaisEntradas.totalReforma)}</span>
             </div>
           </CardContent>
         </Card>
@@ -462,6 +481,10 @@ export default function Fretes() {
               <span className="text-sm text-muted-foreground">PIS+COFINS Projetado:</span>
               <span className="text-lg font-bold text-pis-cofins">{formatCurrency(totaisSaidas.pisCofinsProjetado)}</span>
             </div>
+            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-1 rounded">
+              <span className="text-sm font-medium">Tot. Impostos Atuais:</span>
+              <span className="text-lg font-bold">{formatCurrency(totaisSaidas.totalImpostosAtuais)}</span>
+            </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">Base IBS/CBS:</span>
               <span className="text-lg font-bold">{formatCurrency(totaisSaidas.baseIbsCbs)}</span>
@@ -473,6 +496,10 @@ export default function Fretes() {
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">CBS Projetado:</span>
               <span className="text-lg font-bold text-ibs-cbs">{formatCurrency(totaisSaidas.cbsProjetado)}</span>
+            </div>
+            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-1 rounded">
+              <span className="text-sm font-medium text-ibs-cbs">Total Reforma:</span>
+              <span className="text-lg font-bold text-ibs-cbs">{formatCurrency(totaisSaidas.totalReforma)}</span>
             </div>
           </CardContent>
         </Card>
