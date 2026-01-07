@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
+import { AdminRoute } from "@/components/AdminRoute";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Onboarding from "./pages/Onboarding";
@@ -32,8 +33,9 @@ const App = () => (
             <Route path="/auth" element={<Auth />} />
             <Route path="/onboarding" element={<Onboarding />} />
             <Route element={<AppLayout />}>
-              <Route path="/configuracoes" element={<Configuracoes />} />
-              <Route path="/empresas" element={<Empresas />} />
+              <Route path="/configuracoes" element={<AdminRoute><Configuracoes /></AdminRoute>} />
+              <Route path="/empresas" element={<AdminRoute><Empresas /></AdminRoute>} />
+              <Route path="/onboarding" element={<AdminRoute><Onboarding /></AdminRoute>} />
               <Route path="/aliquotas" element={<Aliquotas />} />
               <Route path="/mercadorias" element={<Mercadorias />} />
               <Route path="/energia-agua" element={<EnergiaAgua />} />

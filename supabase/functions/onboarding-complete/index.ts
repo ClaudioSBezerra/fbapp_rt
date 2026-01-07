@@ -53,6 +53,34 @@ Deno.serve(async (req) => {
 
     console.log('User authenticated:', user.id)
 
+    // Use service role client for all database operations (bypasses RLS)
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
+
+    // Verify user has admin role
+    const { data: roleData, error: roleError } = await supabaseAdmin
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', user.id)
+      .maybeSingle()
+
+    if (roleError) {
+      console.error('Error checking user role:', roleError)
+      return new Response(
+        JSON.stringify({ error: 'Erro ao verificar permissões' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    if (roleData?.role !== 'admin') {
+      console.error('User is not admin:', user.id)
+      return new Response(
+        JSON.stringify({ error: 'Apenas administradores podem criar ambientes' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    console.log('User is admin, proceeding with onboarding')
+
     // Parse request body
     const body: OnboardingRequest = await req.json()
     const { tenantNome, grupoNome, empresaNome } = body
@@ -76,9 +104,6 @@ Deno.serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
-
-    // Use service role client for all database operations (bypasses RLS)
-    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
 
     // Step 1: Create Tenant
     console.log('Creating tenant:', tenantNome)

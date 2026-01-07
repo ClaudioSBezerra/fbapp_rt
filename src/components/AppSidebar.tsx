@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { 
   LayoutDashboard, 
   Package, 
@@ -11,6 +12,7 @@ import {
 } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { useAuth } from '@/hooks/useAuth';
+import { useRole } from '@/hooks/useRole';
 import { useLocation } from 'react-router-dom';
 import {
   Sidebar,
@@ -28,9 +30,16 @@ import {
 import { Button } from '@/components/ui/button';
 import { TrendingUp } from 'lucide-react';
 
-const menuItems = [
-  { title: 'Configurações', url: '/configuracoes', icon: Settings },
-  { title: 'Empresas', url: '/empresas', icon: Building2 },
+interface MenuItem {
+  title: string;
+  url: string;
+  icon: React.ComponentType<{ className?: string }>;
+  adminOnly?: boolean;
+}
+
+const allMenuItems: MenuItem[] = [
+  { title: 'Configurações', url: '/configuracoes', icon: Settings, adminOnly: true },
+  { title: 'Empresas', url: '/empresas', icon: Building2, adminOnly: true },
   { title: 'Alíquotas', url: '/aliquotas', icon: Calculator },
   { title: 'Mercadorias', url: '/mercadorias', icon: Package },
   { title: 'Energia e Água', url: '/energia-agua', icon: Zap },
@@ -44,8 +53,14 @@ export function AppSidebar() {
   const collapsed = state === 'collapsed';
   const location = useLocation();
   const { signOut, user } = useAuth();
+  const { isAdmin } = useRole();
 
   const isActive = (path: string) => location.pathname === path;
+
+  // Filter menu items based on user role
+  const menuItems = useMemo(() => {
+    return allMenuItems.filter(item => !item.adminOnly || isAdmin);
+  }, [isAdmin]);
 
   return (
     <Sidebar collapsible="icon" className="border-r border-sidebar-border">
