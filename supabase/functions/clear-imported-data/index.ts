@@ -152,6 +152,7 @@ serve(async (req) => {
       
       const { data: deletedCount, error: deleteError } = await supabaseAdmin
         .rpc('delete_mercadorias_batch', {
+          _user_id: user.id,
           _filial_ids: filialIds,
           _batch_size: batchSize
         });
@@ -180,6 +181,7 @@ serve(async (req) => {
       
       const { data: deletedCount, error: deleteError } = await supabaseAdmin
         .rpc('delete_energia_agua_batch', {
+          _user_id: user.id,
           _filial_ids: filialIds,
           _batch_size: batchSize
         });
@@ -208,6 +210,7 @@ serve(async (req) => {
       
       const { data: deletedCount, error: deleteError } = await supabaseAdmin
         .rpc('delete_fretes_batch', {
+          _user_id: user.id,
           _filial_ids: filialIds,
           _batch_size: batchSize
         });
@@ -251,6 +254,28 @@ serve(async (req) => {
     } else {
       totalDeleted.filiais = filiaisCount || 0;
       console.log(`Deleted ${filiaisCount || 0} filiais`);
+    }
+
+    // Registrar auditoria
+    console.log("Recording audit log...");
+    const tenantId = tenantIds[0]; // Primeiro tenant do usuário
+    try {
+      await supabaseAdmin.from('audit_logs').insert({
+        user_id: user.id,
+        tenant_id: tenantId,
+        action: 'clear_imported_data',
+        table_name: 'mercadorias,energia_agua,fretes,filiais,import_jobs',
+        record_count: totalDeleted.mercadorias + totalDeleted.energia_agua + totalDeleted.fretes + totalDeleted.filiais + totalDeleted.import_jobs,
+        details: {
+          deleted: totalDeleted,
+          estimated,
+          filial_ids: filialIds,
+          empresa_ids: empresaIds
+        }
+      });
+      console.log("Audit log recorded");
+    } catch (auditError) {
+      console.error("Error recording audit log:", auditError);
     }
 
     // Atualizar Materialized Views
