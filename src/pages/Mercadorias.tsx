@@ -47,6 +47,10 @@ function formatCurrency(value: number): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 }
 
+function cleanFilialName(nome: string): string {
+  return nome.replace(/^Filial\s+/i, '');
+}
+
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr);
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -157,7 +161,7 @@ function MercadoriasTable({ data, aliquotas, tipo, anoProjecao }: MercadoriasTab
 
             return (
               <TableRow key={`${row.filial_id}-${row.mes_ano}-${index}`} className="text-xs">
-                <TableCell className="font-medium text-xs whitespace-nowrap">{row.filial_nome}</TableCell>
+                <TableCell className="font-medium text-xs whitespace-nowrap py-1 px-2">{cleanFilialName(row.filial_nome)}</TableCell>
                 <TableCell className="text-xs whitespace-nowrap">{formatDate(row.mes_ano)}</TableCell>
                 <TableCell className="text-right font-mono text-xs">{formatCurrency(row.valor)}</TableCell>
                 <TableCell className="text-right font-mono text-xs">{formatCurrency(vlIcms)}</TableCell>
