@@ -72,10 +72,11 @@ function calcularProjecoes(
 ) {
   const icmsProjetado = aliquota ? totais.icms * (1 - aliquota.reduc_icms / 100) : totais.icms;
   const pisCofinsProjetado = aliquota ? totais.pisCofins * (1 - aliquota.reduc_piscofins / 100) : totais.pisCofins;
-  const ibsProjetado = aliquota ? totais.valor * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
-  const cbsProjetado = aliquota ? totais.valor * (aliquota.cbs / 100) : 0;
+  const baseIbsCbs = totais.valor - icmsProjetado - pisCofinsProjetado;
+  const ibsProjetado = aliquota ? baseIbsCbs * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
+  const cbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
 
-  return { icmsProjetado, pisCofinsProjetado, ibsProjetado, cbsProjetado };
+  return { icmsProjetado, pisCofinsProjetado, baseIbsCbs, ibsProjetado, cbsProjetado };
 }
 
 export default function Dashboard() {
@@ -259,12 +260,16 @@ export default function Dashboard() {
       }
 
       const icmsSaidas = totaisSaidas.icms * (1 - aliq.reduc_icms / 100);
-      const ibsSaidas = totaisSaidas.valor * ((aliq.ibs_estadual + aliq.ibs_municipal) / 100);
-      const cbsSaidas = totaisSaidas.valor * (aliq.cbs / 100);
+      const pisCofinsProjetadoSaidas = totaisSaidas.pisCofins * (1 - aliq.reduc_piscofins / 100);
+      const baseIbsCbsSaidas = totaisSaidas.valor - icmsSaidas - pisCofinsProjetadoSaidas;
+      const ibsSaidas = baseIbsCbsSaidas * ((aliq.ibs_estadual + aliq.ibs_municipal) / 100);
+      const cbsSaidas = baseIbsCbsSaidas * (aliq.cbs / 100);
 
       const icmsEntradas = totaisEntradas.icms * (1 - aliq.reduc_icms / 100);
-      const ibsEntradas = totaisEntradas.valor * ((aliq.ibs_estadual + aliq.ibs_municipal) / 100);
-      const cbsEntradas = totaisEntradas.valor * (aliq.cbs / 100);
+      const pisCofinsProjetadoEntradas = totaisEntradas.pisCofins * (1 - aliq.reduc_piscofins / 100);
+      const baseIbsCbsEntradas = totaisEntradas.valor - icmsEntradas - pisCofinsProjetadoEntradas;
+      const ibsEntradas = baseIbsCbsEntradas * ((aliq.ibs_estadual + aliq.ibs_municipal) / 100);
+      const cbsEntradas = baseIbsCbsEntradas * (aliq.cbs / 100);
 
       const icmsLiquido = icmsSaidas - icmsEntradas;
       const ibsCbsLiquido = (ibsSaidas + cbsSaidas) - (ibsEntradas + cbsEntradas);
@@ -295,7 +300,7 @@ export default function Dashboard() {
   }: {
     title: string;
     icon: React.ElementType;
-    totais: TotaisCategoria & { icmsProjetado: number; pisCofinsProjetado: number; ibsProjetado: number; cbsProjetado: number };
+    totais: TotaisCategoria & { icmsProjetado: number; pisCofinsProjetado: number; baseIbsCbs: number; ibsProjetado: number; cbsProjetado: number };
     variant: 'entrada' | 'saida';
   }) => (
     <Card className="border-border/50">
@@ -326,6 +331,10 @@ export default function Dashboard() {
         <div className="flex justify-between items-center">
           <span className="text-xs text-muted-foreground">PIS+COFINS Projetado ({anoProjecao}):</span>
           <span className="text-sm font-semibold text-pis-cofins">{formatCurrency(totais.pisCofinsProjetado)}</span>
+        </div>
+        <div className="flex justify-between items-center">
+          <span className="text-xs text-muted-foreground">Base IBS/CBS:</span>
+          <span className="text-sm font-semibold">{formatCurrency(totais.baseIbsCbs)}</span>
         </div>
         <div className="flex justify-between items-center">
           <span className="text-xs text-muted-foreground">IBS Projetado ({anoProjecao}):</span>
