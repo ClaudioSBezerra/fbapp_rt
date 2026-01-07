@@ -19,7 +19,7 @@ export default function Auth() {
 
   useEffect(() => {
     if (user) {
-      navigate('/');
+      navigate('/dashboard');
     }
   }, [user, navigate]);
 
@@ -38,7 +38,7 @@ export default function Auth() {
           }
         } else {
           toast.success('Login realizado com sucesso!');
-          navigate('/');
+          navigate('/dashboard');
         }
       } else {
         if (password.length < 6) {
