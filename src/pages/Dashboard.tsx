@@ -71,10 +71,11 @@ function calcularProjecoes(
   aliquota: Aliquota | null
 ) {
   const icmsProjetado = aliquota ? totais.icms * (1 - aliquota.reduc_icms / 100) : totais.icms;
+  const pisCofinsProjetado = aliquota ? totais.pisCofins * (1 - aliquota.reduc_piscofins / 100) : totais.pisCofins;
   const ibsProjetado = aliquota ? totais.valor * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
   const cbsProjetado = aliquota ? totais.valor * (aliquota.cbs / 100) : 0;
 
-  return { icmsProjetado, ibsProjetado, cbsProjetado };
+  return { icmsProjetado, pisCofinsProjetado, ibsProjetado, cbsProjetado };
 }
 
 export default function Dashboard() {
@@ -294,7 +295,7 @@ export default function Dashboard() {
   }: {
     title: string;
     icon: React.ElementType;
-    totais: TotaisCategoria & { icmsProjetado: number; ibsProjetado: number; cbsProjetado: number };
+    totais: TotaisCategoria & { icmsProjetado: number; pisCofinsProjetado: number; ibsProjetado: number; cbsProjetado: number };
     variant: 'entrada' | 'saida';
   }) => (
     <Card className="border-border/50">
@@ -321,6 +322,10 @@ export default function Dashboard() {
         <div className="flex justify-between items-center">
           <span className="text-xs text-muted-foreground">PIS+COFINS:</span>
           <span className="text-sm font-semibold text-pis-cofins">{formatCurrency(totais.pisCofins)}</span>
+        </div>
+        <div className="flex justify-between items-center">
+          <span className="text-xs text-muted-foreground">PIS+COFINS Projetado ({anoProjecao}):</span>
+          <span className="text-sm font-semibold text-pis-cofins">{formatCurrency(totais.pisCofinsProjetado)}</span>
         </div>
         <div className="flex justify-between items-center">
           <span className="text-xs text-muted-foreground">IBS Projetado ({anoProjecao}):</span>
