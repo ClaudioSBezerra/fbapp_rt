@@ -13,18 +13,15 @@ import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 
-interface FreteItem {
-  id: string;
-  tipo: string;
+interface AggregatedRow {
+  filial_id: string;
+  filial_nome: string;
   mes_ano: string;
-  ncm: string | null;
-  descricao: string | null;
-  cnpj_transportadora: string | null;
+  tipo: string;
   valor: number;
   pis: number;
   cofins: number;
   icms: number;
-  filial_id: string;
 }
 
 interface Filial {
@@ -40,16 +37,6 @@ interface Aliquota {
   ibs_municipal: number;
   cbs: number;
   reduc_icms: number;
-}
-
-interface AggregatedRow {
-  filial_id: string;
-  filial_nome: string;
-  mes_ano: string;
-  valor: number;
-  pis: number;
-  cofins: number;
-  icms: number;
 }
 
 function formatCurrency(value: number): string {
@@ -69,12 +56,8 @@ function formatCNPJ(cnpj: string): string {
   return cleaned.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
 }
 
-function getYearFromMesAno(mesAno: string): number {
-  return new Date(mesAno).getFullYear();
-}
-
 export default function Fretes() {
-  const [items, setItems] = useState<FreteItem[]>([]);
+  const [aggregatedData, setAggregatedData] = useState<AggregatedRow[]>([]);
   const [aliquotas, setAliquotas] = useState<Aliquota[]>([]);
   const [filiais, setFiliais] = useState<Filial[]>([]);
   const [loading, setLoading] = useState(true);
@@ -100,6 +83,26 @@ export default function Fretes() {
     cofins: '',
   });
 
+  const fetchAggregatedData = async () => {
+    const { data, error } = await supabase.rpc('get_mv_fretes_aggregated');
+    if (error) {
+      console.error('Error fetching aggregated data:', error);
+      return;
+    }
+    if (data) {
+      setAggregatedData(data.map((row: any) => ({
+        filial_id: row.filial_id,
+        filial_nome: row.filial_nome,
+        mes_ano: row.mes_ano,
+        tipo: row.tipo,
+        valor: Number(row.valor) || 0,
+        pis: Number(row.pis) || 0,
+        cofins: Number(row.cofins) || 0,
+        icms: Number(row.icms) || 0,
+      })));
+    }
+  };
+
   useEffect(() => {
     async function fetchData() {
       try {
@@ -110,12 +113,7 @@ export default function Fretes() {
 
         if (aliquotasData) setAliquotas(aliquotasData);
 
-        const { data: itemsData } = await supabase
-          .from('fretes')
-          .select('*')
-          .order('mes_ano', { ascending: false });
-
-        if (itemsData) setItems(itemsData);
+        await fetchAggregatedData();
 
         const { data: filiaisData } = await supabase
           .from('filiais')
@@ -138,56 +136,29 @@ export default function Fretes() {
     fetchData();
   }, [user]);
 
-  // Get unique mes_ano options
+  // Get unique mes_ano options from aggregated data
   const mesAnoOptions = useMemo(() => {
-    const unique = [...new Set(items.map(i => i.mes_ano))];
+    const unique = [...new Set(aggregatedData.map(i => i.mes_ano))];
     return unique.sort((a, b) => b.localeCompare(a));
-  }, [items]);
+  }, [aggregatedData]);
 
-  // Filter items
-  const filteredItems = useMemo(() => {
-    return items.filter(i => {
+  // Filter aggregated data
+  const filteredData = useMemo(() => {
+    return aggregatedData.filter(i => {
       if (filterFilial !== 'all' && i.filial_id !== filterFilial) return false;
       if (filterMesAno !== 'all' && i.mes_ano !== filterMesAno) return false;
       return true;
     });
-  }, [items, filterFilial, filterMesAno]);
-
-  // Aggregate data by filial + mes_ano
-  const aggregateData = (data: FreteItem[]): AggregatedRow[] => {
-    const grouped: Record<string, AggregatedRow> = {};
-    
-    data.forEach(item => {
-      const key = `${item.filial_id}_${item.mes_ano}`;
-      if (!grouped[key]) {
-        const filial = filiais.find(f => f.id === item.filial_id);
-        grouped[key] = {
-          filial_id: item.filial_id,
-          filial_nome: filial?.nome_fantasia || filial?.razao_social || 'Filial',
-          mes_ano: item.mes_ano,
-          valor: 0,
-          pis: 0,
-          cofins: 0,
-          icms: 0,
-        };
-      }
-      grouped[key].valor += item.valor;
-      grouped[key].pis += item.pis;
-      grouped[key].cofins += item.cofins;
-      grouped[key].icms += item.icms || 0;
-    });
-
-    return Object.values(grouped).sort((a, b) => b.mes_ano.localeCompare(a.mes_ano));
-  };
+  }, [aggregatedData, filterFilial, filterMesAno]);
 
   const entradasAgregadas = useMemo(() => 
-    aggregateData(filteredItems.filter(i => i.tipo === 'entrada')), 
-    [filteredItems, filiais]
+    filteredData.filter(i => i.tipo === 'entrada'), 
+    [filteredData]
   );
 
   const saidasAgregadas = useMemo(() => 
-    aggregateData(filteredItems.filter(i => i.tipo === 'saida')), 
-    [filteredItems, filiais]
+    filteredData.filter(i => i.tipo === 'saida'), 
+    [filteredData]
   );
 
   const handleNewItem = async () => {
@@ -225,12 +196,8 @@ export default function Fretes() {
         cofins: '',
       });
 
-      const { data: itemsData } = await supabase
-        .from('fretes')
-        .select('*')
-        .order('mes_ano', { ascending: false });
-
-      if (itemsData) setItems(itemsData);
+      // Refresh materialized view data
+      await fetchAggregatedData();
     } catch (error) {
       console.error('Error adding item:', error);
       toast.error('Erro ao adicionar frete');
@@ -244,10 +211,9 @@ export default function Fretes() {
   }, [aliquotas, anoProjecao]);
 
   const totaisEntradas = useMemo(() => {
-    const entradas = filteredItems.filter((i) => i.tipo === 'entrada');
-    const valor = entradas.reduce((acc, i) => acc + i.valor, 0);
-    const icms = entradas.reduce((acc, i) => acc + (i.icms || 0), 0);
-    const pisCofins = entradas.reduce((acc, i) => acc + i.pis + i.cofins, 0);
+    const valor = entradasAgregadas.reduce((acc, i) => acc + i.valor, 0);
+    const icms = entradasAgregadas.reduce((acc, i) => acc + i.icms, 0);
+    const pisCofins = entradasAgregadas.reduce((acc, i) => acc + i.pis + i.cofins, 0);
     
     const aliquota = aliquotaSelecionada;
     const icmsProjetado = aliquota ? icms * (1 - (aliquota.reduc_icms / 100)) : icms;
@@ -255,13 +221,12 @@ export default function Fretes() {
     const cbsProjetado = aliquota ? valor * (aliquota.cbs / 100) : 0;
     
     return { valor, icms, pisCofins, icmsProjetado, ibsProjetado, cbsProjetado };
-  }, [filteredItems, aliquotaSelecionada]);
+  }, [entradasAgregadas, aliquotaSelecionada]);
 
   const totaisSaidas = useMemo(() => {
-    const saidas = filteredItems.filter((i) => i.tipo === 'saida');
-    const valor = saidas.reduce((acc, i) => acc + i.valor, 0);
-    const icms = saidas.reduce((acc, i) => acc + (i.icms || 0), 0);
-    const pisCofins = saidas.reduce((acc, i) => acc + i.pis + i.cofins, 0);
+    const valor = saidasAgregadas.reduce((acc, i) => acc + i.valor, 0);
+    const icms = saidasAgregadas.reduce((acc, i) => acc + i.icms, 0);
+    const pisCofins = saidasAgregadas.reduce((acc, i) => acc + i.pis + i.cofins, 0);
     
     const aliquota = aliquotaSelecionada;
     const icmsProjetado = aliquota ? icms * (1 - (aliquota.reduc_icms / 100)) : icms;
@@ -269,7 +234,7 @@ export default function Fretes() {
     const cbsProjetado = aliquota ? valor * (aliquota.cbs / 100) : 0;
     
     return { valor, icms, pisCofins, icmsProjetado, ibsProjetado, cbsProjetado };
-  }, [filteredItems, aliquotaSelecionada]);
+  }, [saidasAgregadas, aliquotaSelecionada]);
 
   const hasFiliais = filiais.length > 0;
 
@@ -486,68 +451,70 @@ export default function Fretes() {
         </Card>
       </div>
 
-      <Card className="border-border/50">
-        <Tabs defaultValue="entradas" className="w-full">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Registros Agregados</CardTitle>
-                <CardDescription>
-                  Visualize fretes sobre compras e vendas agregados por Filial e Mês/Ano
-                </CardDescription>
-              </div>
-              <TabsList>
-                <TabsTrigger value="entradas">Entradas</TabsTrigger>
-                <TabsTrigger value="saidas">Saídas</TabsTrigger>
-              </TabsList>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <TabsContent value="entradas" className="mt-0">
-              {loading ? (
-                <div className="py-12 text-center text-muted-foreground">Carregando...</div>
-              ) : (
-                renderTable(entradasAgregadas, 'entrada')
-              )}
-            </TabsContent>
-            <TabsContent value="saidas" className="mt-0">
-              {loading ? (
-                <div className="py-12 text-center text-muted-foreground">Carregando...</div>
-              ) : (
-                renderTable(saidasAgregadas, 'saida')
-              )}
-            </TabsContent>
-          </CardContent>
-        </Tabs>
-      </Card>
+      <Tabs defaultValue="entradas" className="w-full">
+        <TabsList className="grid w-full grid-cols-2 max-w-md">
+          <TabsTrigger value="entradas" className="flex items-center gap-2">
+            <ArrowDownRight className="h-4 w-4" />
+            Entradas ({entradasAgregadas.length})
+          </TabsTrigger>
+          <TabsTrigger value="saidas" className="flex items-center gap-2">
+            <ArrowUpRight className="h-4 w-4" />
+            Saídas ({saidasAgregadas.length})
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="entradas" className="mt-4">
+          <Card className="border-border/50">
+            <CardHeader>
+              <CardTitle className="text-lg">Fretes sobre Compras (Entradas)</CardTitle>
+              <CardDescription>Agregado por Filial e Mês/Ano</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {renderTable(entradasAgregadas, 'entrada')}
+            </CardContent>
+          </Card>
+        </TabsContent>
+        <TabsContent value="saidas" className="mt-4">
+          <Card className="border-border/50">
+            <CardHeader>
+              <CardTitle className="text-lg">Fretes sobre Vendas (Saídas)</CardTitle>
+              <CardDescription>Agregado por Filial e Mês/Ano</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {renderTable(saidasAgregadas, 'saida')}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Novo Frete</DialogTitle>
             <DialogDescription>
-              Adicione um registro de frete.
+              Adicione um novo registro de frete
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="filial">Filial</Label>
+              <Select value={selectedFilial} onValueChange={setSelectedFilial}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione a filial" />
+                </SelectTrigger>
+                <SelectContent>
+                  {filiais.map((filial) => (
+                    <SelectItem key={filial.id} value={filial.id}>
+                      {filial.nome_fantasia || filial.razao_social} - {formatCNPJ(filial.cnpj)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Filial</Label>
-                <Select value={selectedFilial} onValueChange={setSelectedFilial}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {filiais.map((filial) => (
-                      <SelectItem key={filial.id} value={filial.id}>
-                        {filial.nome_fantasia || filial.razao_social}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Tipo</Label>
+              <div className="grid gap-2">
+                <Label htmlFor="tipo">Tipo</Label>
                 <Select
                   value={newItem.tipo}
                   onValueChange={(v) => setNewItem({ ...newItem, tipo: v })}
@@ -556,14 +523,12 @@ export default function Fretes() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="entrada">Entrada (s/ Compra)</SelectItem>
-                    <SelectItem value="saida">Saída (s/ Venda)</SelectItem>
+                    <SelectItem value="entrada">Entrada</SelectItem>
+                    <SelectItem value="saida">Saída</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
+              <div className="grid gap-2">
                 <Label htmlFor="mes_ano">Mês/Ano</Label>
                 <Input
                   id="mes_ano"
@@ -572,75 +537,80 @@ export default function Fretes() {
                   onChange={(e) => setNewItem({ ...newItem, mes_ano: e.target.value })}
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="ncm">NCM</Label>
-                <Input
-                  id="ncm"
-                  placeholder="00000000"
-                  value={newItem.ncm}
-                  onChange={(e) => setNewItem({ ...newItem, ncm: e.target.value })}
-                />
-              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="cnpj_transportadora">CNPJ Transportadora</Label>
+
+            <div className="grid gap-2">
+              <Label htmlFor="ncm">NCM (opcional)</Label>
+              <Input
+                id="ncm"
+                value={newItem.ncm}
+                onChange={(e) => setNewItem({ ...newItem, ncm: e.target.value })}
+                placeholder="00000000"
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="cnpj_transportadora">CNPJ Transportadora (opcional)</Label>
               <Input
                 id="cnpj_transportadora"
-                placeholder="00000000000000"
                 value={newItem.cnpj_transportadora}
                 onChange={(e) => setNewItem({ ...newItem, cnpj_transportadora: e.target.value })}
+                placeholder="00.000.000/0000-00"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="descricao">Descrição</Label>
-              <Input
-                id="descricao"
-                placeholder="Descrição do frete"
-                value={newItem.descricao}
-                onChange={(e) => setNewItem({ ...newItem, descricao: e.target.value })}
-              />
-            </div>
+
             <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="valor">Valor (R$)</Label>
+              <div className="grid gap-2">
+                <Label htmlFor="valor">Valor</Label>
                 <Input
                   id="valor"
                   type="number"
                   step="0.01"
-                  placeholder="0,00"
                   value={newItem.valor}
                   onChange={(e) => setNewItem({ ...newItem, valor: e.target.value })}
+                  placeholder="0,00"
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="pis">PIS (R$)</Label>
+              <div className="grid gap-2">
+                <Label htmlFor="pis">PIS</Label>
                 <Input
                   id="pis"
                   type="number"
                   step="0.01"
-                  placeholder="0,00"
                   value={newItem.pis}
                   onChange={(e) => setNewItem({ ...newItem, pis: e.target.value })}
+                  placeholder="0,00"
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="cofins">COFINS (R$)</Label>
+              <div className="grid gap-2">
+                <Label htmlFor="cofins">COFINS</Label>
                 <Input
                   id="cofins"
                   type="number"
                   step="0.01"
-                  placeholder="0,00"
                   value={newItem.cofins}
                   onChange={(e) => setNewItem({ ...newItem, cofins: e.target.value })}
+                  placeholder="0,00"
                 />
               </div>
             </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="descricao">Descrição (opcional)</Label>
+              <Input
+                id="descricao"
+                value={newItem.descricao}
+                onChange={(e) => setNewItem({ ...newItem, descricao: e.target.value })}
+                placeholder="Descrição do frete"
+              />
+            </div>
           </div>
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleNewItem} disabled={submitting || !selectedFilial}>
+            <Button onClick={handleNewItem} disabled={submitting}>
               {submitting ? 'Salvando...' : 'Salvar'}
             </Button>
           </DialogFooter>
