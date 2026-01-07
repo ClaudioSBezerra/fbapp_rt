@@ -53,6 +53,39 @@ export type Database = {
         }
         Relationships: []
       }
+      audit_logs: {
+        Row: {
+          action: string
+          created_at: string | null
+          details: Json | null
+          id: string
+          record_count: number | null
+          table_name: string | null
+          tenant_id: string
+          user_id: string
+        }
+        Insert: {
+          action: string
+          created_at?: string | null
+          details?: Json | null
+          id?: string
+          record_count?: number | null
+          table_name?: string | null
+          tenant_id: string
+          user_id: string
+        }
+        Update: {
+          action?: string
+          created_at?: string | null
+          details?: Json | null
+          id?: string
+          record_count?: number | null
+          table_name?: string | null
+          tenant_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       empresas: {
         Row: {
           created_at: string
@@ -488,18 +521,45 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      delete_energia_agua_batch: {
-        Args: { _batch_size?: number; _filial_ids: string[] }
-        Returns: number
-      }
-      delete_fretes_batch: {
-        Args: { _batch_size?: number; _filial_ids: string[] }
-        Returns: number
-      }
-      delete_mercadorias_batch: {
-        Args: { _batch_size?: number; _filial_ids: string[] }
-        Returns: number
-      }
+      delete_energia_agua_batch:
+        | {
+            Args: { _batch_size?: number; _filial_ids: string[] }
+            Returns: number
+          }
+        | {
+            Args: {
+              _batch_size?: number
+              _filial_ids: string[]
+              _user_id: string
+            }
+            Returns: number
+          }
+      delete_fretes_batch:
+        | {
+            Args: { _batch_size?: number; _filial_ids: string[] }
+            Returns: number
+          }
+        | {
+            Args: {
+              _batch_size?: number
+              _filial_ids: string[]
+              _user_id: string
+            }
+            Returns: number
+          }
+      delete_mercadorias_batch:
+        | {
+            Args: { _batch_size?: number; _filial_ids: string[] }
+            Returns: number
+          }
+        | {
+            Args: {
+              _batch_size?: number
+              _filial_ids: string[]
+              _user_id: string
+            }
+            Returns: number
+          }
       get_mercadorias_aggregated: {
         Args: never
         Returns: {
