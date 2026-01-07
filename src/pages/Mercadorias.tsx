@@ -4,11 +4,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, ArrowUpRight, ArrowDownRight, Building2, Filter, Calendar, HelpCircle, Download } from 'lucide-react';
+import { ArrowUpRight, ArrowDownRight, Building2, Filter, Calendar, HelpCircle, Download } from 'lucide-react';
 import { exportToExcel } from '@/lib/exportToExcel';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
@@ -204,9 +203,6 @@ export default function Mercadorias() {
   const [aliquotas, setAliquotas] = useState<Aliquota[]>([]);
   const [filiais, setFiliais] = useState<Filial[]>([]);
   const [loading, setLoading] = useState(true);
-  const [newDialogOpen, setNewDialogOpen] = useState(false);
-  const [selectedFilial, setSelectedFilial] = useState<string>('');
-  const [submitting, setSubmitting] = useState(false);
   const { user } = useAuth();
 
   // Filters
@@ -214,16 +210,6 @@ export default function Mercadorias() {
   const [filterMesAno, setFilterMesAno] = useState<string>('all');
   const [anoProjecao, setAnoProjecao] = useState<number>(2027);
   const ANOS_PROJECAO = [2027, 2028, 2029, 2030, 2031, 2032, 2033];
-
-  const [newMercadoria, setNewMercadoria] = useState({
-    tipo: 'entrada',
-    mes_ano: new Date().toISOString().slice(0, 7),
-    ncm: '',
-    descricao: '',
-    valor: '',
-    pis: '',
-    cofins: '',
-  });
 
   // Fetch aggregated data directly from DB
   const fetchAggregatedData = async () => {
@@ -243,9 +229,6 @@ export default function Mercadorias() {
         .select('id, cnpj, razao_social, nome_fantasia');
       if (filiaisData) {
         setFiliais(filiaisData);
-        if (filiaisData.length > 0 && !selectedFilial) {
-          setSelectedFilial(filiaisData[0].id);
-        }
       }
 
       // Use Materialized View for aggregated data (instant load)
@@ -305,39 +288,6 @@ export default function Mercadorias() {
     filteredData.filter(m => m.tipo === 'saida').sort((a, b) => b.mes_ano.localeCompare(a.mes_ano)), 
     [filteredData]
   );
-
-  const handleNewMercadoria = async () => {
-    if (!selectedFilial) {
-      toast.error('Selecione uma filial');
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const { error } = await supabase.from('mercadorias').insert({
-        filial_id: selectedFilial,
-        tipo: newMercadoria.tipo,
-        mes_ano: `${newMercadoria.mes_ano}-01`,
-        ncm: newMercadoria.ncm || null,
-        descricao: newMercadoria.descricao || null,
-        valor: parseFloat(newMercadoria.valor) || 0,
-        pis: parseFloat(newMercadoria.pis) || 0,
-        cofins: parseFloat(newMercadoria.cofins) || 0,
-      });
-      if (error) throw error;
-
-      toast.success('Mercadoria adicionada com sucesso');
-      setNewDialogOpen(false);
-      setNewMercadoria({ tipo: 'entrada', mes_ano: new Date().toISOString().slice(0, 7), ncm: '', descricao: '', valor: '', pis: '', cofins: '' });
-
-      // Reload aggregated data
-      fetchAggregatedData();
-    } catch (error) {
-      console.error('Error adding mercadoria:', error);
-      toast.error('Erro ao adicionar mercadoria');
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
   const aliquotaSelecionada = useMemo(() => {
     return aliquotas.find((a) => a.ano === anoProjecao) || null;
@@ -440,10 +390,6 @@ export default function Mercadorias() {
           >
             <Download className="h-4 w-4 mr-2" />
             Exportar Excel
-          </Button>
-          <Button size="sm" onClick={() => setNewDialogOpen(true)} disabled={!hasFiliais}>
-            <Plus className="h-4 w-4 mr-2" />
-            Nova Mercadoria
           </Button>
         </div>
       </div>
@@ -671,74 +617,6 @@ export default function Mercadorias() {
           </CardContent>
         </Tabs>
       </Card>
-
-      <Dialog open={newDialogOpen} onOpenChange={setNewDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Nova Mercadoria</DialogTitle>
-            <DialogDescription>Adicione manualmente uma mercadoria ou serviço.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Filial</Label>
-                <Select value={selectedFilial} onValueChange={setSelectedFilial}>
-                  <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                  <SelectContent>
-                    {filiais.map((filial) => (
-                      <SelectItem key={filial.id} value={filial.id}>
-                        {filial.nome_fantasia || filial.razao_social} - {formatCNPJ(filial.cnpj)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Tipo</Label>
-                <Select value={newMercadoria.tipo} onValueChange={(v) => setNewMercadoria({ ...newMercadoria, tipo: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="entrada">Entrada</SelectItem>
-                    <SelectItem value="saida">Saída</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="mes_ano">Mês/Ano</Label>
-                <Input id="mes_ano" type="month" value={newMercadoria.mes_ano} onChange={(e) => setNewMercadoria({ ...newMercadoria, mes_ano: e.target.value })} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="ncm">NCM</Label>
-                <Input id="ncm" placeholder="00000000" value={newMercadoria.ncm} onChange={(e) => setNewMercadoria({ ...newMercadoria, ncm: e.target.value })} />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="descricao">Descrição</Label>
-              <Input id="descricao" placeholder="Descrição do produto ou serviço" value={newMercadoria.descricao} onChange={(e) => setNewMercadoria({ ...newMercadoria, descricao: e.target.value })} />
-            </div>
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="valor">Valor (R$)</Label>
-                <Input id="valor" type="number" step="0.01" placeholder="0,00" value={newMercadoria.valor} onChange={(e) => setNewMercadoria({ ...newMercadoria, valor: e.target.value })} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="pis">PIS (R$)</Label>
-                <Input id="pis" type="number" step="0.01" placeholder="0,00" value={newMercadoria.pis} onChange={(e) => setNewMercadoria({ ...newMercadoria, pis: e.target.value })} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="cofins">COFINS (R$)</Label>
-                <Input id="cofins" type="number" step="0.01" placeholder="0,00" value={newMercadoria.cofins} onChange={(e) => setNewMercadoria({ ...newMercadoria, cofins: e.target.value })} />
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setNewDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={handleNewMercadoria} disabled={submitting || !selectedFilial}>{submitting ? 'Salvando...' : 'Salvar'}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
     </div>
   );
