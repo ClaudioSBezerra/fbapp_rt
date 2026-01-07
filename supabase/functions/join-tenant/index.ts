@@ -163,45 +163,8 @@ Deno.serve(async (req) => {
       console.log('User linked to tenant');
     }
 
-    // Check if user is already linked to this empresa
-    const { data: existingEmpresaLink } = await supabaseAdmin
-      .from('user_empresas')
-      .select('id')
-      .eq('user_id', user.id)
-      .eq('empresa_id', empresaId)
-      .single();
-
-    if (existingEmpresaLink) {
-      return new Response(
-        JSON.stringify({ 
-          success: true, 
-          message: 'Você já está vinculado a esta empresa',
-          tenant_id: tenant.id,
-          tenant_nome: tenant.nome,
-          empresa_id: empresa.id,
-          empresa_nome: empresa.nome
-        }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Insert user_empresas
-    const { error: insertEmpresaError } = await supabaseAdmin
-      .from('user_empresas')
-      .insert({
-        user_id: user.id,
-        empresa_id: empresaId
-      });
-
-    if (insertEmpresaError) {
-      console.error('Failed to link user to empresa:', insertEmpresaError);
-      return new Response(
-        JSON.stringify({ success: false, error: 'Erro ao vincular à empresa' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    console.log('User successfully linked to empresa');
+    // User is now linked to the tenant - access to empresas is derived through the tenant
+    console.log('User successfully linked to tenant and can access empresa:', empresa.nome);
 
     return new Response(
       JSON.stringify({
