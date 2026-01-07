@@ -274,9 +274,13 @@ export default function Fretes() {
               <TableHead>Mês/Ano</TableHead>
               <TableHead className="text-right">Valor</TableHead>
               <TableHead className="text-right">ICMS</TableHead>
-              <TableHead className="text-right">ICMS Projetado</TableHead>
+              <TableHead className="text-right">
+                ICMS Proj. {aliquotaSelecionada && <span className="text-muted-foreground font-normal">(-{aliquotaSelecionada.reduc_icms}%)</span>}
+              </TableHead>
               <TableHead className="text-right text-pis-cofins">PIS+COFINS</TableHead>
-              <TableHead className="text-right text-pis-cofins">PIS+COFINS Projetado</TableHead>
+              <TableHead className="text-right text-pis-cofins">
+                PIS+COFINS Proj. {aliquotaSelecionada && <span className="text-muted-foreground font-normal">(-{aliquotaSelecionada.reduc_piscofins}%)</span>}
+              </TableHead>
               <TableHead className="text-right font-semibold bg-muted/30">Tot. Imp. Atuais</TableHead>
               <TableHead className="text-right">Base IBS/CBS</TableHead>
               <TableHead className="text-right text-ibs-cbs">IBS Projetado</TableHead>
