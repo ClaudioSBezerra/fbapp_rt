@@ -521,7 +521,7 @@ export default function ImportarEFD() {
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
           <CardTitle className="flex items-center gap-2">
             <Upload className="h-5 w-5" />
-            Importar EFD
+            Importar EFD Contribuições
           </CardTitle>
           <Button 
             variant="outline" 

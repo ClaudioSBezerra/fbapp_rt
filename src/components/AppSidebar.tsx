@@ -36,7 +36,7 @@ const menuItems = [
   { title: 'Energia e Água', url: '/energia-agua', icon: Zap },
   { title: 'Fretes', url: '/fretes', icon: Truck },
   { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard },
-  { title: 'Importar EFD', url: '/importar-efd', icon: Upload },
+  { title: 'Importar EFD Contribuições', url: '/importar-efd', icon: Upload },
 ];
 
 export function AppSidebar() {
