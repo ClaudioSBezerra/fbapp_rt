@@ -7,6 +7,7 @@ const corsHeaders = {
 
 interface JoinTenantRequest {
   tenantId: string;
+  empresaId: string;
 }
 
 Deno.serve(async (req) => {
@@ -49,11 +50,18 @@ Deno.serve(async (req) => {
 
     // Parse request body
     const body: JoinTenantRequest = await req.json();
-    const { tenantId } = body;
+    const { tenantId, empresaId } = body;
 
     if (!tenantId) {
       return new Response(
         JSON.stringify({ success: false, error: 'Código do ambiente é obrigatório' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (!empresaId) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Seleção de empresa é obrigatória' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -63,6 +71,13 @@ Deno.serve(async (req) => {
     if (!uuidRegex.test(tenantId)) {
       return new Response(
         JSON.stringify({ success: false, error: 'Código do ambiente inválido' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (!uuidRegex.test(empresaId)) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Empresa selecionada inválida' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -87,50 +102,115 @@ Deno.serve(async (req) => {
 
     console.log('Tenant found:', tenant.nome);
 
+    // Verify empresa belongs to this tenant (through grupo)
+    const { data: empresa, error: empresaError } = await supabaseAdmin
+      .from('empresas')
+      .select(`
+        id, 
+        nome,
+        grupo_id,
+        grupos_empresas!inner (
+          tenant_id
+        )
+      `)
+      .eq('id', empresaId)
+      .single();
+
+    if (empresaError || !empresa) {
+      console.error('Empresa not found:', empresaError);
+      return new Response(
+        JSON.stringify({ success: false, error: 'Empresa não encontrada' }),
+        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Check if empresa belongs to the specified tenant
+    const grupoEmpresas = empresa.grupos_empresas as unknown as { tenant_id: string };
+    if (grupoEmpresas.tenant_id !== tenantId) {
+      console.error('Empresa does not belong to tenant');
+      return new Response(
+        JSON.stringify({ success: false, error: 'Empresa não pertence a este ambiente' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    console.log('Empresa verified:', empresa.nome);
+
     // Check if user is already linked to this tenant
-    const { data: existingLink, error: linkCheckError } = await supabaseAdmin
+    const { data: existingTenantLink } = await supabaseAdmin
       .from('user_tenants')
       .select('id')
       .eq('user_id', user.id)
       .eq('tenant_id', tenantId)
       .single();
 
-    if (existingLink) {
+    // Insert user_tenants if not already linked
+    if (!existingTenantLink) {
+      const { error: insertTenantError } = await supabaseAdmin
+        .from('user_tenants')
+        .insert({
+          user_id: user.id,
+          tenant_id: tenantId
+        });
+
+      if (insertTenantError) {
+        console.error('Failed to link user to tenant:', insertTenantError);
+        return new Response(
+          JSON.stringify({ success: false, error: 'Erro ao vincular ao ambiente' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      console.log('User linked to tenant');
+    }
+
+    // Check if user is already linked to this empresa
+    const { data: existingEmpresaLink } = await supabaseAdmin
+      .from('user_empresas')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('empresa_id', empresaId)
+      .single();
+
+    if (existingEmpresaLink) {
       return new Response(
         JSON.stringify({ 
           success: true, 
-          message: 'Você já está vinculado a este ambiente',
+          message: 'Você já está vinculado a esta empresa',
           tenant_id: tenant.id,
-          tenant_nome: tenant.nome
+          tenant_nome: tenant.nome,
+          empresa_id: empresa.id,
+          empresa_nome: empresa.nome
         }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Link user to tenant
-    const { error: insertError } = await supabaseAdmin
-      .from('user_tenants')
+    // Insert user_empresas
+    const { error: insertEmpresaError } = await supabaseAdmin
+      .from('user_empresas')
       .insert({
         user_id: user.id,
-        tenant_id: tenantId
+        empresa_id: empresaId
       });
 
-    if (insertError) {
-      console.error('Failed to link user to tenant:', insertError);
+    if (insertEmpresaError) {
+      console.error('Failed to link user to empresa:', insertEmpresaError);
       return new Response(
-        JSON.stringify({ success: false, error: 'Erro ao vincular ao ambiente' }),
+        JSON.stringify({ success: false, error: 'Erro ao vincular à empresa' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log('User successfully linked to tenant');
+    console.log('User successfully linked to empresa');
 
     return new Response(
       JSON.stringify({
         success: true,
         message: 'Vinculado ao ambiente com sucesso!',
         tenant_id: tenant.id,
-        tenant_nome: tenant.nome
+        tenant_nome: tenant.nome,
+        empresa_id: empresa.id,
+        empresa_nome: empresa.nome
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

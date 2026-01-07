@@ -20,3 +20,6 @@ verify_jwt = false
 
 [functions.join-tenant]
 verify_jwt = false
+
+[functions.get-tenant-structure]
+verify_jwt = false
