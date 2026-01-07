@@ -1,13 +1,14 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
+import { useRole } from '@/hooks/useRole';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
-import { Building2, Users, Store, ArrowRight, Copy, Check, FileText } from 'lucide-react';
+import { Building2, Users, Store, ArrowRight, Copy, Check, FileText, Key, Loader2 } from 'lucide-react';
 
 interface OnboardingData {
   tenantNome: string;
@@ -20,13 +21,33 @@ export default function Onboarding() {
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [tenantId, setTenantId] = useState<string>('');
+  const [tenantCode, setTenantCode] = useState<string>('');
   const [data, setData] = useState<OnboardingData>({
     tenantNome: '',
     grupoNome: '',
     empresaNome: '',
   });
   const { user } = useAuth();
+  const { isAdmin, isLoading: roleLoading } = useRole();
   const navigate = useNavigate();
+
+  // Check if user already has a tenant linked
+  useEffect(() => {
+    const checkUserTenant = async () => {
+      if (!user) return;
+      
+      const { data: userTenants } = await supabase
+        .from('user_tenants')
+        .select('tenant_id')
+        .eq('user_id', user.id);
+
+      if (userTenants && userTenants.length > 0) {
+        navigate('/dashboard');
+      }
+    };
+
+    checkUserTenant();
+  }, [user, navigate]);
 
   const handleCopyTenantId = () => {
     navigator.clipboard.writeText(tenantId);
@@ -39,7 +60,6 @@ export default function Onboarding() {
     setLoading(true);
 
     try {
-      // Chama a Edge Function transacional para criar tudo de uma vez
       const { data: result, error } = await supabase.functions.invoke('onboarding-complete', {
         body: {
           tenantNome: data.tenantNome,
@@ -59,11 +79,41 @@ export default function Onboarding() {
       }
 
       setTenantId(result.tenant_id);
-      setStep(4); // Success step
+      setStep(4);
       toast.success('Cadastro realizado com sucesso!');
     } catch (error: any) {
       console.error('Error:', error);
       const errorMessage = error?.message || 'Erro ao cadastrar. Tente novamente.';
+      toast.error(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleJoinTenant = async () => {
+    if (!user || !tenantCode.trim()) return;
+    setLoading(true);
+
+    try {
+      const { data: result, error } = await supabase.functions.invoke('join-tenant', {
+        body: { tenantId: tenantCode.trim() }
+      });
+
+      if (error) {
+        console.error('Edge function error:', error);
+        throw new Error(error.message || 'Erro na comunicação com o servidor');
+      }
+
+      if (!result?.success) {
+        console.error('Join tenant failed:', result);
+        throw new Error(result?.error || 'Erro ao entrar no ambiente');
+      }
+
+      toast.success(`Vinculado ao ambiente "${result.tenant_nome}" com sucesso!`);
+      navigate('/dashboard');
+    } catch (error: any) {
+      console.error('Error:', error);
+      const errorMessage = error?.message || 'Erro ao entrar no ambiente. Verifique o código.';
       toast.error(errorMessage);
     } finally {
       setLoading(false);
@@ -83,6 +133,65 @@ export default function Onboarding() {
     }
   };
 
+  // Loading state while checking role
+  if (roleLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <div className="flex items-center gap-2">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          <span className="text-muted-foreground">Carregando...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Non-admin flow: Enter tenant code
+  if (!isAdmin) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <div className="w-full max-w-lg animate-fade-in">
+          <Card className="border-border/50 shadow-lg">
+            <CardHeader className="space-y-1">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="p-2 bg-primary/10 rounded-lg">
+                  <Key className="h-5 w-5 text-primary" />
+                </div>
+              </div>
+              <CardTitle className="text-xl">Entrar em um Ambiente</CardTitle>
+              <CardDescription>
+                Para acessar o sistema, insira o código do ambiente fornecido pelo administrador.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="tenantCode">Código do Ambiente</Label>
+                <Input
+                  id="tenantCode"
+                  placeholder="Ex: b5e7dc15-ec38-46e8-9c12-944..."
+                  value={tenantCode}
+                  onChange={(e) => setTenantCode(e.target.value)}
+                  className="font-mono text-sm"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Solicite o código ao administrador do ambiente que deseja acessar.
+                </p>
+              </div>
+              <Button
+                className="w-full"
+                onClick={handleJoinTenant}
+                disabled={!tenantCode.trim() || loading}
+              >
+                {loading ? 'Entrando...' : 'Entrar no Ambiente'}
+                {!loading && <ArrowRight className="h-4 w-4 ml-2" />}
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  // Admin flow: Create tenant, group, company
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-lg animate-fade-in">

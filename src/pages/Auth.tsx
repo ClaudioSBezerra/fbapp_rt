@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
 import { TrendingUp, Mail, Lock, User } from 'lucide-react';
 
 export default function Auth() {
@@ -18,9 +19,23 @@ export default function Auth() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (user) {
-      navigate('/dashboard');
-    }
+    const checkUserAndRedirect = async () => {
+      if (!user) return;
+
+      // Check if user has any tenant linked
+      const { data: userTenants } = await supabase
+        .from('user_tenants')
+        .select('tenant_id')
+        .eq('user_id', user.id);
+
+      if (userTenants && userTenants.length > 0) {
+        navigate('/dashboard');
+      } else {
+        navigate('/onboarding');
+      }
+    };
+
+    checkUserAndRedirect();
   }, [user, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -38,7 +53,7 @@ export default function Auth() {
           }
         } else {
           toast.success('Login realizado com sucesso!');
-          navigate('/dashboard');
+          // Redirect will be handled by useEffect when user state changes
         }
       } else {
         if (password.length < 6) {
@@ -55,7 +70,7 @@ export default function Auth() {
           }
         } else {
           toast.success('Conta criada com sucesso!');
-          navigate('/onboarding');
+          // Redirect will be handled by useEffect when user state changes
         }
       }
     } catch (err) {

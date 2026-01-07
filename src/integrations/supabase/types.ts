@@ -625,6 +625,7 @@ export type Database = {
           valor: number
         }[]
       }
+      get_tenant_name: { Args: { _tenant_id: string }; Returns: string }
       has_filial_access: {
         Args: { _filial_id: string; _user_id: string }
         Returns: boolean
@@ -641,6 +642,7 @@ export type Database = {
         Returns: boolean
       }
       refresh_materialized_views: { Args: never; Returns: undefined }
+      validate_tenant_exists: { Args: { _tenant_id: string }; Returns: boolean }
     }
     Enums: {
       app_role: "admin" | "user" | "viewer"
