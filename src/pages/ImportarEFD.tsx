@@ -494,14 +494,14 @@ export default function ImportarEFD() {
             {!clearProgress && (
               <>
                 <AlertDialogCancel disabled={isClearing}>Cancelar</AlertDialogCancel>
-                <AlertDialogAction 
+                <Button 
                   onClick={handleClearDatabase}
                   disabled={isClearing}
                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                 >
                   {isClearing && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
                   Confirmar Limpeza
-                </AlertDialogAction>
+                </Button>
               </>
             )}
             {clearProgress?.status === 'done' && (
