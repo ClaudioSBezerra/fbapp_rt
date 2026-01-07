@@ -600,18 +600,16 @@ export default function Mercadorias() {
       <Card className="border-border/50">
         <Tabs defaultValue="entradas" className="w-full">
           <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Operações Agregadas</CardTitle>
-                <CardDescription>Visualize entradas e saídas agregadas por Filial e Mês/Ano</CardDescription>
-              </div>
-              <TabsList>
+            <CardTitle>Operações Agregadas</CardTitle>
+            <CardDescription>Visualize entradas e saídas agregadas por Filial e Mês/Ano</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="mb-4">
+              <TabsList className="justify-start">
                 <TabsTrigger value="entradas">Entradas</TabsTrigger>
                 <TabsTrigger value="saidas">Saídas</TabsTrigger>
               </TabsList>
             </div>
-          </CardHeader>
-          <CardContent>
             <TabsContent value="entradas" className="mt-0">
               {loading ? <div className="py-12 text-center text-muted-foreground">Carregando...</div> : <MercadoriasTable data={entradasAgregadas} aliquotas={aliquotas} tipo="entrada" anoProjecao={anoProjecao} />}
             </TabsContent>
