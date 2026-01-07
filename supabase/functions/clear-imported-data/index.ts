@@ -137,7 +137,7 @@ serve(async (req) => {
 
     console.log(`Estimated records to delete: mercadorias=${estimated.mercadorias}, energia_agua=${estimated.energia_agua}, fretes=${estimated.fretes}`);
 
-    let totalDeleted = { mercadorias: 0, energia_agua: 0, fretes: 0, import_jobs: 0 };
+    let totalDeleted = { mercadorias: 0, energia_agua: 0, fretes: 0, import_jobs: 0, filiais: 0 };
 
     // Deletar mercadorias em lotes usando RPC
     const batchSize = 10000;
@@ -239,6 +239,20 @@ serve(async (req) => {
       totalDeleted.import_jobs = jobsCount || 0;
     }
 
+    // Deletar filiais
+    console.log("Deleting filiais...");
+    const { error: filiaisError, count: filiaisCount } = await supabaseAdmin
+      .from('filiais')
+      .delete({ count: 'exact' })
+      .in('empresa_id', empresaIds);
+
+    if (filiaisError) {
+      console.error("Error deleting filiais:", filiaisError);
+    } else {
+      totalDeleted.filiais = filiaisCount || 0;
+      console.log(`Deleted ${filiaisCount || 0} filiais`);
+    }
+
     // Atualizar Materialized Views
     console.log("Refreshing materialized views...");
     try {
@@ -248,7 +262,7 @@ serve(async (req) => {
       console.error("Error refreshing materialized views:", mvError);
     }
 
-    const message = `Deletados: ${totalDeleted.mercadorias.toLocaleString('pt-BR')} mercadorias, ${totalDeleted.energia_agua.toLocaleString('pt-BR')} energia/água, ${totalDeleted.fretes.toLocaleString('pt-BR')} fretes`;
+    const message = `Deletados: ${totalDeleted.mercadorias.toLocaleString('pt-BR')} mercadorias, ${totalDeleted.energia_agua.toLocaleString('pt-BR')} energia/água, ${totalDeleted.fretes.toLocaleString('pt-BR')} fretes, ${totalDeleted.filiais.toLocaleString('pt-BR')} filiais`;
     console.log(`Cleanup completed: ${message}`);
 
     return new Response(JSON.stringify({ 
