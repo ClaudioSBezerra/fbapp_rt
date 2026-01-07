@@ -57,7 +57,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+    } catch (error) {
+      // Mesmo se o servidor retornar erro (sessão expirada), limpar estado local
+      console.warn('Logout error (clearing local state anyway):', error);
+    }
+    // Garantir que o estado local seja limpo
+    setUser(null);
+    setSession(null);
   };
 
   return (
