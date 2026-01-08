@@ -14,12 +14,22 @@ const MAX_LINES_PER_CHUNK = 100000; // Process max 100k lines per execution
 const MAX_EXECUTION_TIME_MS = 45000; // Stop after 45 seconds to have safety margin
 
 // Valid prefixes by scope
-const ALL_PREFIXES = ["|0000|", "|A010|", "|A100|", "|C010|", "|C100|", "|C500|", "|C600|", "|D010|", "|D100|", "|D101|", "|D105|", "|D500|", "|D501|", "|D505|"];
-const ONLY_A_PREFIXES = ["|0000|", "|A010|", "|A100|"];
-const ONLY_C_PREFIXES = ["|0000|", "|C010|", "|C100|", "|C500|", "|C600|"];
-const ONLY_D_PREFIXES = ["|0000|", "|D010|", "|D100|", "|D101|", "|D105|", "|D500|", "|D501|", "|D505|"];
+const ALL_PREFIXES = ["|0000|", "|0150|", "|A010|", "|A100|", "|C010|", "|C100|", "|C500|", "|C600|", "|D010|", "|D100|", "|D101|", "|D105|", "|D500|", "|D501|", "|D505|"];
+const ONLY_A_PREFIXES = ["|0000|", "|0150|", "|A010|", "|A100|"];
+const ONLY_C_PREFIXES = ["|0000|", "|0150|", "|C010|", "|C100|", "|C500|", "|C600|"];
+const ONLY_D_PREFIXES = ["|0000|", "|0150|", "|D010|", "|D100|", "|D101|", "|D105|", "|D500|", "|D501|", "|D505|"];
 
 type ImportScope = 'all' | 'only_a' | 'only_c' | 'only_d';
+
+// Mapa de participantes (COD_PART -> dados do 0150)
+interface Participante {
+  codPart: string;
+  nome: string;
+  cnpj: string | null;
+  cpf: string | null;
+  ie: string | null;
+  codMun: string | null;
+}
 
 function getValidPrefixes(scope: ImportScope): string[] {
   switch (scope) {
@@ -51,6 +61,7 @@ interface ProcessingContext {
   pendingD100: PendingRecord | null;
   pendingD500: PendingRecord | null;
   filialMap: Map<string, string>; // CNPJ -> filial_id
+  participantesMap: Map<string, Participante>; // COD_PART -> Participante data
 }
 
 interface BatchBuffers {
@@ -255,6 +266,24 @@ function processLine(
       }
       break;
 
+    case "0150":
+      // Registro de Participantes (Cadastro de Parceiros)
+      // Layout: |0150|COD_PART|NOME|COD_PAIS|CNPJ|CPF|IE|COD_MUN|SUFRAMA|END|NUM|COMPL|BAIRRO|
+      // Índices: 2=COD_PART, 3=NOME, 4=COD_PAIS, 5=CNPJ, 6=CPF, 7=IE, 8=COD_MUN
+      if (fields.length > 3) {
+        const codPart = fields[2] || "";
+        const nome = (fields[3] || "").substring(0, 100);
+        const cnpj = fields.length > 5 ? (fields[5]?.replace(/\D/g, "") || null) : null;
+        const cpf = fields.length > 6 ? (fields[6]?.replace(/\D/g, "") || null) : null;
+        const ie = fields.length > 7 ? (fields[7] || null) : null;
+        const codMun = fields.length > 8 ? (fields[8] || null) : null;
+        
+        if (codPart && nome) {
+          context.participantesMap.set(codPart, { codPart, nome, cnpj, cpf, ie, codMun });
+        }
+      }
+      break;
+
     case "A010":
     case "C010":
     case "D010":
@@ -302,10 +331,11 @@ function processLine(
       if (context.efdType === 'contribuicoes') {
         // Layout EFD Contribuições - C100:
         // |C100|IND_OPER|IND_EMIT|COD_PART|COD_MOD|COD_SIT|SER|NUM_DOC|CHV_NFE|DT_DOC|DT_E_S|VL_DOC|IND_PGTO|VL_DESC|VL_ABAT_NT|VL_MERC|IND_FRT|VL_FRT|VL_SEG|VL_OUT_DA|VL_BC_ICMS|VL_ICMS|VL_BC_ICMS_ST|VL_ICMS_ST|VL_IPI|VL_PIS|VL_COFINS|VL_PIS_ST|VL_COFINS_ST|
-        // Índices (após split, pos 0 vazio): 2=IND_OPER, 8=NUM_DOC, 12=VL_DOC, 22=VL_ICMS, 25=VL_IPI, 26=VL_PIS, 27=VL_COFINS
+        // Índices (após split, pos 0 vazio): 2=IND_OPER, 4=COD_PART, 8=NUM_DOC, 12=VL_DOC, 22=VL_ICMS, 25=VL_IPI, 26=VL_PIS, 27=VL_COFINS
         if (fields.length > 12) {
           const indOper = fields[2];
           const tipo = indOper === "0" ? "entrada" : "saida";
+          const codPart = fields[4] || null; // COD_PART para relacionar com 0150
           const valorDoc = parseNumber(fields[12]); // Campo 12: VL_DOC
           
           if (valorDoc > 0) {
@@ -321,16 +351,18 @@ function processLine(
                 cofins: fields.length > 27 ? parseNumber(fields[27]) : 0, // Campo 27: VL_COFINS (se existir)
                 icms: fields.length > 22 ? parseNumber(fields[22]) : 0,   // Campo 22: VL_ICMS (se existir)
                 ipi: fields.length > 25 ? parseNumber(fields[25]) : 0,    // Campo 25: VL_IPI (se existir)
+                cod_part: codPart, // Referência ao participante
               },
             };
           }
         }
       } else {
         // Layout EFD ICMS/IPI - C100 (após split com índice 0 vazio):
-        // 2=IND_OPER, 8=NUM_DOC, 12=VL_DOC, 22=VL_ICMS, 25=VL_IPI, 26=VL_PIS, 27=VL_COFINS
+        // 2=IND_OPER, 4=COD_PART, 8=NUM_DOC, 12=VL_DOC, 22=VL_ICMS, 25=VL_IPI, 26=VL_PIS, 27=VL_COFINS
         if (fields.length > 27) {
           const indOper = fields[2];
           const tipo = indOper === "0" ? "entrada" : "saida";
+          const codPart = fields[4] || null; // COD_PART para relacionar com 0150
           const valorDoc = parseNumber(fields[12]); // Campo 12: VL_DOC
           
           if (valorDoc > 0) {
@@ -346,6 +378,7 @@ function processLine(
                 cofins: parseNumber(fields[27]), // Campo 27: VL_COFINS
                 icms: parseNumber(fields[22]),   // Campo 22: VL_ICMS
                 ipi: parseNumber(fields[25]),    // Campo 25: VL_IPI
+                cod_part: codPart, // Referência ao participante
               },
             };
           }
@@ -892,10 +925,18 @@ serve(async (req) => {
       pendingD100: null, // Pending records are finalized at chunk end
       pendingD500: null,
       filialMap,
+      participantesMap: new Map(), // Will be populated from 0150 records
     };
     
+    // Restore participantesMap from context if resuming
+    if (existingContext?.participantesMapEntries) {
+      for (const [codPart, data] of existingContext.participantesMapEntries) {
+        context.participantesMap.set(codPart, data);
+      }
+    }
+    
     if (isResuming && existingContext) {
-      console.log(`Job ${jobId}: Restored context from previous chunk - period: ${context.currentPeriod}, CNPJ: ${context.currentCNPJ}, filialId: ${context.currentFilialId}, efdType: ${context.efdType}`);
+      console.log(`Job ${jobId}: Restored context from previous chunk - period: ${context.currentPeriod}, CNPJ: ${context.currentCNPJ}, filialId: ${context.currentFilialId}, efdType: ${context.efdType}, participantes: ${context.participantesMap.size}`);
     }
 
     // Initialize block limits
@@ -1263,6 +1304,34 @@ serve(async (req) => {
       throw new Error(`Final flush error: ${flushErr}`);
     }
 
+    // Insert participantes collected from 0150 records
+    if (context.participantesMap.size > 0 && context.currentFilialId) {
+      const participantesToInsert = Array.from(context.participantesMap.values()).map(p => ({
+        filial_id: context.currentFilialId,
+        cod_part: p.codPart,
+        nome: p.nome,
+        cnpj: p.cnpj,
+        cpf: p.cpf,
+        ie: p.ie,
+        cod_mun: p.codMun,
+      }));
+      
+      console.log(`Job ${jobId}: Inserting ${participantesToInsert.length} participantes...`);
+      
+      const { error: partError } = await supabase
+        .from("participantes")
+        .upsert(participantesToInsert, { 
+          onConflict: 'filial_id,cod_part',
+          ignoreDuplicates: true 
+        });
+      
+      if (partError) {
+        console.warn(`Job ${jobId}: Failed to insert participantes:`, partError);
+      } else {
+        console.log(`Job ${jobId}: Participantes inserted successfully`);
+      }
+    }
+
     // If we need to continue with another chunk
     if (shouldContinueNextChunk) {
       const newBytesProcessed = startByte + bytesProcessedInChunk;
@@ -1288,6 +1357,7 @@ serve(async (req) => {
               currentFilialId: context.currentFilialId,
               efdType: context.efdType,
               filialMapEntries: Array.from(context.filialMap.entries()),
+              participantesMapEntries: Array.from(context.participantesMap.entries()),
             }
           }
         })
