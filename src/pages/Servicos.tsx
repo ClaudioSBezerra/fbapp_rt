@@ -133,7 +133,7 @@ const ServicosTable = ({ data, tipo, aliquotas, selectedYear }: ServicosTablePro
               CBS Proj. {aliquota && <span className="text-muted-foreground font-normal">({aliquota.cbs.toFixed(1)}%)</span>}
             </TableHead>
             <TableHead className="text-right text-xs font-semibold text-ibs-cbs bg-muted/30 whitespace-nowrap">Total Reforma</TableHead>
-            <TableHead className="text-right text-xs font-semibold bg-muted/30 whitespace-nowrap">Tot. Imp. a pagar</TableHead>
+            <TableHead className="text-right text-xs font-semibold bg-muted/30 whitespace-nowrap">Tot.Imposto Reforma</TableHead>
             <TableHead className="text-right text-xs">
               <Tooltip>
                 <TooltipTrigger className="cursor-help underline decoration-dotted decoration-muted-foreground inline-flex items-center gap-1 whitespace-nowrap">
@@ -365,7 +365,7 @@ export default function Servicos() {
         'IBS Proj.': vlIbsProjetado,
         'CBS Proj.': vlCbsProjetado,
         'Total Reforma': totalReforma,
-        'Tot. Imp. a pagar': totalImpostosPagar,
+        'Tot.Imposto Reforma': totalImpostosPagar,
         'Dif. deb/cred.': diferencaReal,
       };
     });
