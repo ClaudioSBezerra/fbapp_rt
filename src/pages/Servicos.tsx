@@ -164,7 +164,7 @@ const ServicosTable = ({ data, tipo, aliquotas, selectedYear }: ServicosTablePro
             const totalImpostosAtuais = vlIss + vlPisCofins;
 
             // Base para IBS/CBS
-            const baseIbsCbs = row.valor - vlIssProjetado - vlPisCofinsProjetado;
+            const baseIbsCbs = row.valor - vlIss - vlPisCofins;
 
             // Projeções IBS/CBS
             const vlIbsProjetado = aliquota 
@@ -339,7 +339,7 @@ export default function Servicos() {
         ? vlPisCofins * (1 - (aliquota.reduc_piscofins / 100)) 
         : vlPisCofins;
       const totalImpostosAtuais = vlIss + vlPisCofins;
-      const baseIbsCbs = row.valor - vlIssProjetado - vlPisCofinsProjetado;
+      const baseIbsCbs = row.valor - vlIss - vlPisCofins;
       const vlIbsProjetado = aliquota 
         ? baseIbsCbs * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) 
         : 0;

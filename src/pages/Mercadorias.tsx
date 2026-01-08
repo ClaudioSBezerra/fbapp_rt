@@ -150,7 +150,7 @@ function MercadoriasTable({ data, aliquotas, tipo, anoProjecao }: MercadoriasTab
             const vlPisCofins = row.pis + row.cofins;
             const vlPisCofinsProjetado = aliquota ? vlPisCofins * (1 - (aliquota.reduc_piscofins / 100)) : vlPisCofins;
             const totalImpostosAtuais = vlIcms + vlPisCofins;
-            const baseIbsCbs = row.valor - vlIcmsProjetado - vlPisCofinsProjetado;
+            const baseIbsCbs = row.valor - vlIcms - vlPisCofins;
             const vlIbsProjetado = aliquota ? baseIbsCbs * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
             const vlCbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
             const totalReforma = vlIbsProjetado + vlCbsProjetado;
@@ -294,7 +294,7 @@ export default function Mercadorias() {
     const aliquota = aliquotaSelecionada;
     const icmsProjetado = aliquota ? icms * (1 - (aliquota.reduc_icms / 100)) : icms;
     const pisCofinsProjetado = aliquota ? pisCofins * (1 - (aliquota.reduc_piscofins / 100)) : pisCofins;
-    const baseIbsCbs = valor - icmsProjetado - pisCofinsProjetado;
+    const baseIbsCbs = valor - icms - pisCofins;
     const ibsProjetado = aliquota ? baseIbsCbs * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
     const cbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
     
@@ -316,7 +316,7 @@ export default function Mercadorias() {
     const aliquota = aliquotaSelecionada;
     const icmsProjetado = aliquota ? icms * (1 - (aliquota.reduc_icms / 100)) : icms;
     const pisCofinsProjetado = aliquota ? pisCofins * (1 - (aliquota.reduc_piscofins / 100)) : pisCofins;
-    const baseIbsCbs = valor - icmsProjetado - pisCofinsProjetado;
+    const baseIbsCbs = valor - icms - pisCofins;
     const ibsProjetado = aliquota ? baseIbsCbs * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
     const cbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
     const totalImpostosAtuais = icms + pisCofins;
@@ -337,7 +337,7 @@ export default function Mercadorias() {
       const vlPisCofins = row.pis + row.cofins;
       const vlPisCofinsProjetado = aliquota ? vlPisCofins * (1 - (aliquota.reduc_piscofins / 100)) : vlPisCofins;
       const totalImpostosAtuais = vlIcms + vlPisCofins;
-      const baseIbsCbs = row.valor - vlIcmsProjetado - vlPisCofinsProjetado;
+      const baseIbsCbs = row.valor - vlIcms - vlPisCofins;
       const vlIbsProjetado = aliquota ? baseIbsCbs * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
       const vlCbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
       const totalReforma = vlIbsProjetado + vlCbsProjetado;
