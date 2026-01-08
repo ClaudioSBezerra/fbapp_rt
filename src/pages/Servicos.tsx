@@ -8,7 +8,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
-import { Download, FileText, TrendingUp, TrendingDown, Building2 } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Download, FileText, TrendingUp, TrendingDown, Building2, HelpCircle } from 'lucide-react';
 import { exportToExcel } from '@/lib/exportToExcel';
 import { format, parse } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -71,14 +72,6 @@ const formatCNPJ = (cnpj: string) => {
   return cleaned.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
 };
 
-const extractYear = (dateStr: string): number => {
-  try {
-    return parseInt(dateStr.substring(0, 4), 10);
-  } catch {
-    return new Date().getFullYear();
-  }
-};
-
 // ServicosTable Component
 interface ServicosTableProps {
   data: AggregatedRow[];
@@ -96,7 +89,7 @@ const ServicosTable = ({ data, tipo, aliquotas, selectedYear }: ServicosTablePro
     return map;
   }, [aliquotas]);
 
-  const selectedAliquota = aliquotaMap[selectedYear];
+  const aliquota = aliquotaMap[selectedYear];
 
   if (filteredData.length === 0) {
     return (
@@ -111,53 +104,116 @@ const ServicosTable = ({ data, tipo, aliquotas, selectedYear }: ServicosTablePro
     <div className="overflow-x-auto">
       <Table>
         <TableHeader>
-          <TableRow>
-            <TableHead>Filial</TableHead>
-            <TableHead>Período</TableHead>
-            <TableHead className="text-right">Valor</TableHead>
-            <TableHead className="text-right">PIS</TableHead>
-            <TableHead className="text-right">COFINS</TableHead>
-            <TableHead className="text-right">ISS</TableHead>
-            <TableHead className="text-right">PIS/COFINS Total</TableHead>
-            {selectedAliquota && (
-              <>
-                <TableHead className="text-right">IBS Proj.</TableHead>
-                <TableHead className="text-right">CBS Proj.</TableHead>
-                <TableHead className="text-right">IBS+CBS Proj.</TableHead>
-              </>
-            )}
+          <TableRow className="text-xs">
+            <TableHead className="text-xs">Filial</TableHead>
+            <TableHead className="text-xs whitespace-nowrap">Mês/Ano</TableHead>
+            <TableHead className="text-right text-xs">Valor</TableHead>
+            <TableHead className="text-right text-xs">ISS</TableHead>
+            <TableHead className="text-right text-xs whitespace-nowrap">ISS Proj.</TableHead>
+            <TableHead className="text-right text-xs text-pis-cofins">PIS+COFINS</TableHead>
+            <TableHead className="text-right text-xs text-pis-cofins whitespace-nowrap">
+              PIS+COFINS Proj. {aliquota && <span className="text-muted-foreground font-normal">(-{aliquota.reduc_piscofins}%)</span>}
+            </TableHead>
+            <TableHead className="text-right text-xs font-semibold bg-muted/30 whitespace-nowrap">Tot. Imp. Atuais</TableHead>
+            <TableHead className="text-right text-xs whitespace-nowrap">Base IBS/CBS</TableHead>
+            <TableHead className="text-right text-xs text-ibs-cbs whitespace-nowrap">
+              IBS Proj. {aliquota && <span className="text-muted-foreground font-normal">({(aliquota.ibs_estadual + aliquota.ibs_municipal).toFixed(1)}%)</span>}
+            </TableHead>
+            <TableHead className="text-right text-xs text-ibs-cbs whitespace-nowrap">
+              CBS Proj. {aliquota && <span className="text-muted-foreground font-normal">({aliquota.cbs.toFixed(1)}%)</span>}
+            </TableHead>
+            <TableHead className="text-right text-xs font-semibold text-ibs-cbs bg-muted/30 whitespace-nowrap">Total Reforma</TableHead>
+            <TableHead className="text-right text-xs font-semibold bg-muted/30 whitespace-nowrap">Tot. Imp. a pagar</TableHead>
+            <TableHead className="text-right text-xs">
+              <Tooltip>
+                <TooltipTrigger className="cursor-help underline decoration-dotted decoration-muted-foreground inline-flex items-center gap-1 whitespace-nowrap">
+                  Dif. Imp. Atual e Imp. Proj.
+                  <HelpCircle className="h-3 w-3 text-muted-foreground" />
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-xs">
+                  <p className="font-semibold mb-1">Fórmula:</p>
+                  <p className="font-mono text-xs">(ISS + PIS/COFINS) − (IBS + CBS)</p>
+                </TooltipContent>
+              </Tooltip>
+            </TableHead>
+            <TableHead className="text-right text-xs">
+              <Tooltip>
+                <TooltipTrigger className="cursor-help underline decoration-dotted decoration-muted-foreground inline-flex items-center gap-1 whitespace-nowrap">
+                  Dif. a pagar
+                  <HelpCircle className="h-3 w-3 text-muted-foreground" />
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-xs">
+                  <p className="font-semibold mb-1">Fórmula:</p>
+                  <p className="font-mono text-xs">(ISS + PIS/COFINS) − (ISS Proj. + PIS/COFINS Proj. + IBS + CBS)</p>
+                </TooltipContent>
+              </Tooltip>
+            </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {filteredData.map((row, idx) => {
-            const pisCofinsTotal = row.pis + row.cofins;
-            
-            // Projeção: ISS não tem redução no período de transição
-            // IBS/CBS incidem sobre o valor da operação
-            const ibsProj = selectedAliquota 
-              ? row.valor * (selectedAliquota.ibs_estadual + selectedAliquota.ibs_municipal) / 100
+            // ISS não tem redução no período de transição
+            const vlIss = row.iss;
+            const vlIssProjetado = vlIss;
+
+            // PIS/COFINS tem redução normal
+            const vlPisCofins = row.pis + row.cofins;
+            const vlPisCofinsProjetado = aliquota 
+              ? vlPisCofins * (1 - (aliquota.reduc_piscofins / 100)) 
+              : vlPisCofins;
+
+            // Total impostos atuais
+            const totalImpostosAtuais = vlIss + vlPisCofins;
+
+            // Base para IBS/CBS
+            const baseIbsCbs = row.valor - vlIssProjetado - vlPisCofinsProjetado;
+
+            // Projeções IBS/CBS
+            const vlIbsProjetado = aliquota 
+              ? baseIbsCbs * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) 
               : 0;
-            const cbsProj = selectedAliquota 
-              ? row.valor * selectedAliquota.cbs / 100
+            const vlCbsProjetado = aliquota 
+              ? baseIbsCbs * (aliquota.cbs / 100) 
               : 0;
-            const ibsCbsTotal = ibsProj + cbsProj;
+
+            const totalReforma = vlIbsProjetado + vlCbsProjetado;
+            const totalImpostosPagar = vlIssProjetado + vlPisCofinsProjetado + totalReforma;
+            const diferencaProjetado = totalImpostosAtuais - totalReforma;
+            const diferencaReal = totalImpostosPagar - totalImpostosAtuais;
 
             return (
-              <TableRow key={`${row.filial_id}-${row.mes_ano}-${idx}`}>
-                <TableCell className="font-medium">{cleanFilialName(row.filial_nome)}</TableCell>
-                <TableCell>{formatMonthYear(row.mes_ano)}</TableCell>
-                <TableCell className="text-right">{formatCurrency(row.valor)}</TableCell>
-                <TableCell className="text-right">{formatCurrency(row.pis)}</TableCell>
-                <TableCell className="text-right">{formatCurrency(row.cofins)}</TableCell>
-                <TableCell className="text-right">{formatCurrency(row.iss)}</TableCell>
-                <TableCell className="text-right font-medium">{formatCurrency(pisCofinsTotal)}</TableCell>
-                {selectedAliquota && (
-                  <>
-                    <TableCell className="text-right text-primary">{formatCurrency(ibsProj)}</TableCell>
-                    <TableCell className="text-right text-primary">{formatCurrency(cbsProj)}</TableCell>
-                    <TableCell className="text-right font-medium text-primary">{formatCurrency(ibsCbsTotal)}</TableCell>
-                  </>
-                )}
+              <TableRow key={`${row.filial_id}-${row.mes_ano}-${idx}`} className="text-xs">
+                <TableCell className="font-medium text-xs whitespace-nowrap py-1 px-2">
+                  {cleanFilialName(row.filial_nome)}
+                </TableCell>
+                <TableCell className="text-xs whitespace-nowrap py-1 px-2">{formatMonthYear(row.mes_ano)}</TableCell>
+                <TableCell className="text-right font-mono text-xs py-1 px-2">{formatCurrency(row.valor)}</TableCell>
+                <TableCell className="text-right font-mono text-xs py-1 px-2">{formatCurrency(vlIss)}</TableCell>
+                <TableCell className="text-right font-mono text-xs py-1 px-2">{formatCurrency(vlIssProjetado)}</TableCell>
+                <TableCell className="text-right font-mono text-xs text-pis-cofins py-1 px-2">{formatCurrency(vlPisCofins)}</TableCell>
+                <TableCell className="text-right font-mono text-xs text-pis-cofins py-1 px-2">{formatCurrency(vlPisCofinsProjetado)}</TableCell>
+                <TableCell className="text-right font-mono text-xs font-semibold bg-muted/30 py-1 px-2">{formatCurrency(totalImpostosAtuais)}</TableCell>
+                <TableCell className="text-right font-mono text-xs py-1 px-2">{formatCurrency(baseIbsCbs)}</TableCell>
+                <TableCell className="text-right font-mono text-xs text-ibs-cbs py-1 px-2">{formatCurrency(vlIbsProjetado)}</TableCell>
+                <TableCell className="text-right font-mono text-xs text-ibs-cbs py-1 px-2">{formatCurrency(vlCbsProjetado)}</TableCell>
+                <TableCell className="text-right font-mono text-xs font-semibold text-ibs-cbs bg-muted/30 py-1 px-2">{formatCurrency(totalReforma)}</TableCell>
+                <TableCell className="text-right font-mono text-xs font-semibold bg-muted/30 py-1 px-2">{formatCurrency(totalImpostosPagar)}</TableCell>
+                <TableCell className="text-right py-1 px-2">
+                  <Badge 
+                    variant={diferencaProjetado > 0 ? 'destructive' : diferencaProjetado < 0 ? 'default' : 'secondary'}
+                    className={`text-xs ${diferencaProjetado < 0 ? 'bg-positive text-positive-foreground' : ''}`}
+                  >
+                    {diferencaProjetado > 0 ? '+' : ''}{formatCurrency(diferencaProjetado)}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-right py-1 px-2">
+                  <Badge 
+                    variant={diferencaReal > 0 ? 'destructive' : diferencaReal < 0 ? 'default' : 'secondary'}
+                    className={`text-xs ${diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}`}
+                  >
+                    {diferencaReal > 0 ? '+' : ''}{formatCurrency(diferencaReal)}
+                  </Badge>
+                </TableCell>
               </TableRow>
             );
           })}
@@ -283,16 +339,47 @@ export default function Servicos() {
 
   // Export to Excel
   const handleExport = () => {
-    const exportData = filteredData.map(row => ({
-      'Filial': cleanFilialName(row.filial_nome),
-      'Período': formatMonthYear(row.mes_ano),
-      'Tipo': row.tipo === 'entrada' ? 'Aquisição' : 'Prestação',
-      'Valor': row.valor,
-      'PIS': row.pis,
-      'COFINS': row.cofins,
-      'ISS': row.iss,
-      'PIS/COFINS Total': row.pis + row.cofins,
-    }));
+    const aliquota = aliquotas.find(a => a.ano === selectedYear);
+    
+    const exportData = filteredData.map(row => {
+      const vlIss = row.iss;
+      const vlIssProjetado = vlIss;
+      const vlPisCofins = row.pis + row.cofins;
+      const vlPisCofinsProjetado = aliquota 
+        ? vlPisCofins * (1 - (aliquota.reduc_piscofins / 100)) 
+        : vlPisCofins;
+      const totalImpostosAtuais = vlIss + vlPisCofins;
+      const baseIbsCbs = row.valor - vlIssProjetado - vlPisCofinsProjetado;
+      const vlIbsProjetado = aliquota 
+        ? baseIbsCbs * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) 
+        : 0;
+      const vlCbsProjetado = aliquota 
+        ? baseIbsCbs * (aliquota.cbs / 100) 
+        : 0;
+      const totalReforma = vlIbsProjetado + vlCbsProjetado;
+      const totalImpostosPagar = vlIssProjetado + vlPisCofinsProjetado + totalReforma;
+      const diferencaProjetado = totalImpostosAtuais - totalReforma;
+      const diferencaReal = totalImpostosPagar - totalImpostosAtuais;
+
+      return {
+        'Filial': cleanFilialName(row.filial_nome),
+        'Mês/Ano': formatMonthYear(row.mes_ano),
+        'Tipo': row.tipo === 'entrada' ? 'Aquisição' : 'Prestação',
+        'Valor': row.valor,
+        'ISS': vlIss,
+        'ISS Proj.': vlIssProjetado,
+        'PIS+COFINS': vlPisCofins,
+        'PIS+COFINS Proj.': vlPisCofinsProjetado,
+        'Tot. Imp. Atuais': totalImpostosAtuais,
+        'Base IBS/CBS': baseIbsCbs,
+        'IBS Proj.': vlIbsProjetado,
+        'CBS Proj.': vlCbsProjetado,
+        'Total Reforma': totalReforma,
+        'Tot. Imp. a pagar': totalImpostosPagar,
+        'Dif. Imp. Atual e Imp. Proj.': diferencaProjetado,
+        'Dif. a pagar': diferencaReal,
+      };
+    });
     exportToExcel(exportData, 'servicos');
   };
 
@@ -478,15 +565,15 @@ export default function Servicos() {
         </Card>
       </div>
 
-      {/* Data Tabs */}
+      {/* Data Tables */}
       <Card>
         <CardContent className="pt-6">
-          <Tabs defaultValue="entradas">
+          <Tabs defaultValue="aquisicoes" className="w-full">
             <TabsList className="mb-4">
-              <TabsTrigger value="entradas">Aquisições de Serviços</TabsTrigger>
-              <TabsTrigger value="saidas">Prestações de Serviços</TabsTrigger>
+              <TabsTrigger value="aquisicoes">Aquisições de Serviços</TabsTrigger>
+              <TabsTrigger value="prestacoes">Prestações de Serviços</TabsTrigger>
             </TabsList>
-            <TabsContent value="entradas">
+            <TabsContent value="aquisicoes">
               <ServicosTable 
                 data={filteredData} 
                 tipo="entrada" 
@@ -494,7 +581,7 @@ export default function Servicos() {
                 selectedYear={selectedYear}
               />
             </TabsContent>
-            <TabsContent value="saidas">
+            <TabsContent value="prestacoes">
               <ServicosTable 
                 data={filteredData} 
                 tipo="saida" 
