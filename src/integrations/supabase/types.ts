@@ -693,6 +693,42 @@ export type Database = {
           valor: number
         }[]
       }
+      get_mercadorias_participante_page: {
+        Args: {
+          p_limit?: number
+          p_mes_ano?: string
+          p_offset?: number
+          p_participante?: string
+          p_tipo?: string
+        }
+        Returns: {
+          cod_part: string
+          cofins: number
+          filial_id: string
+          icms: number
+          mes_ano: string
+          participante_cnpj: string
+          participante_nome: string
+          pis: number
+          tipo: string
+          valor: number
+        }[]
+      }
+      get_mercadorias_participante_totals: {
+        Args: { p_mes_ano?: string; p_participante?: string }
+        Returns: {
+          total_entradas_cofins: number
+          total_entradas_icms: number
+          total_entradas_pis: number
+          total_entradas_valor: number
+          total_registros: number
+          total_saidas_cofins: number
+          total_saidas_icms: number
+          total_saidas_pis: number
+          total_saidas_valor: number
+          total_valor: number
+        }[]
+      }
       get_mv_dashboard_stats: {
         Args: { _mes_ano?: string }
         Returns: {

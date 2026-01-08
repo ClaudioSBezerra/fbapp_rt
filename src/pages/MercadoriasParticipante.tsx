@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
 import { Download, Users, HelpCircle, ChevronsUpDown, Check, ArrowDownRight, ArrowUpRight, RefreshCw } from 'lucide-react';
 import { exportToExcel } from '@/lib/exportToExcel';
 import { cn } from '@/lib/utils';
@@ -36,6 +37,19 @@ interface ParticipanteRow {
   cofins: number;
   icms: number;
   tipo: string;
+}
+
+interface TotalsFromBackend {
+  total_registros: number;
+  total_valor: number;
+  total_entradas_valor: number;
+  total_entradas_pis: number;
+  total_entradas_cofins: number;
+  total_entradas_icms: number;
+  total_saidas_valor: number;
+  total_saidas_pis: number;
+  total_saidas_cofins: number;
+  total_saidas_icms: number;
 }
 
 // Formata moeda BRL
@@ -220,6 +234,8 @@ function ParticipanteTable({ data, tipo, aliquotas, selectedYear, isLoading }: P
   );
 }
 
+const PAGE_SIZE = 100;
+
 // Componente principal
 export default function MercadoriasParticipante() {
   const queryClient = useQueryClient();
@@ -227,6 +243,7 @@ export default function MercadoriasParticipante() {
   const [filterParticipante, setFilterParticipante] = useState('');
   const [selectedYear, setSelectedYear] = useState(2027);
   const [openCombobox, setOpenCombobox] = useState(false);
+  const [page, setPage] = useState(1);
 
   // Buscar alíquotas
   const { data: aliquotas = [] } = useQuery({
@@ -241,9 +258,41 @@ export default function MercadoriasParticipante() {
     }
   });
 
-  // Buscar dados agregados por participante
-  const { data: participanteData = [], isLoading } = useQuery({
-    queryKey: ['mercadorias-participante'],
+  // Parâmetros de filtro para as queries
+  const mesAnoParam = filterMesAno === 'all' ? null : filterMesAno;
+  const participanteParam = filterParticipante || null;
+
+  // Buscar TOTAIS do backend (1 linha, sem limite)
+  const { data: backendTotals, isLoading: isLoadingTotals } = useQuery({
+    queryKey: ['mercadorias-participante-totals', mesAnoParam, participanteParam],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('get_mercadorias_participante_totals', {
+        p_mes_ano: mesAnoParam,
+        p_participante: participanteParam
+      });
+      if (error) throw error;
+      return (data && data.length > 0 ? data[0] : null) as TotalsFromBackend | null;
+    }
+  });
+
+  // Buscar dados paginados para a listagem
+  const { data: participanteData = [], isLoading: isLoadingPage } = useQuery({
+    queryKey: ['mercadorias-participante-page', mesAnoParam, participanteParam, page],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('get_mercadorias_participante_page', {
+        p_limit: PAGE_SIZE,
+        p_offset: (page - 1) * PAGE_SIZE,
+        p_mes_ano: mesAnoParam,
+        p_participante: participanteParam
+      });
+      if (error) throw error;
+      return (data || []) as ParticipanteRow[];
+    }
+  });
+
+  // Buscar meses disponíveis (ainda usa a função antiga só para popular o filtro)
+  const { data: mesesData = [] } = useQuery({
+    queryKey: ['mercadorias-participante-meses'],
     queryFn: async () => {
       const { data, error } = await supabase.rpc('get_mv_mercadorias_participante');
       if (error) throw error;
@@ -253,9 +302,9 @@ export default function MercadoriasParticipante() {
 
   // Extrair meses/anos únicos para filtro
   const mesesDisponiveis = useMemo(() => {
-    const unique = [...new Set(participanteData.map(r => r.mes_ano))];
+    const unique = [...new Set(mesesData.map(r => r.mes_ano))];
     return unique.sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
-  }, [participanteData]);
+  }, [mesesData]);
 
   // Anos disponíveis para projeção
   const anosDisponiveis = useMemo(() => aliquotas.map(a => a.ano), [aliquotas]);
@@ -263,7 +312,7 @@ export default function MercadoriasParticipante() {
   // Participantes únicos para o combobox
   const participantesUnicos = useMemo(() => {
     const map = new Map<string, { cod_part: string; nome: string; cnpj: string | null }>();
-    participanteData.forEach(row => {
+    mesesData.forEach(row => {
       if (!map.has(row.participante_nome)) {
         map.set(row.participante_nome, {
           cod_part: row.cod_part,
@@ -273,41 +322,17 @@ export default function MercadoriasParticipante() {
       }
     });
     return Array.from(map.values()).sort((a, b) => a.nome.localeCompare(b.nome));
-  }, [participanteData]);
-
-  // Filtrar dados
-  const filteredData = useMemo(() => {
-    return participanteData.filter(row => {
-      // Filtro por mês/ano
-      if (filterMesAno !== 'all' && row.mes_ano !== filterMesAno) return false;
-      
-      // Filtro por participante (nome ou CNPJ)
-      if (filterParticipante) {
-        const search = filterParticipante.toLowerCase();
-        const matchNome = row.participante_nome?.toLowerCase().includes(search);
-        const matchCnpj = row.participante_cnpj?.includes(filterParticipante.replace(/\D/g, ''));
-        if (!matchNome && !matchCnpj) return false;
-      }
-      
-      return true;
-    });
-  }, [participanteData, filterMesAno, filterParticipante]);
+  }, [mesesData]);
 
   // Buscar alíquota selecionada
   const aliquotaSelecionada = useMemo(() => {
     return aliquotas.find((a) => a.ano === selectedYear) || null;
   }, [aliquotas, selectedYear]);
 
-  // Totais por tipo com cálculos completos
+  // Totais calculados a partir do backend
   const totals = useMemo(() => {
-    const entradas = filteredData.filter(r => r.tipo === 'entrada');
-    const saidas = filteredData.filter(r => r.tipo === 'saida');
-    
-    const calcTotals = (rows: ParticipanteRow[]) => {
-      const valor = rows.reduce((s, r) => s + r.valor, 0);
-      const icms = rows.reduce((s, r) => s + r.icms, 0);
-      const pisCofins = rows.reduce((s, r) => s + r.pis + r.cofins, 0);
-      
+    const calcTotals = (valor: number, icms: number, pis: number, cofins: number) => {
+      const pisCofins = pis + cofins;
       const aliquota = aliquotaSelecionada;
       const icmsProjetado = aliquota ? icms * (1 - (aliquota.reduc_icms / 100)) : icms;
       const pisCofinsProjetado = aliquota ? pisCofins * (1 - (aliquota.reduc_piscofins / 100)) : pisCofins;
@@ -338,16 +363,58 @@ export default function MercadoriasParticipante() {
       };
     };
     
-    return { 
-      entradas: calcTotals(entradas), 
-      saidas: calcTotals(saidas) 
-    };
-  }, [filteredData, aliquotaSelecionada]);
+    if (!backendTotals) {
+      return { 
+        entradas: calcTotals(0, 0, 0, 0), 
+        saidas: calcTotals(0, 0, 0, 0),
+        totalRegistros: 0
+      };
+    }
 
-  // Exportar para Excel com todas as colunas
-  const handleExport = () => {
+    return { 
+      entradas: calcTotals(
+        backendTotals.total_entradas_valor,
+        backendTotals.total_entradas_icms,
+        backendTotals.total_entradas_pis,
+        backendTotals.total_entradas_cofins
+      ), 
+      saidas: calcTotals(
+        backendTotals.total_saidas_valor,
+        backendTotals.total_saidas_icms,
+        backendTotals.total_saidas_pis,
+        backendTotals.total_saidas_cofins
+      ),
+      totalRegistros: backendTotals.total_registros
+    };
+  }, [backendTotals, aliquotaSelecionada]);
+
+  // Total de páginas
+  const totalPages = Math.ceil((totals.totalRegistros || 0) / PAGE_SIZE);
+
+  // Reset page quando filtros mudam
+  const handleFilterChange = (setter: (v: string) => void, value: string) => {
+    setter(value);
+    setPage(1);
+  };
+
+  // Exportar para Excel com todas as colunas (busca todos os dados)
+  const handleExport = async () => {
     const aliquota = aliquotaSelecionada;
-    const exportData = filteredData.map(row => {
+    
+    // Buscar TODOS os dados para exportação (sem paginação)
+    const { data: allData, error } = await supabase.rpc('get_mercadorias_participante_page', {
+      p_limit: 100000,
+      p_offset: 0,
+      p_mes_ano: mesAnoParam,
+      p_participante: participanteParam
+    });
+    
+    if (error || !allData) {
+      console.error('Erro ao exportar:', error);
+      return;
+    }
+
+    const exportData = allData.map((row: ParticipanteRow) => {
       const vlIcms = row.icms;
       const vlIcmsProjetado = aliquota ? vlIcms * (1 - (aliquota.reduc_icms / 100)) : vlIcms;
       const vlPisCofins = row.pis + row.cofins;
@@ -384,6 +451,12 @@ export default function MercadoriasParticipante() {
     exportToExcel(exportData, 'mercadorias-participante');
   };
 
+  // Contagem por tipo na página atual
+  const entradasNaPagina = participanteData.filter(r => r.tipo === 'entrada').length;
+  const saidasNaPagina = participanteData.filter(r => r.tipo === 'saida').length;
+
+  const isLoading = isLoadingTotals || isLoadingPage;
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -400,12 +473,16 @@ export default function MercadoriasParticipante() {
         <div className="flex gap-2">
           <Button 
             variant="outline" 
-            onClick={() => queryClient.invalidateQueries({ queryKey: ['mercadorias-participante'] })}
+            onClick={() => {
+              queryClient.invalidateQueries({ queryKey: ['mercadorias-participante-totals'] });
+              queryClient.invalidateQueries({ queryKey: ['mercadorias-participante-page'] });
+              queryClient.invalidateQueries({ queryKey: ['mercadorias-participante-meses'] });
+            }}
           >
             <RefreshCw className="h-4 w-4 mr-2" />
             Atualizar
           </Button>
-          <Button variant="outline" onClick={handleExport} disabled={filteredData.length === 0}>
+          <Button variant="outline" onClick={handleExport} disabled={totals.totalRegistros === 0}>
             <Download className="h-4 w-4 mr-2" />
             Exportar Excel
           </Button>
@@ -419,7 +496,7 @@ export default function MercadoriasParticipante() {
             {/* Filtro Mês/Ano */}
             <div className="space-y-1">
               <Label className="text-xs">Mês/Ano</Label>
-              <Select value={filterMesAno} onValueChange={setFilterMesAno}>
+              <Select value={filterMesAno} onValueChange={(v) => handleFilterChange(setFilterMesAno, v)}>
                 <SelectTrigger className="w-[140px]">
                   <SelectValue placeholder="Todos" />
                 </SelectTrigger>
@@ -460,7 +537,7 @@ export default function MercadoriasParticipante() {
                         <CommandItem 
                           value="todos"
                           onSelect={() => {
-                            setFilterParticipante('');
+                            handleFilterChange(setFilterParticipante, '');
                             setOpenCombobox(false);
                           }}
                         >
@@ -472,7 +549,7 @@ export default function MercadoriasParticipante() {
                             key={participante.cod_part}
                             value={`${participante.nome} ${participante.cnpj || ''}`}
                             onSelect={() => {
-                              setFilterParticipante(participante.nome);
+                              handleFilterChange(setFilterParticipante, participante.nome);
                               setOpenCombobox(false);
                             }}
                           >
@@ -510,23 +587,23 @@ export default function MercadoriasParticipante() {
         </CardContent>
       </Card>
 
-      {/* Debug: Totais Brutos Carregados */}
+      {/* Debug: Totais do Backend */}
       <Card className="border-dashed border-muted-foreground/30 bg-muted/10">
         <CardContent className="py-3">
           <div className="flex flex-col gap-2 text-xs">
             <div className="flex flex-wrap gap-4">
-              <span className="text-muted-foreground font-medium">Debug - Totais BRUTOS (sem filtros):</span>
-              <span>Registros: <strong>{participanteData.length}</strong></span>
-              <span>Valor Total: <strong>{formatCurrency(participanteData.reduce((s, r) => s + r.valor, 0))}</strong></span>
-              <span>Entradas: <strong className="text-green-600">{formatCurrency(participanteData.filter(r => r.tipo === 'entrada').reduce((s, r) => s + r.valor, 0))}</strong></span>
-              <span>Saídas: <strong className="text-red-600">{formatCurrency(participanteData.filter(r => r.tipo === 'saida').reduce((s, r) => s + r.valor, 0))}</strong></span>
-            </div>
-            <div className="flex flex-wrap gap-4">
-              <span className="text-muted-foreground font-medium">Debug - Totais APÓS FILTROS:</span>
-              <span>Registros: <strong>{filteredData.length}</strong></span>
-              <span>Valor Total: <strong>{formatCurrency(filteredData.reduce((s, r) => s + r.valor, 0))}</strong></span>
+              <span className="text-muted-foreground font-medium">Debug - Totais do BACKEND (sem limite de 1000):</span>
+              <span>Registros: <strong>{totals.totalRegistros}</strong></span>
+              <span>Valor Total: <strong>{formatCurrency((backendTotals?.total_valor || 0))}</strong></span>
               <span>Entradas: <strong className="text-green-600">{formatCurrency(totals.entradas.valor)}</strong></span>
               <span>Saídas: <strong className="text-red-600">{formatCurrency(totals.saidas.valor)}</strong></span>
+            </div>
+            <div className="flex flex-wrap gap-4">
+              <span className="text-muted-foreground font-medium">Debug - Página atual:</span>
+              <span>Página: <strong>{page}/{totalPages || 1}</strong></span>
+              <span>Linhas carregadas: <strong>{participanteData.length}</strong></span>
+              <span>Entradas na página: <strong>{entradasNaPagina}</strong></span>
+              <span>Saídas na página: <strong>{saidasNaPagina}</strong></span>
             </div>
             <div className="flex flex-wrap gap-2">
               <span className="text-muted-foreground font-medium">Filtros ativos:</span>
@@ -679,15 +756,15 @@ export default function MercadoriasParticipante() {
           <Tabs defaultValue="entradas">
             <TabsList>
               <TabsTrigger value="entradas">
-                Entradas ({filteredData.filter(r => r.tipo === 'entrada').length})
+                Entradas ({entradasNaPagina} na página)
               </TabsTrigger>
               <TabsTrigger value="saidas">
-                Saídas ({filteredData.filter(r => r.tipo === 'saida').length})
+                Saídas ({saidasNaPagina} na página)
               </TabsTrigger>
             </TabsList>
             <TabsContent value="entradas" className="mt-4">
               <ParticipanteTable
-                data={filteredData}
+                data={participanteData}
                 tipo="entrada"
                 aliquotas={aliquotas}
                 selectedYear={selectedYear}
@@ -696,7 +773,7 @@ export default function MercadoriasParticipante() {
             </TabsContent>
             <TabsContent value="saidas" className="mt-4">
               <ParticipanteTable
-                data={filteredData}
+                data={participanteData}
                 tipo="saida"
                 aliquotas={aliquotas}
                 selectedYear={selectedYear}
@@ -704,6 +781,51 @@ export default function MercadoriasParticipante() {
               />
             </TabsContent>
           </Tabs>
+
+          {/* Paginação */}
+          {totalPages > 1 && (
+            <div className="mt-4 flex justify-center">
+              <Pagination>
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious 
+                      onClick={() => setPage(p => Math.max(1, p - 1))}
+                      className={page === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                    />
+                  </PaginationItem>
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    let pageNum: number;
+                    if (totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (page <= 3) {
+                      pageNum = i + 1;
+                    } else if (page >= totalPages - 2) {
+                      pageNum = totalPages - 4 + i;
+                    } else {
+                      pageNum = page - 2 + i;
+                    }
+                    return (
+                      <PaginationItem key={pageNum}>
+                        <PaginationLink
+                          onClick={() => setPage(pageNum)}
+                          isActive={page === pageNum}
+                          className="cursor-pointer"
+                        >
+                          {pageNum}
+                        </PaginationLink>
+                      </PaginationItem>
+                    );
+                  })}
+                  <PaginationItem>
+                    <PaginationNext 
+                      onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                      className={page === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
