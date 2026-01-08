@@ -138,19 +138,6 @@ function ParticipanteTable({ data, tipo, aliquotas, selectedYear, isLoading }: P
             <TableHead className="text-right text-xs">
               <Tooltip>
                 <TooltipTrigger className="cursor-help underline decoration-dotted decoration-muted-foreground inline-flex items-center gap-1 whitespace-nowrap">
-                  Dif. Imp. Atual e Imp. Proj.
-                  <HelpCircle className="h-3 w-3 text-muted-foreground" />
-                </TooltipTrigger>
-                <TooltipContent side="top" className="max-w-xs">
-                  <p className="font-semibold mb-1">Fórmula:</p>
-                  <p className="font-mono text-xs">(ICMS + PIS/COFINS) − (IBS + CBS)</p>
-                  <p className="text-muted-foreground text-xs mt-1">Compara impostos atuais com os novos impostos da reforma</p>
-                </TooltipContent>
-              </Tooltip>
-            </TableHead>
-            <TableHead className="text-right text-xs">
-              <Tooltip>
-                <TooltipTrigger className="cursor-help underline decoration-dotted decoration-muted-foreground inline-flex items-center gap-1 whitespace-nowrap">
                   Dif. deb/cred.
                   <HelpCircle className="h-3 w-3 text-muted-foreground" />
                 </TooltipTrigger>
@@ -170,7 +157,7 @@ function ParticipanteTable({ data, tipo, aliquotas, selectedYear, isLoading }: P
             const vlPisCofins = row.pis + row.cofins;
             const vlPisCofinsProjetado = aliquota ? vlPisCofins * (1 - (aliquota.reduc_piscofins / 100)) : vlPisCofins;
             const totalImpostosAtuais = vlIcms + vlPisCofins;
-            const baseIbsCbs = row.valor - vlIcmsProjetado - vlPisCofinsProjetado;
+            const baseIbsCbs = row.valor - vlIcms - vlPisCofins;
             const vlIbsProjetado = aliquota ? baseIbsCbs * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
             const vlCbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
             const totalReforma = vlIbsProjetado + vlCbsProjetado;
@@ -209,14 +196,6 @@ function ParticipanteTable({ data, tipo, aliquotas, selectedYear, isLoading }: P
                 <TableCell className="text-right font-mono text-xs text-ibs-cbs">{formatCurrency(vlCbsProjetado)}</TableCell>
                 <TableCell className="text-right font-mono text-xs font-semibold text-ibs-cbs bg-muted/30">{formatCurrency(totalReforma)}</TableCell>
                 <TableCell className="text-right font-mono text-xs font-semibold bg-muted/30">{formatCurrency(totalImpostosPagar)}</TableCell>
-                <TableCell className="text-right">
-                  <Badge
-                    variant={diferencaProjetado > 0 ? 'destructive' : diferencaProjetado < 0 ? 'default' : 'secondary'}
-                    className={`text-xs ${diferencaProjetado < 0 ? 'bg-positive text-positive-foreground' : ''}`}
-                  >
-                    {diferencaProjetado > 0 ? '+' : ''}{formatCurrency(diferencaProjetado)}
-                  </Badge>
-                </TableCell>
                 <TableCell className="text-right">
                   <Badge
                     variant={diferencaReal > 0 ? 'destructive' : diferencaReal < 0 ? 'default' : 'secondary'}
@@ -336,7 +315,7 @@ export default function MercadoriasParticipante() {
       const aliquota = aliquotaSelecionada;
       const icmsProjetado = aliquota ? icms * (1 - (aliquota.reduc_icms / 100)) : icms;
       const pisCofinsProjetado = aliquota ? pisCofins * (1 - (aliquota.reduc_piscofins / 100)) : pisCofins;
-      const baseIbsCbs = valor - icmsProjetado - pisCofinsProjetado;
+      const baseIbsCbs = valor - icms - pisCofins;
       const ibsProjetado = aliquota ? baseIbsCbs * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
       const cbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
       
@@ -420,7 +399,7 @@ export default function MercadoriasParticipante() {
       const vlPisCofins = row.pis + row.cofins;
       const vlPisCofinsProjetado = aliquota ? vlPisCofins * (1 - (aliquota.reduc_piscofins / 100)) : vlPisCofins;
       const totalImpostosAtuais = vlIcms + vlPisCofins;
-      const baseIbsCbs = row.valor - vlIcmsProjetado - vlPisCofinsProjetado;
+      const baseIbsCbs = row.valor - vlIcms - vlPisCofins;
       const vlIbsProjetado = aliquota ? baseIbsCbs * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
       const vlCbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
       const totalReforma = vlIbsProjetado + vlCbsProjetado;
@@ -444,7 +423,6 @@ export default function MercadoriasParticipante() {
         'CBS Proj.': vlCbsProjetado,
         'Total Reforma': totalReforma,
         'Tot. Imp. a pagar': totalImpostosPagar,
-        'Dif. Imp. Atual e Proj.': diferencaProjetado,
         'Dif. deb/cred.': diferencaReal,
       };
     });
@@ -641,12 +619,6 @@ export default function MercadoriasParticipante() {
               <span className="text-sm font-bold">{formatCurrency(totals.entradas.totalImpostosPagar)}</span>
             </div>
             <div className="flex justify-between items-center pt-1 border-t">
-              <span className="text-[10px] text-muted-foreground">Dif. Imp. Atual e Imp. Proj.:</span>
-              <Badge variant={totals.entradas.diferencaProjetado > 0 ? 'destructive' : totals.entradas.diferencaProjetado < 0 ? 'default' : 'secondary'} className={totals.entradas.diferencaProjetado < 0 ? 'bg-positive text-positive-foreground' : ''}>
-                {totals.entradas.diferencaProjetado > 0 ? '+' : ''}{formatCurrency(totals.entradas.diferencaProjetado)}
-              </Badge>
-            </div>
-            <div className="flex justify-between items-center">
               <span className="text-[10px] text-muted-foreground">Dif. deb/cred.:</span>
               <Badge variant={totals.entradas.diferencaReal > 0 ? 'destructive' : totals.entradas.diferencaReal < 0 ? 'default' : 'secondary'} className={totals.entradas.diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}>
                 {totals.entradas.diferencaReal > 0 ? '+' : ''}{formatCurrency(totals.entradas.diferencaReal)}
@@ -707,12 +679,6 @@ export default function MercadoriasParticipante() {
               <span className="text-sm font-bold">{formatCurrency(totals.saidas.totalImpostosPagar)}</span>
             </div>
             <div className="flex justify-between items-center pt-1 border-t">
-              <span className="text-[10px] text-muted-foreground">Dif. Imp. Atual e Imp. Proj.:</span>
-              <Badge variant={totals.saidas.diferencaProjetado > 0 ? 'destructive' : totals.saidas.diferencaProjetado < 0 ? 'default' : 'secondary'} className={totals.saidas.diferencaProjetado < 0 ? 'bg-positive text-positive-foreground' : ''}>
-                {totals.saidas.diferencaProjetado > 0 ? '+' : ''}{formatCurrency(totals.saidas.diferencaProjetado)}
-              </Badge>
-            </div>
-            <div className="flex justify-between items-center">
               <span className="text-[10px] text-muted-foreground">Dif. deb/cred.:</span>
               <Badge variant={totals.saidas.diferencaReal > 0 ? 'destructive' : totals.saidas.diferencaReal < 0 ? 'default' : 'secondary'} className={totals.saidas.diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}>
                 {totals.saidas.diferencaReal > 0 ? '+' : ''}{formatCurrency(totals.saidas.diferencaReal)}
