@@ -53,6 +53,12 @@ function cleanFilialName(nome: string): string {
   return nome.replace(/^Filial\s+/i, '');
 }
 
+// Mascara CNPJs que aparecem dentro de textos (ex: "Filial 10.230.480/0001-30")
+function maskCNPJInText(text: string): string {
+  const cnpjRegex = /(\d{2}\.\d{3}\.\d{3})\/(\d{4}-\d{2})/g;
+  return text.replace(cnpjRegex, '**********/$2');
+}
+
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr);
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -219,7 +225,7 @@ export default function EnergiaAgua() {
       return {
         'Tipo Operação': row.tipo_operacao === 'credito' ? 'Crédito' : 'Débito',
         'Tipo Serviço': row.tipo_servico === 'energia' ? 'Energia' : 'Água',
-        'Filial': cleanFilialName(row.filial_nome),
+        'Filial': maskCNPJInText(cleanFilialName(row.filial_nome)),
         'Mês/Ano': formatDate(row.mes_ano),
         'Valor': row.valor,
         'ICMS': vlIcms,
@@ -326,7 +332,7 @@ export default function EnergiaAgua() {
 
               return (
                 <TableRow key={`${row.filial_id}-${row.mes_ano}-${index}`} className="text-xs">
-                  <TableCell className="font-medium text-xs whitespace-nowrap py-1 px-2">{cleanFilialName(row.filial_nome)}</TableCell>
+                  <TableCell className="font-medium text-xs whitespace-nowrap py-1 px-2">{maskCNPJInText(cleanFilialName(row.filial_nome))}</TableCell>
                   <TableCell className="text-xs whitespace-nowrap">{formatDate(row.mes_ano)}</TableCell>
                   <TableCell className="text-right font-mono text-xs">{formatCurrency(row.valor)}</TableCell>
                   <TableCell className="text-right font-mono text-xs">{formatCurrency(vlIcms)}</TableCell>
