@@ -409,7 +409,7 @@ export default function Fretes() {
                   <SelectItem value="all">Todas</SelectItem>
                   {filiais.map((filial) => (
                     <SelectItem key={filial.id} value={filial.id}>
-                      {filial.nome_fantasia || filial.razao_social}
+                      {maskCNPJInText(cleanFilialName(filial.nome_fantasia || filial.razao_social))}
                     </SelectItem>
                   ))}
                 </SelectContent>
