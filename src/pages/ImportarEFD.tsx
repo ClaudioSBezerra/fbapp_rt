@@ -16,7 +16,9 @@ interface ImportCounts {
   mercadorias: number;
   energia_agua: number;
   fretes: number;
+  servicos: number;
   seen?: {
+    a100?: number;
     c100?: number;
     c500?: number;
     c600?: number;
@@ -101,7 +103,7 @@ export default function ImportarEFD() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [jobs, setJobs] = useState<ImportJob[]>([]);
   const [recordLimit, setRecordLimit] = useState<number>(0);
-  const [importScope, setImportScope] = useState<'all' | 'only_c' | 'only_d'>('all');
+  const [importScope, setImportScope] = useState<'all' | 'only_a' | 'only_c' | 'only_d'>('all');
   const [isClearing, setIsClearing] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [clearProgress, setClearProgress] = useState<{
@@ -173,7 +175,7 @@ export default function ImportarEFD() {
             const newJob = payload.new as any;
             setJobs(prev => [{
               ...newJob,
-              counts: (newJob.counts || { mercadorias: 0, energia_agua: 0, fretes: 0 }) as ImportCounts,
+              counts: (newJob.counts || { mercadorias: 0, energia_agua: 0, fretes: 0, servicos: 0 }) as ImportCounts,
               status: newJob.status as ImportJob['status'],
             }, ...prev].slice(0, 10));
           } else if (payload.eventType === 'UPDATE') {
@@ -182,7 +184,7 @@ export default function ImportarEFD() {
               job.id === updatedJob.id 
                 ? {
                     ...updatedJob,
-                    counts: (updatedJob.counts || { mercadorias: 0, energia_agua: 0, fretes: 0 }) as ImportCounts,
+                    counts: (updatedJob.counts || { mercadorias: 0, energia_agua: 0, fretes: 0, servicos: 0 }) as ImportCounts,
                     status: updatedJob.status as ImportJob['status'],
                   }
                 : job
@@ -191,7 +193,7 @@ export default function ImportarEFD() {
             // Show toast on completion and redirect
             if (updatedJob.status === 'completed') {
               const counts = updatedJob.counts as ImportCounts;
-              const total = counts.mercadorias + counts.energia_agua + counts.fretes;
+              const total = counts.mercadorias + counts.energia_agua + counts.fretes + (counts.servicos || 0);
               toast.success(`Importação concluída! ${total} registros importados. Redirecionando...`);
               
               // Redirect to Mercadorias after 2 seconds
@@ -480,6 +482,7 @@ export default function ImportarEFD() {
                       <li>Mercadorias</li>
                       <li>Energia e Água</li>
                       <li>Fretes</li>
+                      <li>Serviços</li>
                       <li>Histórico de importações</li>
                     </ul>
                     <p className="mt-3 font-semibold text-destructive">
@@ -562,18 +565,20 @@ export default function ImportarEFD() {
                 <FileText className="h-4 w-4 text-muted-foreground" />
                 Escopo da Importação
               </Label>
-              <Select value={importScope} onValueChange={(v) => setImportScope(v as 'all' | 'only_c' | 'only_d')} disabled={uploading}>
+              <Select value={importScope} onValueChange={(v) => setImportScope(v as 'all' | 'only_a' | 'only_c' | 'only_d')} disabled={uploading}>
                 <SelectTrigger>
                   <SelectValue placeholder="Selecione o escopo" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Todos (C + D)</SelectItem>
+                  <SelectItem value="all">Todos (A + C + D)</SelectItem>
+                  <SelectItem value="only_a">Somente Bloco A (Serviços)</SelectItem>
                   <SelectItem value="only_c">Somente Bloco C (Mercadorias/Energia)</SelectItem>
                   <SelectItem value="only_d">Somente Bloco D (Fretes/Telecom)</SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                {importScope === 'all' && 'Importará blocos C (C100, C500, C600) e D (D100, D500)'}
+                {importScope === 'all' && 'Importará blocos A (Serviços), C (Mercadorias/Energia) e D (Fretes)'}
+                {importScope === 'only_a' && 'Importará apenas A100 (Notas Fiscais de Serviço com ISS)'}
                 {importScope === 'only_c' && 'Importará apenas C100 (NF-e), C500 (Energia/Água), C600 (Consolidação)'}
                 {importScope === 'only_d' && 'Importará apenas D100 (CT-e) e D500 (Telecom)'}
               </p>
