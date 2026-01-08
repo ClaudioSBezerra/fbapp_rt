@@ -283,7 +283,7 @@ export default function EnergiaAgua() {
                 CBS Proj. {aliquotaSelecionada && <span className="text-muted-foreground font-normal">({aliquotaSelecionada.cbs.toFixed(1)}%)</span>}
               </TableHead>
               <TableHead className="text-right text-xs font-semibold text-ibs-cbs bg-muted/30 whitespace-nowrap">Total Reforma</TableHead>
-              <TableHead className="text-right text-xs font-semibold bg-muted/30 whitespace-nowrap">Tot. Imp. a pagar</TableHead>
+              <TableHead className="text-right text-xs font-semibold bg-muted/30 whitespace-nowrap">Tot.Imposto Reforma</TableHead>
               <TableHead className="text-right text-xs">
                 <Tooltip>
                   <TooltipTrigger className="cursor-help underline decoration-dotted decoration-muted-foreground inline-flex items-center gap-1 whitespace-nowrap">
