@@ -11,6 +11,8 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Loader2, CheckCircle, FileText, ArrowRight, AlertCircle, Upload, Clock, XCircle, RefreshCw, Zap, Trash2, AlertTriangle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { useRole } from '@/hooks/useRole';
+import { useSessionInfo } from '@/hooks/useSessionInfo';
 import { toast } from 'sonner';
 interface ImportCounts {
   mercadorias: number;
@@ -119,6 +121,8 @@ export default function ImportarEFD() {
   const [viewsStatus, setViewsStatus] = useState<'loading' | 'empty' | 'ok'>('loading');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { session } = useAuth();
+  const { isAdmin } = useRole();
+  const { empresas: userEmpresas, isLoading: sessionLoading } = useSessionInfo();
   const navigate = useNavigate();
 
   // Check views status when jobs change
@@ -155,21 +159,19 @@ export default function ImportarEFD() {
     }
   };
 
-  // Load empresas
+  // Load empresas baseado na role do usuário
   useEffect(() => {
-    const loadEmpresas = async () => {
-      const { data: empresasData } = await supabase
-        .from('empresas')
-        .select('id, nome, grupo_id');
-      if (empresasData) {
-        setEmpresas(empresasData);
-        if (empresasData.length > 0) {
-          setSelectedEmpresa(empresasData[0].id);
-        }
-      }
-    };
-    loadEmpresas();
-  }, []);
+    if (sessionLoading) return;
+    
+    // Usar empresas do hook useSessionInfo que já respeita admin vs user
+    if (userEmpresas.length > 0) {
+      setEmpresas(userEmpresas.map(e => ({ ...e, grupo_id: '' })));
+      setSelectedEmpresa(userEmpresas[0].id);
+    } else {
+      setEmpresas([]);
+      setSelectedEmpresa('');
+    }
+  }, [userEmpresas, sessionLoading]);
 
   // Load existing jobs and subscribe to realtime updates
   useEffect(() => {
@@ -524,7 +526,12 @@ export default function ImportarEFD() {
                   </div>
                 ) : (
                   <>
-                    <p>Esta ação irá remover permanentemente todos os dados importados:</p>
+                    <p>
+                      {isAdmin 
+                        ? 'Esta ação irá remover permanentemente TODOS os dados importados de TODAS as empresas:'
+                        : `Esta ação irá remover permanentemente os dados importados da empresa ${empresas[0]?.nome || 'vinculada'}:`
+                      }
+                    </p>
                     <ul className="list-disc list-inside mt-2 space-y-1">
                       <li>Mercadorias</li>
                       <li>Energia e Água</li>

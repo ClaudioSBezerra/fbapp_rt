@@ -47,7 +47,17 @@ serve(async (req) => {
     // Cliente com service role para bypass RLS
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Buscar filiais do usuário através da hierarquia
+    // Verificar se usuário é admin
+    const { data: userRole } = await supabaseAdmin
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    const isAdmin = userRole?.role === 'admin';
+    console.log(`User role: ${userRole?.role}, isAdmin: ${isAdmin}`);
+
+    // Buscar tenant do usuário
     const { data: userTenants } = await supabaseAdmin
       .from('user_tenants')
       .select('tenant_id')
@@ -87,24 +97,49 @@ serve(async (req) => {
     const grupoIds = grupos.map(g => g.id);
     console.log(`Found ${grupoIds.length} groups`);
 
-    // Buscar empresas
-    const { data: empresas } = await supabaseAdmin
-      .from('empresas')
-      .select('id')
-      .in('grupo_id', grupoIds);
+    let empresaIds: string[];
 
-    if (!empresas || empresas.length === 0) {
-      console.log("No companies found");
-      return new Response(JSON.stringify({ 
-        success: true, 
-        message: "Nenhum dado para limpar",
-        deleted: { mercadorias: 0, energia_agua: 0, fretes: 0, import_jobs: 0 }
-      }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    if (isAdmin) {
+      // Admin pode limpar todas as empresas do tenant
+      const { data: empresas } = await supabaseAdmin
+        .from('empresas')
+        .select('id')
+        .in('grupo_id', grupoIds);
+
+      if (!empresas || empresas.length === 0) {
+        console.log("No companies found");
+        return new Response(JSON.stringify({ 
+          success: true, 
+          message: "Nenhum dado para limpar",
+          deleted: { mercadorias: 0, energia_agua: 0, fretes: 0, import_jobs: 0 }
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      empresaIds = empresas.map(e => e.id);
+      console.log(`Admin: Found ${empresaIds.length} companies to clear`);
+    } else {
+      // Usuário comum só pode limpar empresas vinculadas
+      const { data: userEmpresas } = await supabaseAdmin
+        .from('user_empresas')
+        .select('empresa_id')
+        .eq('user_id', userId);
+
+      if (!userEmpresas || userEmpresas.length === 0) {
+        console.log("No linked companies found for user");
+        return new Response(JSON.stringify({ 
+          error: "Você não tem empresas vinculadas para limpar dados"
+        }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      empresaIds = userEmpresas.map(ue => ue.empresa_id);
+      console.log(`User: Found ${empresaIds.length} linked companies to clear`);
     }
 
-    const empresaIds = empresas.map(e => e.id);
     console.log(`Found ${empresaIds.length} companies`);
 
     // Buscar filiais
