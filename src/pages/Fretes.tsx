@@ -171,7 +171,7 @@ export default function Fretes() {
     const totalImpostosAtuais = icms + pisCofins;
     const totalReforma = ibsProjetado + cbsProjetado;
     const diferencaProjetado = totalImpostosAtuais - totalReforma;
-    const diferencaReal = (icms + pisCofins) - (icmsProjetado + pisCofinsProjetado + ibsProjetado + cbsProjetado);
+    const diferencaReal = (icmsProjetado + pisCofinsProjetado + ibsProjetado + cbsProjetado) - (icms + pisCofins);
     
     return { valor, icms, pisCofins, icmsProjetado, pisCofinsProjetado, baseIbsCbs, ibsProjetado, cbsProjetado, totalImpostosAtuais, totalReforma, diferencaProjetado, diferencaReal };
   }, [entradasAgregadas, aliquotaSelecionada]);
@@ -190,7 +190,7 @@ export default function Fretes() {
     const totalImpostosAtuais = icms + pisCofins;
     const totalReforma = ibsProjetado + cbsProjetado;
     const diferencaProjetado = totalImpostosAtuais - totalReforma;
-    const diferencaReal = (icms + pisCofins) - (icmsProjetado + pisCofinsProjetado + ibsProjetado + cbsProjetado);
+    const diferencaReal = (icmsProjetado + pisCofinsProjetado + ibsProjetado + cbsProjetado) - (icms + pisCofins);
     
     return { valor, icms, pisCofins, icmsProjetado, pisCofinsProjetado, baseIbsCbs, ibsProjetado, cbsProjetado, totalImpostosAtuais, totalReforma, diferencaProjetado, diferencaReal };
   }, [saidasAgregadas, aliquotaSelecionada]);
@@ -210,7 +210,7 @@ export default function Fretes() {
       const vlCbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
       const totalReforma = vlIbsProjetado + vlCbsProjetado;
       const diferencaProjetado = totalImpostosAtuais - totalReforma;
-      const diferencaReal = (vlIcms + vlPisCofins) - (vlIcmsProjetado + vlPisCofinsProjetado + vlIbsProjetado + vlCbsProjetado);
+      const diferencaReal = (vlIcmsProjetado + vlPisCofinsProjetado + vlIbsProjetado + vlCbsProjetado) - (vlIcms + vlPisCofins);
 
       return {
         'Tipo': row.tipo === 'entrada' ? 'Entrada' : 'Saída',
@@ -315,7 +315,7 @@ export default function Fretes() {
               const vlCbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
               const totalReforma = vlIbsProjetado + vlCbsProjetado;
               const diferencaProjetado = totalImpostosAtuais - totalReforma;
-              const diferencaReal = (vlIcms + vlPisCofins) - (vlIcmsProjetado + vlPisCofinsProjetado + vlIbsProjetado + vlCbsProjetado);
+              const diferencaReal = (vlIcmsProjetado + vlPisCofinsProjetado + vlIbsProjetado + vlCbsProjetado) - (vlIcms + vlPisCofins);
 
               return (
                 <TableRow key={`${row.filial_id}-${row.mes_ano}-${index}`} className="text-xs">
