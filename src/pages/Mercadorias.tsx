@@ -119,6 +119,7 @@ function MercadoriasTable({ data, aliquotas, tipo, anoProjecao }: MercadoriasTab
               CBS Proj. {aliquotaSelecionada && <span className="text-muted-foreground font-normal">({aliquotaSelecionada.cbs.toFixed(1)}%)</span>}
             </TableHead>
             <TableHead className="text-right text-xs font-semibold text-ibs-cbs bg-muted/30 whitespace-nowrap">Total Reforma</TableHead>
+            <TableHead className="text-right text-xs font-semibold bg-muted/30 whitespace-nowrap">Tot. Imp. a pagar</TableHead>
             <TableHead className="text-right text-xs">
               <Tooltip>
                 <TooltipTrigger className="cursor-help underline decoration-dotted decoration-muted-foreground inline-flex items-center gap-1 whitespace-nowrap">
@@ -160,8 +161,9 @@ function MercadoriasTable({ data, aliquotas, tipo, anoProjecao }: MercadoriasTab
             const vlIbsProjetado = aliquota ? baseIbsCbs * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
             const vlCbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
             const totalReforma = vlIbsProjetado + vlCbsProjetado;
+            const totalImpostosPagar = vlIcmsProjetado + vlPisCofinsProjetado + vlIbsProjetado + vlCbsProjetado;
             const diferencaProjetado = totalImpostosAtuais - totalReforma;
-            const diferencaReal = (vlIcmsProjetado + vlPisCofinsProjetado + vlIbsProjetado + vlCbsProjetado) - (vlIcms + vlPisCofins);
+            const diferencaReal = totalImpostosPagar - (vlIcms + vlPisCofins);
 
             return (
               <TableRow key={`${row.filial_id}-${row.mes_ano}-${index}`} className="text-xs">
@@ -177,6 +179,7 @@ function MercadoriasTable({ data, aliquotas, tipo, anoProjecao }: MercadoriasTab
                 <TableCell className="text-right font-mono text-xs text-ibs-cbs">{formatCurrency(vlIbsProjetado)}</TableCell>
                 <TableCell className="text-right font-mono text-xs text-ibs-cbs">{formatCurrency(vlCbsProjetado)}</TableCell>
                 <TableCell className="text-right font-mono text-xs font-semibold text-ibs-cbs bg-muted/30">{formatCurrency(totalReforma)}</TableCell>
+                <TableCell className="text-right font-mono text-xs font-semibold bg-muted/30">{formatCurrency(totalImpostosPagar)}</TableCell>
                 <TableCell className="text-right">
                   <Badge
                     variant={diferencaProjetado > 0 ? 'destructive' : diferencaProjetado < 0 ? 'default' : 'secondary'}
@@ -312,10 +315,11 @@ export default function Mercadorias() {
     
     const totalImpostosAtuais = icms + pisCofins;
     const totalReforma = ibsProjetado + cbsProjetado;
+    const totalImpostosPagar = icmsProjetado + pisCofinsProjetado + ibsProjetado + cbsProjetado;
     const diferencaProjetado = totalImpostosAtuais - totalReforma;
-    const diferencaReal = (icmsProjetado + pisCofinsProjetado + ibsProjetado + cbsProjetado) - (icms + pisCofins);
+    const diferencaReal = totalImpostosPagar - (icms + pisCofins);
     
-    return { valor, icms, pisCofins, icmsProjetado, pisCofinsProjetado, baseIbsCbs, ibsProjetado, cbsProjetado, totalImpostosAtuais, totalReforma, diferencaProjetado, diferencaReal };
+    return { valor, icms, pisCofins, icmsProjetado, pisCofinsProjetado, baseIbsCbs, ibsProjetado, cbsProjetado, totalImpostosAtuais, totalReforma, totalImpostosPagar, diferencaProjetado, diferencaReal };
   }, [filteredData, aliquotaSelecionada]);
 
   const totaisSaidas = useMemo(() => {
@@ -332,10 +336,11 @@ export default function Mercadorias() {
     const cbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
     const totalImpostosAtuais = icms + pisCofins;
     const totalReforma = ibsProjetado + cbsProjetado;
+    const totalImpostosPagar = icmsProjetado + pisCofinsProjetado + ibsProjetado + cbsProjetado;
     const diferencaProjetado = totalImpostosAtuais - totalReforma;
-    const diferencaReal = (icmsProjetado + pisCofinsProjetado + ibsProjetado + cbsProjetado) - (icms + pisCofins);
+    const diferencaReal = totalImpostosPagar - (icms + pisCofins);
     
-    return { valor, icms, pisCofins, icmsProjetado, pisCofinsProjetado, baseIbsCbs, ibsProjetado, cbsProjetado, totalImpostosAtuais, totalReforma, diferencaProjetado, diferencaReal };
+    return { valor, icms, pisCofins, icmsProjetado, pisCofinsProjetado, baseIbsCbs, ibsProjetado, cbsProjetado, totalImpostosAtuais, totalReforma, totalImpostosPagar, diferencaProjetado, diferencaReal };
   }, [filteredData, aliquotaSelecionada]);
   const hasFiliais = filiais.length > 0;
 
@@ -520,6 +525,10 @@ export default function Mercadorias() {
               <span className="text-[10px] font-medium text-ibs-cbs">Total Reforma:</span>
               <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totaisEntradas.totalReforma)}</span>
             </div>
+            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
+              <span className="text-[10px] font-medium">Tot. Imp. a pagar:</span>
+              <span className="text-sm font-bold">{formatCurrency(totaisEntradas.totalImpostosPagar)}</span>
+            </div>
             <div className="flex justify-between items-center pt-1 border-t">
               <span className="text-[10px] text-muted-foreground">Dif. Imp. Atual e Imp. Proj.:</span>
               <Badge variant={totaisEntradas.diferencaProjetado > 0 ? 'destructive' : totaisEntradas.diferencaProjetado < 0 ? 'default' : 'secondary'} className={totaisEntradas.diferencaProjetado < 0 ? 'bg-positive text-positive-foreground' : ''}>
@@ -580,6 +589,10 @@ export default function Mercadorias() {
             <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
               <span className="text-[10px] font-medium text-ibs-cbs">Total Reforma:</span>
               <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totaisSaidas.totalReforma)}</span>
+            </div>
+            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
+              <span className="text-[10px] font-medium">Tot. Imp. a pagar:</span>
+              <span className="text-sm font-bold">{formatCurrency(totaisSaidas.totalImpostosPagar)}</span>
             </div>
             <div className="flex justify-between items-center pt-1 border-t">
               <span className="text-[10px] text-muted-foreground">Dif. Imp. Atual e Imp. Proj.:</span>
