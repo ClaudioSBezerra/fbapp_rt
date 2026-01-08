@@ -72,6 +72,16 @@ const formatCNPJ = (cnpj: string) => {
   return cleaned.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
 };
 
+// Mascara CNPJ mostrando apenas o sufixo (após a /) para compliance
+const maskCNPJ = (cnpj: string): string => {
+  const cleaned = cnpj.replace(/\D/g, '');
+  if (cleaned.length === 14) {
+    const sufixo = cleaned.slice(8);
+    return `**********/${sufixo.slice(0, 4)}-${sufixo.slice(4)}`;
+  }
+  return cnpj;
+};
+
 // ServicosTable Component
 interface ServicosTableProps {
   data: AggregatedRow[];
@@ -425,7 +435,7 @@ export default function Servicos() {
                   <SelectItem value="all">Todas as filiais</SelectItem>
                   {filiais.map(f => (
                     <SelectItem key={f.id} value={f.id}>
-                      {cleanFilialName(f.nome_fantasia || f.razao_social)} - {formatCNPJ(f.cnpj)}
+                      {cleanFilialName(f.nome_fantasia || f.razao_social)} - {maskCNPJ(f.cnpj)}
                     </SelectItem>
                   ))}
                 </SelectContent>
