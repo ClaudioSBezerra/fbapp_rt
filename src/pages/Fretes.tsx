@@ -289,7 +289,7 @@ export default function Fretes() {
               <TableHead className="text-right text-xs">
                 <Tooltip>
                   <TooltipTrigger className="cursor-help underline decoration-dotted decoration-muted-foreground inline-flex items-center gap-1 whitespace-nowrap">
-                    Dif. Real
+                    Dif. a pagar
                     <HelpCircle className="h-3 w-3 text-muted-foreground" />
                   </TooltipTrigger>
                   <TooltipContent side="top" className="max-w-xs">
@@ -494,7 +494,7 @@ export default function Fretes() {
               </Badge>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground">Dif. Real:</span>
+              <span className="text-[10px] text-muted-foreground">Dif. a pagar:</span>
               <Badge variant={totaisEntradas.diferencaReal > 0 ? 'destructive' : totaisEntradas.diferencaReal < 0 ? 'default' : 'secondary'} className={totaisEntradas.diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}>
                 {totaisEntradas.diferencaReal > 0 ? '+' : ''}{formatCurrency(totaisEntradas.diferencaReal)}
               </Badge>
@@ -557,7 +557,7 @@ export default function Fretes() {
               </Badge>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground">Dif. Real:</span>
+              <span className="text-[10px] text-muted-foreground">Dif. a pagar:</span>
               <Badge variant={totaisSaidas.diferencaReal > 0 ? 'destructive' : totaisSaidas.diferencaReal < 0 ? 'default' : 'secondary'} className={totaisSaidas.diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}>
                 {totaisSaidas.diferencaReal > 0 ? '+' : ''}{formatCurrency(totaisSaidas.diferencaReal)}
               </Badge>
