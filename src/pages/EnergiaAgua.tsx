@@ -292,7 +292,7 @@ export default function EnergiaAgua() {
               <TableHead className="text-right text-xs">
                 <Tooltip>
                   <TooltipTrigger className="cursor-help underline decoration-dotted decoration-muted-foreground inline-flex items-center gap-1 whitespace-nowrap">
-                    Dif. Real
+                    Dif. a pagar
                     <HelpCircle className="h-3 w-3 text-muted-foreground" />
                   </TooltipTrigger>
                   <TooltipContent side="top" className="max-w-xs">
@@ -497,7 +497,7 @@ export default function EnergiaAgua() {
               </Badge>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground">Dif. Real:</span>
+              <span className="text-[10px] text-muted-foreground">Dif. a pagar:</span>
               <Badge variant={totaisCreditos.diferencaReal > 0 ? 'destructive' : totaisCreditos.diferencaReal < 0 ? 'default' : 'secondary'} className={totaisCreditos.diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}>
                 {totaisCreditos.diferencaReal > 0 ? '+' : ''}{formatCurrency(totaisCreditos.diferencaReal)}
               </Badge>
@@ -560,7 +560,7 @@ export default function EnergiaAgua() {
               </Badge>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground">Dif. Real:</span>
+              <span className="text-[10px] text-muted-foreground">Dif. a pagar:</span>
               <Badge variant={totaisDebitos.diferencaReal > 0 ? 'destructive' : totaisDebitos.diferencaReal < 0 ? 'default' : 'secondary'} className={totaisDebitos.diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}>
                 {totaisDebitos.diferencaReal > 0 ? '+' : ''}{formatCurrency(totaisDebitos.diferencaReal)}
               </Badge>
