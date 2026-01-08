@@ -370,6 +370,7 @@ export type Database = {
       }
       mercadorias: {
         Row: {
+          cod_part: string | null
           cofins: number
           created_at: string
           descricao: string | null
@@ -385,6 +386,7 @@ export type Database = {
           valor: number
         }
         Insert: {
+          cod_part?: string | null
           cofins?: number
           created_at?: string
           descricao?: string | null
@@ -400,6 +402,7 @@ export type Database = {
           valor?: number
         }
         Update: {
+          cod_part?: string | null
           cofins?: number
           created_at?: string
           descricao?: string | null
@@ -423,6 +426,45 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      participantes: {
+        Row: {
+          cnpj: string | null
+          cod_mun: string | null
+          cod_part: string
+          cpf: string | null
+          created_at: string
+          filial_id: string
+          id: string
+          ie: string | null
+          nome: string
+          updated_at: string
+        }
+        Insert: {
+          cnpj?: string | null
+          cod_mun?: string | null
+          cod_part: string
+          cpf?: string | null
+          created_at?: string
+          filial_id: string
+          id?: string
+          ie?: string | null
+          nome: string
+          updated_at?: string
+        }
+        Update: {
+          cnpj?: string | null
+          cod_mun?: string | null
+          cod_part?: string
+          cpf?: string | null
+          created_at?: string
+          filial_id?: string
+          id?: string
+          ie?: string | null
+          nome?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       profiles: {
         Row: {
@@ -698,6 +740,21 @@ export type Database = {
           filial_nome: string
           icms: number
           mes_ano: string
+          pis: number
+          tipo: string
+          valor: number
+        }[]
+      }
+      get_mv_mercadorias_participante: {
+        Args: never
+        Returns: {
+          cod_part: string
+          cofins: number
+          filial_id: string
+          icms: number
+          mes_ano: string
+          participante_cnpj: string
+          participante_nome: string
           pis: number
           tipo: string
           valor: number

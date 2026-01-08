@@ -9,7 +9,8 @@ import {
   Zap,
   Truck,
   Upload,
-  FileText
+  FileText,
+  Users
 } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { useAuth } from '@/hooks/useAuth';
@@ -44,6 +45,7 @@ const allMenuItems: MenuItem[] = [
   { title: 'Empresas', url: '/empresas', icon: Building2, adminOnly: true },
   { title: 'Alíquotas', url: '/aliquotas', icon: Calculator },
   { title: 'Mercadorias', url: '/mercadorias', icon: Package },
+  { title: 'Por Participante', url: '/mercadorias-participante', icon: Users },
   { title: 'Serviços', url: '/servicos', icon: FileText },
   { title: 'Energia e Água', url: '/energia-agua', icon: Zap },
   { title: 'Fretes', url: '/fretes', icon: Truck },
