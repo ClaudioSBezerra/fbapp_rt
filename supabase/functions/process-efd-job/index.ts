@@ -354,34 +354,47 @@ function processLine(
       break;
 
     case "C500":
-      // Energia/Água - layout diferente para ICMS/IPI e Contribuições
+      // Energia/Água/Gás/Comunicação - layout diferente para ICMS/IPI e Contribuições
       blockType = "c500";
+      
+      // Mapeamento expandido de códigos de modelo de documento
+      const codModMapC500: Record<string, string> = {
+        "06": "energia",      // Nota Fiscal/Conta de Energia Elétrica
+        "21": "comunicacao",  // Nota Fiscal de Serviço de Comunicação
+        "22": "comunicacao",  // Nota Fiscal de Serviço de Telecomunicação
+        "28": "gas",          // Nota Fiscal/Conta de Gás Canalizado
+        "29": "agua",         // Nota Fiscal/Conta de Fornecimento de Água
+      };
       
       if (context.efdType === 'contribuicoes') {
         // Layout EFD Contribuições - C500 (Energia/Água/Gás com crédito)
         // |C500|COD_PART|COD_MOD|COD_SIT|SER|SUB|NUM_DOC|DT_DOC|DT_E_S|VL_DOC|VL_ICMS|COD_INF|VL_PIS|VL_COFINS|
         // Indices: 2=COD_PART, 3=COD_MOD, 10=VL_DOC, 11=VL_ICMS, 13=VL_PIS, 14=VL_COFINS
-        if (fields.length > 14) {
+        if (fields.length > 10) {
           const codMod = fields[3] || "";
-          const tipoServico = codMod === "06" ? "energia" : 
-                              codMod === "29" ? "agua" : 
-                              codMod === "28" ? "gas" : null;
+          const tipoServico = codModMapC500[codMod] || "outros";
           const cnpjFornecedor = fields[2]?.replace(/\D/g, "") || null;
           const valorDoc = parseNumber(fields[10]);
+          
+          console.log(`C500 Contrib: codMod=${codMod}, tipo=${tipoServico}, valor=${valorDoc}, fields=${fields.length}`);
 
-          if (valorDoc > 0 && tipoServico !== null) {
+          if (valorDoc > 0) {
+            const tipoLabel = tipoServico === "energia" ? "Energia Elétrica" : 
+                              tipoServico === "agua" ? "Água" : 
+                              tipoServico === "gas" ? "Gás" :
+                              tipoServico === "comunicacao" ? "Comunicação" : "Outros";
             record = {
               table: "energia_agua",
               data: {
                 tipo_operacao: "credito", // EFD Contribuições C500 é sempre crédito
                 tipo_servico: tipoServico,
                 cnpj_fornecedor: cnpjFornecedor,
-                descricao: `${tipoServico === "energia" ? "Energia Elétrica" : tipoServico === "agua" ? "Água" : "Gás"} - Doc ${fields[7] || ""}`.trim().substring(0, 200),
+                descricao: `${tipoLabel} - Doc ${fields[7] || ""}`.trim().substring(0, 200),
                 mes_ano: context.currentPeriod,
                 valor: valorDoc,
-                pis: parseNumber(fields[13]),
-                cofins: parseNumber(fields[14]),
-                icms: parseNumber(fields[11]),
+                pis: fields.length > 13 ? parseNumber(fields[13]) : 0,
+                cofins: fields.length > 14 ? parseNumber(fields[14]) : 0,
+                icms: fields.length > 11 ? parseNumber(fields[11]) : 0,
               },
             };
           }
@@ -389,27 +402,33 @@ function processLine(
       } else {
         // Layout EFD ICMS/IPI - C500 (Energia/Água):
         // 2=IND_OPER, 4=COD_PART, 5=COD_MOD, 7=SER, 10=VL_DOC, 13=VL_ICMS, 16=VL_PIS, 18=VL_COFINS
-        if (fields.length > 18) {
+        if (fields.length > 10) {
           const indOper = fields[2];
           const tipoOperacao = indOper === "0" ? "credito" : "debito";
           const codMod = fields[5] || "";
-          const tipoServico = codMod === "06" ? "energia" : codMod === "29" ? "agua" : null;
+          const tipoServico = codModMapC500[codMod] || "outros";
           const cnpjFornecedor = fields[4]?.replace(/\D/g, "") || null;
           const valorDoc = parseNumber(fields[10]);
+          
+          console.log(`C500 ICMS/IPI: codMod=${codMod}, tipo=${tipoServico}, valor=${valorDoc}, fields=${fields.length}`);
 
-          if (valorDoc > 0 && tipoServico !== null) {
+          if (valorDoc > 0) {
+            const tipoLabel = tipoServico === "energia" ? "Energia Elétrica" : 
+                              tipoServico === "agua" ? "Água" : 
+                              tipoServico === "gas" ? "Gás" :
+                              tipoServico === "comunicacao" ? "Comunicação" : "Outros";
             record = {
               table: "energia_agua",
               data: {
                 tipo_operacao: tipoOperacao,
                 tipo_servico: tipoServico,
                 cnpj_fornecedor: cnpjFornecedor,
-                descricao: `${tipoServico === "energia" ? "Energia Elétrica" : "Água"} - ${fields[7] || ""}`.trim().substring(0, 200),
+                descricao: `${tipoLabel} - ${fields[7] || ""}`.trim().substring(0, 200),
                 mes_ano: context.currentPeriod,
                 valor: valorDoc,
-                pis: parseNumber(fields[16]),
-                cofins: parseNumber(fields[18]),
-                icms: parseNumber(fields[13]),
+                pis: fields.length > 16 ? parseNumber(fields[16]) : 0,
+                cofins: fields.length > 18 ? parseNumber(fields[18]) : 0,
+                icms: fields.length > 13 ? parseNumber(fields[13]) : 0,
               },
             };
           }
