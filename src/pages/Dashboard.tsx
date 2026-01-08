@@ -1,10 +1,15 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Package, Truck, Zap, Building2, Loader2, TrendingUp, TrendingDown, Calendar, CalendarDays } from 'lucide-react';
+import { Package, Truck, Zap, Loader2, TrendingUp, TrendingDown, Calendar, CalendarDays, AlertTriangle, Info, ChevronDown, ChevronUp } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { supabase } from '@/integrations/supabase/client';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -56,14 +61,11 @@ function formatCurrency(value: number): string {
   }).format(value);
 }
 
-function calcularTotais(
-  items: { valor?: number; icms?: number; pis?: number; cofins?: number }[]
-): TotaisCategoria {
-  const valor = items.reduce((acc, i) => acc + (i.valor || 0), 0);
-  const icms = items.reduce((acc, i) => acc + (i.icms || 0), 0);
-  const pisCofins = items.reduce((acc, i) => acc + (i.pis || 0) + (i.cofins || 0), 0);
-
-  return { valor, icms, pisCofins, count: items.length };
+function formatPercent(value: number): string {
+  return new Intl.NumberFormat('pt-BR', {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(value) + '%';
 }
 
 function calcularProjecoes(
@@ -95,12 +97,12 @@ export default function Dashboard() {
   const [anoProjecao, setAnoProjecao] = useState<number>(2027);
   const [periodosDisponiveis, setPeriodosDisponiveis] = useState<string[]>([]);
   const [periodoSelecionado, setPeriodoSelecionado] = useState<string>('');
+  const [tabelaAberta, setTabelaAberta] = useState(false);
 
   // Load available periods first
   useEffect(() => {
     const loadPeriodos = async () => {
       try {
-        // Get all data without filter to extract available periods
         const { data: allStats } = await supabase.rpc('get_mv_dashboard_stats');
         
         if (allStats && allStats.length > 0) {
@@ -110,7 +112,6 @@ export default function Dashboard() {
           
           setPeriodosDisponiveis(periodos);
           
-          // Default to most recent period
           if (periodos.length > 0 && !periodoSelecionado) {
             setPeriodoSelecionado(periodos[0]);
           }
@@ -142,7 +143,6 @@ export default function Dashboard() {
 
         if (aliquotasData) setAliquotas(aliquotasData);
 
-        // Process aggregated data from materialized view
         const statsData = dashboardStats || [];
         
         const sumCategory = (categoria: string, subtipo: string) => {
@@ -242,14 +242,13 @@ export default function Dashboard() {
     (totaisConsolidados.saidas.ibsProjetado + totaisConsolidados.saidas.cbsProjetado) - 
     (totaisConsolidados.entradas.ibsProjetado + totaisConsolidados.entradas.cbsProjetado);
 
-  // Diferença: antigos - novos (positivo = economia)
-  const diferencaImposto = impostosAntigosProjetados - impostosNovosProjetados;
-
   // Para os cards
   const impostoAtualTotal = totaisConsolidados.saidas.icms + totaisConsolidados.saidas.pisCofins - (totaisConsolidados.entradas.icms + totaisConsolidados.entradas.pisCofins);
   const impostoProjetadoTotal = impostosAntigosProjetados + impostosNovosProjetados;
+  const diferencaImposto = impostoAtualTotal - impostoProjetadoTotal;
+  const variacaoPercentual = impostoAtualTotal !== 0 ? ((impostoProjetadoTotal - impostoAtualTotal) / impostoAtualTotal) * 100 : 0;
 
-  // Dados para gráfico de evolução
+  // Dados para gráfico de evolução com PIS/COFINS incluído
   const dadosEvolucao = useMemo(() => {
     const totaisSaidas = {
       valor: stats.mercadorias.saidas.valor + stats.fretes.saidas.valor + stats.energiaAgua.debitos.valor,
@@ -263,6 +262,8 @@ export default function Dashboard() {
       pisCofins: stats.mercadorias.entradas.pisCofins + stats.fretes.entradas.pisCofins + stats.energiaAgua.creditos.pisCofins,
     };
 
+    const impostoAtualBase = totaisSaidas.icms + totaisSaidas.pisCofins - totaisEntradas.icms - totaisEntradas.pisCofins;
+
     return ANOS_PROJECAO.map((ano) => {
       const aliq = aliquotas.find((a) => a.ano === ano);
       
@@ -270,9 +271,11 @@ export default function Dashboard() {
         return {
           ano,
           icmsProjetado: totaisSaidas.icms - totaisEntradas.icms,
+          pisCofinsProjetado: totaisSaidas.pisCofins - totaisEntradas.pisCofins,
           ibsCbsProjetado: 0,
-          total: totaisSaidas.icms - totaisEntradas.icms,
-          impostoAtual: totaisSaidas.icms + totaisSaidas.pisCofins - totaisEntradas.icms - totaisEntradas.pisCofins,
+          totalReforma: totaisSaidas.icms - totaisEntradas.icms + totaisSaidas.pisCofins - totaisEntradas.pisCofins,
+          impostoAtual: impostoAtualBase,
+          reducaoIcms: 0,
         };
       }
 
@@ -289,17 +292,52 @@ export default function Dashboard() {
       const cbsEntradas = baseIbsCbsEntradas * (aliq.cbs / 100);
 
       const icmsLiquido = icmsSaidas - icmsEntradas;
+      const pisCofinsLiquido = pisCofinsProjetadoSaidas - pisCofinsProjetadoEntradas;
       const ibsCbsLiquido = (ibsSaidas + cbsSaidas) - (ibsEntradas + cbsEntradas);
 
       return {
         ano,
         icmsProjetado: icmsLiquido,
+        pisCofinsProjetado: pisCofinsLiquido,
         ibsCbsProjetado: ibsCbsLiquido,
-        total: icmsLiquido + ibsCbsLiquido,
-        impostoAtual: totaisSaidas.icms + totaisSaidas.pisCofins - totaisEntradas.icms - totaisEntradas.pisCofins,
+        totalReforma: icmsLiquido + pisCofinsLiquido + ibsCbsLiquido,
+        impostoAtual: impostoAtualBase,
+        reducaoIcms: aliq.reduc_icms,
       };
     });
   }, [aliquotas, stats]);
+
+  // Encontrar ponto de inflexão (quando IBS+CBS supera ICMS projetado)
+  const anoInflexao = useMemo(() => {
+    return dadosEvolucao.find(d => d.ibsCbsProjetado > d.icmsProjetado)?.ano;
+  }, [dadosEvolucao]);
+
+  // Dados para o gráfico de composição empilhada
+  const dadosComposicao = useMemo(() => {
+    return dadosEvolucao.map(d => ({
+      ano: d.ano,
+      'ICMS (em extinção)': Math.max(0, d.icmsProjetado),
+      'PIS/COFINS (em extinção)': Math.max(0, d.pisCofinsProjetado),
+      'IBS+CBS (novos)': Math.max(0, d.ibsCbsProjetado),
+    }));
+  }, [dadosEvolucao]);
+
+  // Composição percentual para o ano selecionado
+  const composicaoAnoSelecionado = useMemo(() => {
+    const dados = dadosEvolucao.find(d => d.ano === anoProjecao);
+    if (!dados) return null;
+
+    const total = Math.abs(dados.icmsProjetado) + Math.abs(dados.pisCofinsProjetado) + Math.abs(dados.ibsCbsProjetado);
+    if (total === 0) return null;
+
+    return {
+      icms: { valor: dados.icmsProjetado, percentual: (Math.abs(dados.icmsProjetado) / total) * 100 },
+      pisCofins: { valor: dados.pisCofinsProjetado, percentual: (Math.abs(dados.pisCofinsProjetado) / total) * 100 },
+      ibsCbs: { valor: dados.ibsCbsProjetado, percentual: (Math.abs(dados.ibsCbsProjetado) / total) * 100 },
+      total,
+      reducaoIcms: dados.reducaoIcms,
+    };
+  }, [dadosEvolucao, anoProjecao]);
 
   if (loading) {
     return (
@@ -423,48 +461,219 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Resumo Geral */}
+      {/* Indicador de Ponto de Inflexão */}
+      {anoInflexao && (
+        <div className="flex items-center gap-2 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+          <AlertTriangle className="h-4 w-4 text-amber-600" />
+          <span className="text-sm font-medium text-amber-700 dark:text-amber-400">
+            Ponto de inflexão em {anoInflexao}: IBS/CBS supera ICMS
+          </span>
+          <Tooltip>
+            <TooltipTrigger>
+              <Info className="h-3.5 w-3.5 text-amber-600 cursor-help" />
+            </TooltipTrigger>
+            <TooltipContent side="right" className="max-w-xs">
+              <p className="text-xs">A partir deste ano, os novos tributos (IBS+CBS) representam mais carga tributária que o ICMS em extinção. Momento estratégico para planejamento.</p>
+            </TooltipContent>
+          </Tooltip>
+        </div>
+      )}
+
+      {/* Resumo Geral - Cards Melhorados */}
       <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
         <Card className="border-border/50">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-muted-foreground">Imposto Atual (Líquido)</CardTitle>
+            <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-2">
+              Regime Atual
+              <Tooltip>
+                <TooltipTrigger>
+                  <Info className="h-3 w-3 text-muted-foreground cursor-help" />
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className="text-xs">ICMS + PIS/COFINS líquidos (Débitos - Créditos)</p>
+                </TooltipContent>
+              </Tooltip>
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-xl font-bold">{formatCurrency(impostoAtualTotal)}</div>
-            <p className="text-[10px] text-muted-foreground">ICMS + PIS/COFINS (Débitos - Créditos)</p>
+            <p className="text-[10px] text-muted-foreground">Carga tributária sem reforma</p>
           </CardContent>
         </Card>
 
-        <Card className="border-border/50">
+        <Card className="border-border/50 border-l-4 border-l-ibs-cbs">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-muted-foreground">Imposto Projetado {anoProjecao} (Líquido)</CardTitle>
+            <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-2">
+              Regime Reforma {anoProjecao}
+              <Tooltip>
+                <TooltipTrigger>
+                  <Info className="h-3 w-3 text-muted-foreground cursor-help" />
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className="text-xs">ICMS reduzido + PIS/COFINS reduzido + IBS + CBS</p>
+                  {aliquotaSelecionada && (
+                    <p className="text-xs mt-1">Redução ICMS: {aliquotaSelecionada.reduc_icms}% | Redução PIS/COFINS: {aliquotaSelecionada.reduc_piscofins}%</p>
+                  )}
+                </TooltipContent>
+              </Tooltip>
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-xl font-bold text-ibs-cbs">{formatCurrency(impostoProjetadoTotal)}</div>
-            <p className="text-[10px] text-muted-foreground">ICMS Proj + IBS + CBS (Débitos - Créditos)</p>
+            <div className="flex items-center gap-1 mt-1">
+              {variacaoPercentual !== 0 && (
+                <Badge variant={variacaoPercentual < 0 ? "default" : "destructive"} className="text-[10px] px-1.5 py-0">
+                  {variacaoPercentual > 0 ? '+' : ''}{formatPercent(variacaoPercentual)}
+                </Badge>
+              )}
+              <span className="text-[10px] text-muted-foreground">vs regime atual</span>
+            </div>
           </CardContent>
         </Card>
 
-        <Card className={`border-border/50 ${diferencaImposto >= 0 ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
+        <Card className={`border-border/50 ${diferencaImposto >= 0 ? 'bg-positive/10 border-l-4 border-l-positive' : 'bg-destructive/10 border-l-4 border-l-destructive'}`}>
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-muted-foreground">Diferença {anoProjecao}</CardTitle>
+            <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-2">
+              Impacto da Reforma {anoProjecao}
+              {diferencaImposto >= 0 ? (
+                <TrendingDown className="h-3.5 w-3.5 text-positive" />
+              ) : (
+                <TrendingUp className="h-3.5 w-3.5 text-destructive" />
+              )}
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className={`text-xl font-bold ${diferencaImposto >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+            <div className={`text-xl font-bold ${diferencaImposto >= 0 ? 'text-positive' : 'text-destructive'}`}>
               {diferencaImposto >= 0 ? '+' : ''}{formatCurrency(diferencaImposto)}
             </div>
-            <p className="text-[10px] text-muted-foreground">{diferencaImposto >= 0 ? 'Economia projetada' : 'Aumento projetado'}</p>
+            <p className="text-[10px] text-muted-foreground">
+              {diferencaImposto >= 0 ? 'Economia projetada' : 'Custo adicional projetado'}
+            </p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Gráfico de Evolução */}
+      {/* Card de Composição Tributária */}
+      {composicaoAnoSelecionado && (
+        <Card className="border-border/50">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              Composição Tributária em {anoProjecao}
+              <Badge variant="outline" className="text-[10px]">
+                Redução ICMS: {composicaoAnoSelecionado.reducaoIcms}%
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-[hsl(220,70%,50%)]" />
+                  <span>ICMS (em extinção)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold">{formatCurrency(composicaoAnoSelecionado.icms.valor)}</span>
+                  <span className="text-muted-foreground w-12 text-right">{formatPercent(composicaoAnoSelecionado.icms.percentual)}</span>
+                </div>
+              </div>
+              <Progress value={composicaoAnoSelecionado.icms.percentual} className="h-2 [&>div]:bg-[hsl(220,70%,50%)]" />
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-[hsl(280,60%,50%)]" />
+                  <span>PIS/COFINS (em extinção)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold">{formatCurrency(composicaoAnoSelecionado.pisCofins.valor)}</span>
+                  <span className="text-muted-foreground w-12 text-right">{formatPercent(composicaoAnoSelecionado.pisCofins.percentual)}</span>
+                </div>
+              </div>
+              <Progress value={composicaoAnoSelecionado.pisCofins.percentual} className="h-2 [&>div]:bg-[hsl(280,60%,50%)]" />
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-[hsl(142,71%,45%)]" />
+                  <span>IBS + CBS (novos)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold">{formatCurrency(composicaoAnoSelecionado.ibsCbs.valor)}</span>
+                  <span className="text-muted-foreground w-12 text-right">{formatPercent(composicaoAnoSelecionado.ibsCbs.percentual)}</span>
+                </div>
+              </div>
+              <Progress value={composicaoAnoSelecionado.ibsCbs.percentual} className="h-2 [&>div]:bg-[hsl(142,71%,45%)]" />
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Gráfico de Área Empilhada - Transição Tributária */}
       <Card className="border-border/50">
         <CardHeader>
           <CardTitle className="text-sm font-semibold flex items-center gap-2">
             <TrendingUp className="h-4 w-4" />
-            Evolução da Carga Tributária Projetada (2027-2033)
+            Transição Tributária: Extinção do ICMS/PIS/COFINS → IBS/CBS
           </CardTitle>
+          <p className="text-xs text-muted-foreground">Visualização da substituição gradual dos tributos de 2027 a 2033</p>
+        </CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={300}>
+            <AreaChart data={dadosComposicao}>
+              <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+              <XAxis dataKey="ano" className="text-xs" />
+              <YAxis 
+                tickFormatter={(v) => {
+                  if (v >= 1000000) return `${(v / 1000000).toFixed(1)}M`;
+                  if (v >= 1000) return `${(v / 1000).toFixed(0)}K`;
+                  return v.toFixed(0);
+                }} 
+                className="text-xs"
+              />
+              <RechartsTooltip 
+                formatter={(v: number, name: string) => [formatCurrency(v), name]}
+                labelFormatter={(label) => `Ano: ${label}`}
+                contentStyle={{ backgroundColor: 'hsl(var(--popover))', border: '1px solid hsl(var(--border))' }}
+              />
+              <Legend />
+              <Area 
+                type="monotone" 
+                dataKey="ICMS (em extinção)" 
+                stackId="1"
+                fill="hsl(220, 70%, 50%)" 
+                stroke="hsl(220, 70%, 40%)"
+                fillOpacity={0.8}
+              />
+              <Area 
+                type="monotone" 
+                dataKey="PIS/COFINS (em extinção)" 
+                stackId="1"
+                fill="hsl(280, 60%, 50%)" 
+                stroke="hsl(280, 60%, 40%)"
+                fillOpacity={0.8}
+              />
+              <Area 
+                type="monotone" 
+                dataKey="IBS+CBS (novos)" 
+                stackId="1"
+                fill="hsl(142, 71%, 45%)" 
+                stroke="hsl(142, 71%, 35%)"
+                fillOpacity={0.8}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+
+      {/* Gráfico de Linhas - Evolução Detalhada */}
+      <Card className="border-border/50">
+        <CardHeader>
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            Evolução da Carga Tributária Total
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">Comparativo entre regime atual (linha tracejada) e projeção da reforma</p>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={300}>
@@ -479,25 +688,41 @@ export default function Dashboard() {
                 }} 
                 className="text-xs"
               />
-              <Tooltip 
+              <RechartsTooltip 
                 formatter={(v: number) => formatCurrency(v)}
                 labelFormatter={(label) => `Ano: ${label}`}
                 contentStyle={{ backgroundColor: 'hsl(var(--popover))', border: '1px solid hsl(var(--border))' }}
               />
               <Legend />
+              {anoInflexao && (
+                <ReferenceLine 
+                  x={anoInflexao} 
+                  stroke="hsl(var(--warning))" 
+                  strokeDasharray="3 3"
+                  label={{ value: 'Inflexão', position: 'top', fontSize: 10 }}
+                />
+              )}
               <Line 
                 type="monotone" 
                 dataKey="impostoAtual" 
-                name="Imposto Atual (ICMS+PIS/COFINS)" 
+                name="Regime Atual" 
                 stroke="hsl(var(--muted-foreground))" 
                 strokeDasharray="5 5"
                 strokeWidth={2}
+                dot={false}
               />
               <Line 
                 type="monotone" 
                 dataKey="icmsProjetado" 
                 name="ICMS Projetado" 
                 stroke="hsl(220, 70%, 50%)" 
+                strokeWidth={2}
+              />
+              <Line 
+                type="monotone" 
+                dataKey="pisCofinsProjetado" 
+                name="PIS/COFINS Projetado" 
+                stroke="hsl(280, 60%, 50%)" 
                 strokeWidth={2}
               />
               <Line 
@@ -509,8 +734,8 @@ export default function Dashboard() {
               />
               <Line 
                 type="monotone" 
-                dataKey="total" 
-                name="Total Projetado" 
+                dataKey="totalReforma" 
+                name="Total Reforma" 
                 stroke="hsl(24, 95%, 53%)" 
                 strokeWidth={3}
               />
@@ -518,6 +743,71 @@ export default function Dashboard() {
           </ResponsiveContainer>
         </CardContent>
       </Card>
+
+      {/* Tabela Comparativa Expandível */}
+      <Collapsible open={tabelaAberta} onOpenChange={setTabelaAberta}>
+        <Card className="border-border/50">
+          <CollapsibleTrigger asChild>
+            <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+              <CardTitle className="text-sm font-semibold flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  Tabela Comparativa por Ano
+                </span>
+                {tabelaAberta ? (
+                  <ChevronUp className="h-4 w-4" />
+                ) : (
+                  <ChevronDown className="h-4 w-4" />
+                )}
+              </CardTitle>
+            </CardHeader>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <CardContent className="pt-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">Ano</TableHead>
+                      <TableHead className="text-xs text-right">Redução ICMS</TableHead>
+                      <TableHead className="text-xs text-right">ICMS Proj.</TableHead>
+                      <TableHead className="text-xs text-right">PIS/COFINS Proj.</TableHead>
+                      <TableHead className="text-xs text-right">IBS+CBS</TableHead>
+                      <TableHead className="text-xs text-right">Total Reforma</TableHead>
+                      <TableHead className="text-xs text-right">vs Atual</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {dadosEvolucao.map((dados) => {
+                      const diferenca = dados.impostoAtual - dados.totalReforma;
+                      const variacaoPct = dados.impostoAtual !== 0 
+                        ? ((dados.totalReforma - dados.impostoAtual) / dados.impostoAtual) * 100 
+                        : 0;
+                      return (
+                        <TableRow key={dados.ano} className={dados.ano === anoProjecao ? 'bg-muted/30' : ''}>
+                          <TableCell className="text-xs font-medium">
+                            {dados.ano}
+                            {dados.ano === anoInflexao && (
+                              <Badge variant="outline" className="ml-2 text-[9px] px-1">Inflexão</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-xs text-right">{dados.reducaoIcms}%</TableCell>
+                          <TableCell className="text-xs text-right">{formatCurrency(dados.icmsProjetado)}</TableCell>
+                          <TableCell className="text-xs text-right">{formatCurrency(dados.pisCofinsProjetado)}</TableCell>
+                          <TableCell className="text-xs text-right text-ibs-cbs">{formatCurrency(dados.ibsCbsProjetado)}</TableCell>
+                          <TableCell className="text-xs text-right font-semibold">{formatCurrency(dados.totalReforma)}</TableCell>
+                          <TableCell className={`text-xs text-right font-semibold ${diferenca >= 0 ? 'text-positive' : 'text-destructive'}`}>
+                            {diferenca >= 0 ? '+' : ''}{formatPercent(variacaoPct * -1)}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
 
       {/* Mercadorias */}
       <div>
