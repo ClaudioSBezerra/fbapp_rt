@@ -347,19 +347,19 @@ export default function EnergiaAgua() {
                   <TableCell className="text-right font-mono text-xs font-semibold bg-muted/30">{formatCurrency(totalImpostosPagar)}</TableCell>
                   <TableCell className="text-right">
                     <Badge
-                      variant={diferencaProjetado > 0 ? 'destructive' : diferencaProjetado < 0 ? 'default' : 'secondary'}
-                      className={`text-xs ${diferencaProjetado < 0 ? 'bg-positive text-positive-foreground' : ''}`}
+                      variant={diferencaProjetado < 0 ? 'destructive' : 'default'}
+                      className={`text-xs ${diferencaProjetado >= 0 ? 'bg-positive text-positive-foreground' : ''}`}
                     >
-                      {diferencaProjetado > 0 ? '+' : ''}
+                      {diferencaProjetado >= 0 ? '+' : ''}
                       {formatCurrency(diferencaProjetado)}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
                     <Badge
-                      variant={diferencaReal > 0 ? 'destructive' : diferencaReal < 0 ? 'default' : 'secondary'}
-                      className={`text-xs ${diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}`}
+                      variant={diferencaReal < 0 ? 'destructive' : 'default'}
+                      className={`text-xs ${diferencaReal >= 0 ? 'bg-positive text-positive-foreground' : ''}`}
                     >
-                      {diferencaReal > 0 ? '+' : ''}
+                      {diferencaReal >= 0 ? '+' : ''}
                       {formatCurrency(diferencaReal)}
                     </Badge>
                   </TableCell>
@@ -507,14 +507,14 @@ export default function EnergiaAgua() {
             </div>
             <div className="flex justify-between items-center pt-1 border-t">
               <span className="text-[10px] text-muted-foreground">Dif. Imp. Atual e Imp. Proj.:</span>
-              <Badge variant={totaisCreditos.diferencaProjetado > 0 ? 'destructive' : totaisCreditos.diferencaProjetado < 0 ? 'default' : 'secondary'} className={totaisCreditos.diferencaProjetado < 0 ? 'bg-positive text-positive-foreground' : ''}>
-                {totaisCreditos.diferencaProjetado > 0 ? '+' : ''}{formatCurrency(totaisCreditos.diferencaProjetado)}
+              <Badge variant={totaisCreditos.diferencaProjetado < 0 ? 'destructive' : 'default'} className={totaisCreditos.diferencaProjetado >= 0 ? 'bg-positive text-positive-foreground' : ''}>
+                {totaisCreditos.diferencaProjetado >= 0 ? '+' : ''}{formatCurrency(totaisCreditos.diferencaProjetado)}
               </Badge>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-[10px] text-muted-foreground">Dif. deb/cred.:</span>
-              <Badge variant={totaisCreditos.diferencaReal > 0 ? 'destructive' : totaisCreditos.diferencaReal < 0 ? 'default' : 'secondary'} className={totaisCreditos.diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}>
-                {totaisCreditos.diferencaReal > 0 ? '+' : ''}{formatCurrency(totaisCreditos.diferencaReal)}
+              <Badge variant={totaisCreditos.diferencaReal < 0 ? 'destructive' : 'default'} className={totaisCreditos.diferencaReal >= 0 ? 'bg-positive text-positive-foreground' : ''}>
+                {totaisCreditos.diferencaReal >= 0 ? '+' : ''}{formatCurrency(totaisCreditos.diferencaReal)}
               </Badge>
             </div>
           </CardContent>
@@ -574,14 +574,14 @@ export default function EnergiaAgua() {
             </div>
             <div className="flex justify-between items-center pt-1 border-t">
               <span className="text-[10px] text-muted-foreground">Dif. Imp. Atual e Imp. Proj.:</span>
-              <Badge variant={totaisDebitos.diferencaProjetado > 0 ? 'destructive' : totaisDebitos.diferencaProjetado < 0 ? 'default' : 'secondary'} className={totaisDebitos.diferencaProjetado < 0 ? 'bg-positive text-positive-foreground' : ''}>
-                {totaisDebitos.diferencaProjetado > 0 ? '+' : ''}{formatCurrency(totaisDebitos.diferencaProjetado)}
+              <Badge variant={totaisDebitos.diferencaProjetado < 0 ? 'destructive' : 'default'} className={totaisDebitos.diferencaProjetado >= 0 ? 'bg-positive text-positive-foreground' : ''}>
+                {totaisDebitos.diferencaProjetado >= 0 ? '+' : ''}{formatCurrency(totaisDebitos.diferencaProjetado)}
               </Badge>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-[10px] text-muted-foreground">Dif. deb/cred.:</span>
-              <Badge variant={totaisDebitos.diferencaReal > 0 ? 'destructive' : totaisDebitos.diferencaReal < 0 ? 'default' : 'secondary'} className={totaisDebitos.diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}>
-                {totaisDebitos.diferencaReal > 0 ? '+' : ''}{formatCurrency(totaisDebitos.diferencaReal)}
+              <Badge variant={totaisDebitos.diferencaReal < 0 ? 'destructive' : 'default'} className={totaisDebitos.diferencaReal >= 0 ? 'bg-positive text-positive-foreground' : ''}>
+                {totaisDebitos.diferencaReal >= 0 ? '+' : ''}{formatCurrency(totaisDebitos.diferencaReal)}
               </Badge>
             </div>
           </CardContent>
