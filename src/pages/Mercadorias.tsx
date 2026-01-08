@@ -129,19 +129,6 @@ function MercadoriasTable({ data, aliquotas, tipo, anoProjecao }: MercadoriasTab
             <TableHead className="text-right text-xs">
               <Tooltip>
                 <TooltipTrigger className="cursor-help underline decoration-dotted decoration-muted-foreground inline-flex items-center gap-1 whitespace-nowrap">
-                  Dif. Imp. Atual e Imp. Proj.
-                  <HelpCircle className="h-3 w-3 text-muted-foreground" />
-                </TooltipTrigger>
-                <TooltipContent side="top" className="max-w-xs">
-                  <p className="font-semibold mb-1">Fórmula:</p>
-                  <p className="font-mono text-xs">(ICMS + PIS/COFINS) − (IBS + CBS)</p>
-                  <p className="text-muted-foreground text-xs mt-1">Compara impostos atuais com os novos impostos da reforma</p>
-                </TooltipContent>
-              </Tooltip>
-            </TableHead>
-            <TableHead className="text-right text-xs">
-              <Tooltip>
-                <TooltipTrigger className="cursor-help underline decoration-dotted decoration-muted-foreground inline-flex items-center gap-1 whitespace-nowrap">
                   Dif. deb/cred.
                   <HelpCircle className="h-3 w-3 text-muted-foreground" />
                 </TooltipTrigger>
@@ -186,14 +173,6 @@ function MercadoriasTable({ data, aliquotas, tipo, anoProjecao }: MercadoriasTab
                 <TableCell className="text-right font-mono text-xs text-ibs-cbs">{formatCurrency(vlCbsProjetado)}</TableCell>
                 <TableCell className="text-right font-mono text-xs font-semibold text-ibs-cbs bg-muted/30">{formatCurrency(totalReforma)}</TableCell>
                 <TableCell className="text-right font-mono text-xs font-semibold bg-muted/30">{formatCurrency(totalImpostosPagar)}</TableCell>
-                <TableCell className="text-right">
-                  <Badge
-                    variant={diferencaProjetado < 0 ? 'destructive' : 'default'}
-                    className={`text-xs ${diferencaProjetado >= 0 ? 'bg-positive text-positive-foreground' : ''}`}
-                  >
-                    {diferencaProjetado >= 0 ? '+' : ''}{formatCurrency(diferencaProjetado)}
-                  </Badge>
-                </TableCell>
                 <TableCell className="text-right">
                   <Badge
                     variant={diferencaReal < 0 ? 'destructive' : 'default'}
@@ -379,7 +358,6 @@ export default function Mercadorias() {
         'IBS Projetado': vlIbsProjetado,
         'CBS Projetado': vlCbsProjetado,
         'Total Reforma': totalReforma,
-        'Diferença Projetado': diferencaProjetado,
         'Diferença Real': diferencaReal,
       };
     });
@@ -536,12 +514,6 @@ export default function Mercadorias() {
               <span className="text-sm font-bold">{formatCurrency(totaisEntradas.totalImpostosPagar)}</span>
             </div>
             <div className="flex justify-between items-center pt-1 border-t">
-              <span className="text-[10px] text-muted-foreground">Dif. Imp. Atual e Imp. Proj.:</span>
-              <Badge variant={totaisEntradas.diferencaProjetado < 0 ? 'destructive' : 'default'} className={totaisEntradas.diferencaProjetado >= 0 ? 'bg-positive text-positive-foreground' : ''}>
-                {totaisEntradas.diferencaProjetado >= 0 ? '+' : ''}{formatCurrency(totaisEntradas.diferencaProjetado)}
-              </Badge>
-            </div>
-            <div className="flex justify-between items-center">
               <span className="text-[10px] text-muted-foreground">Dif. deb/cred.:</span>
               <Badge variant={totaisEntradas.diferencaReal < 0 ? 'destructive' : 'default'} className={totaisEntradas.diferencaReal >= 0 ? 'bg-positive text-positive-foreground' : ''}>
                 {totaisEntradas.diferencaReal >= 0 ? '+' : ''}{formatCurrency(totaisEntradas.diferencaReal)}
@@ -601,12 +573,6 @@ export default function Mercadorias() {
               <span className="text-sm font-bold">{formatCurrency(totaisSaidas.totalImpostosPagar)}</span>
             </div>
             <div className="flex justify-between items-center pt-1 border-t">
-              <span className="text-[10px] text-muted-foreground">Dif. Imp. Atual e Imp. Proj.:</span>
-              <Badge variant={totaisSaidas.diferencaProjetado < 0 ? 'destructive' : 'default'} className={totaisSaidas.diferencaProjetado >= 0 ? 'bg-positive text-positive-foreground' : ''}>
-                {totaisSaidas.diferencaProjetado >= 0 ? '+' : ''}{formatCurrency(totaisSaidas.diferencaProjetado)}
-              </Badge>
-            </div>
-            <div className="flex justify-between items-center">
               <span className="text-[10px] text-muted-foreground">Dif. deb/cred.:</span>
               <Badge variant={totaisSaidas.diferencaReal < 0 ? 'destructive' : 'default'} className={totaisSaidas.diferencaReal >= 0 ? 'bg-positive text-positive-foreground' : ''}>
                 {totaisSaidas.diferencaReal >= 0 ? '+' : ''}{formatCurrency(totaisSaidas.diferencaReal)}
