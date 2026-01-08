@@ -514,6 +514,35 @@ export type Database = {
         }
         Relationships: []
       }
+      user_empresas: {
+        Row: {
+          created_at: string
+          empresa_id: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          empresa_id: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          empresa_id?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_empresas_empresa_id_fkey"
+            columns: ["empresa_id"]
+            isOneToOne: false
+            referencedRelation: "empresas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           id: string
@@ -688,6 +717,10 @@ export type Database = {
         }[]
       }
       get_tenant_name: { Args: { _tenant_id: string }; Returns: string }
+      has_empresa_access: {
+        Args: { _empresa_id: string; _user_id: string }
+        Returns: boolean
+      }
       has_filial_access: {
         Args: { _filial_id: string; _user_id: string }
         Returns: boolean
