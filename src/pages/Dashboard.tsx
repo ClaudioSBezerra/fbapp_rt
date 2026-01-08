@@ -370,7 +370,7 @@ export default function Dashboard() {
           <span className="text-xs font-bold text-ibs-cbs">{formatCurrency(totais.totalReforma)}</span>
         </div>
         <div className="flex justify-between items-center pt-1 border-t">
-          <span className="text-[10px] text-muted-foreground">Dif. Projetado:</span>
+          <span className="text-[10px] text-muted-foreground">Dif. Imp. Atual e Imp. Proj.:</span>
           <span className={`text-xs font-bold ${totais.diferencaProjetado > 0 ? 'text-destructive' : totais.diferencaProjetado < 0 ? 'text-positive' : ''}`}>
             {totais.diferencaProjetado > 0 ? '+' : ''}{formatCurrency(totais.diferencaProjetado)}
           </span>

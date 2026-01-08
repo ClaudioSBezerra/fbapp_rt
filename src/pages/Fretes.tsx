@@ -276,7 +276,7 @@ export default function Fretes() {
               <TableHead className="text-right text-xs">
                 <Tooltip>
                   <TooltipTrigger className="cursor-help underline decoration-dotted decoration-muted-foreground inline-flex items-center gap-1 whitespace-nowrap">
-                    Dif. Projetado
+                    Dif. Imp. Atual e Imp. Proj.
                     <HelpCircle className="h-3 w-3 text-muted-foreground" />
                   </TooltipTrigger>
                   <TooltipContent side="top" className="max-w-xs">
@@ -488,7 +488,7 @@ export default function Fretes() {
               <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totaisEntradas.totalReforma)}</span>
             </div>
             <div className="flex justify-between items-center pt-1 border-t">
-              <span className="text-[10px] text-muted-foreground">Dif. Projetado:</span>
+              <span className="text-[10px] text-muted-foreground">Dif. Imp. Atual e Imp. Proj.:</span>
               <Badge variant={totaisEntradas.diferencaProjetado > 0 ? 'destructive' : totaisEntradas.diferencaProjetado < 0 ? 'default' : 'secondary'} className={totaisEntradas.diferencaProjetado < 0 ? 'bg-positive text-positive-foreground' : ''}>
                 {totaisEntradas.diferencaProjetado > 0 ? '+' : ''}{formatCurrency(totaisEntradas.diferencaProjetado)}
               </Badge>
@@ -551,7 +551,7 @@ export default function Fretes() {
               <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totaisSaidas.totalReforma)}</span>
             </div>
             <div className="flex justify-between items-center pt-1 border-t">
-              <span className="text-[10px] text-muted-foreground">Dif. Projetado:</span>
+              <span className="text-[10px] text-muted-foreground">Dif. Imp. Atual e Imp. Proj.:</span>
               <Badge variant={totaisSaidas.diferencaProjetado > 0 ? 'destructive' : totaisSaidas.diferencaProjetado < 0 ? 'default' : 'secondary'} className={totaisSaidas.diferencaProjetado < 0 ? 'bg-positive text-positive-foreground' : ''}>
                 {totaisSaidas.diferencaProjetado > 0 ? '+' : ''}{formatCurrency(totaisSaidas.diferencaProjetado)}
               </Badge>
