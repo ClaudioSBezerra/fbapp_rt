@@ -133,7 +133,19 @@ const ServicosTable = ({ data, tipo, aliquotas, selectedYear }: ServicosTablePro
               CBS Proj. {aliquota && <span className="text-muted-foreground font-normal">({aliquota.cbs.toFixed(1)}%)</span>}
             </TableHead>
             <TableHead className="text-right text-xs font-semibold text-ibs-cbs bg-muted/30 whitespace-nowrap">Total Reforma</TableHead>
-            <TableHead className="text-right text-xs font-semibold bg-muted/30 whitespace-nowrap">Tot.Imposto Reforma</TableHead>
+<TableHead className="text-right text-xs font-semibold bg-muted/30">
+                  <Tooltip>
+                    <TooltipTrigger className="cursor-help underline decoration-dotted decoration-muted-foreground inline-flex items-center gap-1 whitespace-nowrap">
+                      Tot.Imposto Reforma
+                      <HelpCircle className="h-3 w-3 text-muted-foreground" />
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-xs">
+                      <p className="font-semibold mb-1">Fórmula:</p>
+                      <p className="font-mono text-xs">ISS Proj. + PIS/COFINS Proj. + IBS + CBS</p>
+                      <p className="text-muted-foreground text-xs mt-1">Total de impostos a pagar com a Reforma Tributária (impostos em transição + novos tributos)</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TableHead>
             <TableHead className="text-right text-xs">
               <Tooltip>
                 <TooltipTrigger className="cursor-help underline decoration-dotted decoration-muted-foreground inline-flex items-center gap-1 whitespace-nowrap">
