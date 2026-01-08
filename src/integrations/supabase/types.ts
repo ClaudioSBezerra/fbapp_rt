@@ -704,6 +704,7 @@ export type Database = {
         Returns: boolean
       }
       refresh_materialized_views: { Args: never; Returns: undefined }
+      refresh_materialized_views_async: { Args: never; Returns: undefined }
       validate_tenant_exists: { Args: { _tenant_id: string }; Returns: boolean }
     }
     Enums: {

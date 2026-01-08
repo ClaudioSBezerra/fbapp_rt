@@ -1330,22 +1330,24 @@ serve(async (req) => {
     console.log(`Job ${jobId}: Final seen counts - A100: ${seenCounts.a100}, D100: ${seenCounts.d100}, D101: ${seenCounts.d101}, D105: ${seenCounts.d105}, D500: ${seenCounts.d500}, D501: ${seenCounts.d501}, D505: ${seenCounts.d505}`);
 
     // Refresh materialized views so /mercadorias shows updated data immediately
-    console.log(`Job ${jobId}: Refreshing materialized views...`);
-    const { error: refreshError } = await supabase.rpc('refresh_materialized_views');
+    console.log(`Job ${jobId}: Refreshing materialized views (async version with 5min timeout)...`);
+    const { error: refreshError } = await supabase.rpc('refresh_materialized_views_async');
+    const refreshSuccess = !refreshError;
+    
     if (refreshError) {
       console.warn(`Job ${jobId}: Failed to refresh materialized views:`, refreshError);
     } else {
       console.log(`Job ${jobId}: Materialized views refreshed successfully`);
     }
 
-    // Update job as completed (include seenCounts for diagnostics)
+    // Update job as completed (include seenCounts and refresh_success for diagnostics)
     await supabase
       .from("import_jobs")
       .update({ 
         status: "completed", 
         progress: 100,
         total_lines: totalLinesProcessed,
-        counts: { ...counts, seen: seenCounts },
+        counts: { ...counts, seen: seenCounts, refresh_success: refreshSuccess },
         completed_at: new Date().toISOString() 
       })
       .eq("id", jobId);
