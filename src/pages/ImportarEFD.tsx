@@ -17,6 +17,7 @@ interface ImportCounts {
   energia_agua: number;
   fretes: number;
   servicos: number;
+  refresh_success?: boolean;
   seen?: {
     a100?: number;
     c100?: number;
@@ -114,9 +115,45 @@ export default function ImportarEFD() {
   } | null>(null);
   const [progressAnimation, setProgressAnimation] = useState(0);
   const [statusMessage, setStatusMessage] = useState('');
+  const [refreshingViews, setRefreshingViews] = useState(false);
+  const [viewsStatus, setViewsStatus] = useState<'loading' | 'empty' | 'ok'>('loading');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { session } = useAuth();
   const navigate = useNavigate();
+
+  // Check views status when jobs change
+  useEffect(() => {
+    const checkViews = async () => {
+      if (!session) return;
+      try {
+        const { data, error } = await supabase.rpc('get_mv_dashboard_stats');
+        if (error) {
+          console.warn('Failed to check views status:', error);
+          setViewsStatus('empty');
+        } else {
+          setViewsStatus(data && data.length > 0 ? 'ok' : 'empty');
+        }
+      } catch (err) {
+        setViewsStatus('empty');
+      }
+    };
+    checkViews();
+  }, [session, jobs]);
+
+  const handleRefreshViews = async () => {
+    setRefreshingViews(true);
+    try {
+      const { error } = await supabase.rpc('refresh_materialized_views_async');
+      if (error) throw error;
+      toast.success('Views atualizadas com sucesso! Os painéis agora mostrarão os dados.');
+      setViewsStatus('ok');
+    } catch (err) {
+      console.error('Failed to refresh views:', err);
+      toast.error('Falha ao atualizar views. Tente novamente em alguns minutos.');
+    } finally {
+      setRefreshingViews(false);
+    }
+  };
 
   // Load empresas
   useEffect(() => {
@@ -194,12 +231,22 @@ export default function ImportarEFD() {
             if (updatedJob.status === 'completed') {
               const counts = updatedJob.counts as ImportCounts;
               const total = counts.mercadorias + counts.energia_agua + counts.fretes + (counts.servicos || 0);
-              toast.success(`Importação concluída! ${total} registros importados. Redirecionando...`);
               
-              // Redirect to Mercadorias after 2 seconds
+              if (counts.refresh_success === false) {
+                toast.warning(
+                  `Importação concluída! ${total} registros importados. Os painéis podem demorar para atualizar. Use o botão "Atualizar Views" se necessário.`,
+                  { duration: 8000 }
+                );
+                setViewsStatus('empty');
+              } else {
+                toast.success(`Importação concluída! ${total} registros importados. Redirecionando...`);
+                setViewsStatus('ok');
+              }
+              
+              // Redirect to Mercadorias after 3 seconds
               setTimeout(() => {
                 navigate('/mercadorias');
-              }, 2000);
+              }, 3000);
             } else if (updatedJob.status === 'failed') {
               toast.error(`Importação falhou: ${updatedJob.error_message || 'Erro desconhecido'}`);
             }
@@ -518,6 +565,42 @@ export default function ImportarEFD() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Views Status Alert */}
+      {viewsStatus === 'empty' && jobs.some(j => j.status === 'completed') && (
+        <Card className="border-warning bg-warning/5">
+          <CardContent className="flex items-center justify-between py-4">
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="h-5 w-5 text-warning" />
+              <div>
+                <p className="font-medium text-warning">Views desatualizadas</p>
+                <p className="text-sm text-muted-foreground">
+                  Os dados foram importados mas os painéis ainda não foram atualizados.
+                </p>
+              </div>
+            </div>
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={handleRefreshViews}
+              disabled={refreshingViews}
+              className="border-warning text-warning hover:bg-warning hover:text-warning-foreground"
+            >
+              {refreshingViews ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Atualizando...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Atualizar Views
+                </>
+              )}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Upload Card */}
       <Card>
