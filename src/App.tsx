@@ -10,6 +10,7 @@ import Auth from "./pages/Auth";
 import Onboarding from "./pages/Onboarding";
 import Dashboard from "./pages/Dashboard";
 import Mercadorias from "./pages/Mercadorias";
+import Servicos from "./pages/Servicos";
 import Aliquotas from "./pages/Aliquotas";
 import Empresas from "./pages/Empresas";
 import Configuracoes from "./pages/Configuracoes";
@@ -38,6 +39,7 @@ const App = () => (
               <Route path="/onboarding" element={<AdminRoute><Onboarding /></AdminRoute>} />
               <Route path="/aliquotas" element={<Aliquotas />} />
               <Route path="/mercadorias" element={<Mercadorias />} />
+              <Route path="/servicos" element={<Servicos />} />
               <Route path="/energia-agua" element={<EnergiaAgua />} />
               <Route path="/fretes" element={<Fretes />} />
               <Route path="/dashboard" element={<Dashboard />} />

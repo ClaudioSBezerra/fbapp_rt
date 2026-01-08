@@ -448,6 +448,51 @@ export type Database = {
         }
         Relationships: []
       }
+      servicos: {
+        Row: {
+          cofins: number
+          created_at: string
+          descricao: string | null
+          filial_id: string
+          id: string
+          iss: number
+          mes_ano: string
+          ncm: string | null
+          pis: number
+          tipo: string
+          updated_at: string
+          valor: number
+        }
+        Insert: {
+          cofins?: number
+          created_at?: string
+          descricao?: string | null
+          filial_id: string
+          id?: string
+          iss?: number
+          mes_ano: string
+          ncm?: string | null
+          pis?: number
+          tipo: string
+          updated_at?: string
+          valor?: number
+        }
+        Update: {
+          cofins?: number
+          created_at?: string
+          descricao?: string | null
+          filial_id?: string
+          id?: string
+          iss?: number
+          mes_ano?: string
+          ncm?: string | null
+          pis?: number
+          tipo?: string
+          updated_at?: string
+          valor?: number
+        }
+        Relationships: []
+      }
       tenants: {
         Row: {
           created_at: string
@@ -560,6 +605,10 @@ export type Database = {
             }
             Returns: number
           }
+      delete_servicos_batch: {
+        Args: { _batch_size?: number; _filial_ids: string[]; _user_id: string }
+        Returns: number
+      }
       get_mercadorias_aggregated: {
         Args: never
         Returns: {
@@ -619,6 +668,19 @@ export type Database = {
           filial_id: string
           filial_nome: string
           icms: number
+          mes_ano: string
+          pis: number
+          tipo: string
+          valor: number
+        }[]
+      }
+      get_mv_servicos_aggregated: {
+        Args: never
+        Returns: {
+          cofins: number
+          filial_id: string
+          filial_nome: string
+          iss: number
           mes_ano: string
           pis: number
           tipo: string

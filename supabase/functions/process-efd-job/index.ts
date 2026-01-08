@@ -14,14 +14,16 @@ const MAX_LINES_PER_CHUNK = 100000; // Process max 100k lines per execution
 const MAX_EXECUTION_TIME_MS = 45000; // Stop after 45 seconds to have safety margin
 
 // Valid prefixes by scope
-const ALL_PREFIXES = ["|0000|", "|C010|", "|C100|", "|C500|", "|C600|", "|D010|", "|D100|", "|D101|", "|D105|", "|D500|", "|D501|", "|D505|"];
+const ALL_PREFIXES = ["|0000|", "|A010|", "|A100|", "|C010|", "|C100|", "|C500|", "|C600|", "|D010|", "|D100|", "|D101|", "|D105|", "|D500|", "|D501|", "|D505|"];
+const ONLY_A_PREFIXES = ["|0000|", "|A010|", "|A100|"];
 const ONLY_C_PREFIXES = ["|0000|", "|C010|", "|C100|", "|C500|", "|C600|"];
 const ONLY_D_PREFIXES = ["|0000|", "|D010|", "|D100|", "|D101|", "|D105|", "|D500|", "|D501|", "|D505|"];
 
-type ImportScope = 'all' | 'only_c' | 'only_d';
+type ImportScope = 'all' | 'only_a' | 'only_c' | 'only_d';
 
 function getValidPrefixes(scope: ImportScope): string[] {
   switch (scope) {
+    case 'only_a': return ONLY_A_PREFIXES;
     case 'only_c': return ONLY_C_PREFIXES;
     case 'only_d': return ONLY_D_PREFIXES;
     default: return ALL_PREFIXES;
@@ -31,7 +33,7 @@ function getValidPrefixes(scope: ImportScope): string[] {
 type EFDType = 'icms_ipi' | 'contribuicoes' | null;
 
 interface ParsedRecord {
-  table: "mercadorias" | "energia_agua" | "fretes";
+  table: "mercadorias" | "energia_agua" | "fretes" | "servicos";
   data: Record<string, any>;
 }
 
@@ -55,15 +57,18 @@ interface BatchBuffers {
   mercadorias: any[];
   energia_agua: any[];
   fretes: any[];
+  servicos: any[];
 }
 
 interface InsertCounts {
   mercadorias: number;
   energia_agua: number;
   fretes: number;
+  servicos: number;
 }
 
 interface SeenCounts {
+  a100: number;
   c100: number;
   c500: number;
   c600: number;
@@ -76,11 +81,12 @@ interface SeenCounts {
 }
 
 function createSeenCounts(): SeenCounts {
-  return { c100: 0, c500: 0, c600: 0, d100: 0, d101: 0, d105: 0, d500: 0, d501: 0, d505: 0 };
+  return { a100: 0, c100: 0, c500: 0, c600: 0, d100: 0, d101: 0, d105: 0, d500: 0, d501: 0, d505: 0 };
 }
 
 // Block limits control
 interface BlockLimits {
+  a100: { count: number; limit: number };
   c100: { count: number; limit: number };
   c500: { count: number; limit: number };
   c600: { count: number; limit: number };
@@ -97,8 +103,18 @@ function createBlockLimits(recordLimit: number, scope: ImportScope): BlockLimits
   const inactive = -1;
   
   switch (scope) {
+    case 'only_a':
+      return {
+        a100: { count: 0, limit: recordLimit },
+        c100: { count: 0, limit: inactive },
+        c500: { count: 0, limit: inactive },
+        c600: { count: 0, limit: inactive },
+        d100: { count: 0, limit: inactive },
+        d500: { count: 0, limit: inactive },
+      };
     case 'only_c':
       return {
+        a100: { count: 0, limit: inactive },
         c100: { count: 0, limit: recordLimit },
         c500: { count: 0, limit: recordLimit },
         c600: { count: 0, limit: recordLimit },
@@ -107,6 +123,7 @@ function createBlockLimits(recordLimit: number, scope: ImportScope): BlockLimits
       };
     case 'only_d':
       return {
+        a100: { count: 0, limit: inactive },
         c100: { count: 0, limit: inactive },
         c500: { count: 0, limit: inactive },
         c600: { count: 0, limit: inactive },
@@ -115,6 +132,7 @@ function createBlockLimits(recordLimit: number, scope: ImportScope): BlockLimits
       };
     default: // 'all'
       return {
+        a100: { count: 0, limit: recordLimit },
         c100: { count: 0, limit: recordLimit },
         c500: { count: 0, limit: recordLimit },
         c600: { count: 0, limit: recordLimit },
@@ -237,6 +255,7 @@ function processLine(
       }
       break;
 
+    case "A010":
     case "C010":
     case "D010":
       if (fields.length > 2 && fields[2]) {
@@ -244,6 +263,35 @@ function processLine(
         context.currentCNPJ = cnpj;
         // Return the CNPJ to be processed for filial lookup/creation
         return { record: null, context, filialUpdate: cnpj };
+      }
+      break;
+
+    case "A100":
+      // Nota Fiscal de Serviço - Bloco A (EFD Contribuições)
+      // Layout: |A100|IND_OPER|IND_EMIT|COD_PART|COD_SIT|SER|SUB|NUM_DOC|CHV_NFSE|DT_DOC|DT_EXE_SERV|VL_DOC|IND_PGTO|VL_DESC|VL_BC_PIS|VL_PIS|VL_BC_COFINS|VL_COFINS|VL_PIS_RET|VL_COFINS_RET|VL_ISS|
+      // Índices: 2=IND_OPER, 8=NUM_DOC, 9=CHV_NFSE, 12=VL_DOC, 16=VL_PIS, 18=VL_COFINS, 21=VL_ISS
+      blockType = "a100";
+      
+      if (fields.length > 12) {
+        const indOper = fields[2];
+        const tipo = indOper === "0" ? "entrada" : "saida";
+        const valorDoc = parseNumber(fields[12]); // VL_DOC
+        
+        if (valorDoc > 0) {
+          record = {
+            table: "servicos",
+            data: {
+              tipo,
+              mes_ano: context.currentPeriod,
+              ncm: null, // Serviços usam NBS, mas não extraímos aqui
+              descricao: `NFS-e ${fields[9] || fields[8] || ""}`.trim().substring(0, 200) || "Nota de Serviço",
+              valor: valorDoc,
+              pis: fields.length > 16 ? parseNumber(fields[16]) : 0,     // VL_PIS
+              cofins: fields.length > 18 ? parseNumber(fields[18]) : 0,  // VL_COFINS
+              iss: fields.length > 21 ? parseNumber(fields[21]) : 0,     // VL_ISS
+            },
+          };
+        }
       }
       break;
 
@@ -778,14 +826,16 @@ serve(async (req) => {
       mercadorias: [],
       energia_agua: [],
       fretes: [],
+      servicos: [],
     };
     
     // Initialize counts with existing values (for resumption)
-    const existingCounts = job.counts as any || { mercadorias: 0, energia_agua: 0, fretes: 0 };
+    const existingCounts = job.counts as any || { mercadorias: 0, energia_agua: 0, fretes: 0, servicos: 0 };
     const counts: InsertCounts = {
       mercadorias: existingCounts.mercadorias || 0,
       energia_agua: existingCounts.energia_agua || 0,
       fretes: existingCounts.fretes || 0,
+      servicos: existingCounts.servicos || 0,
     };
     
     // Track seen record counts (for diagnostics)
@@ -840,12 +890,15 @@ serve(async (req) => {
 
       // Use upsert with ignoreDuplicates to avoid inserting duplicate records
       // This requires unique constraints on the tables (will be added via migration after data cleanup)
+      const onConflictMap: Record<keyof BatchBuffers, string> = {
+        mercadorias: 'filial_id,mes_ano,tipo,descricao,valor,pis,cofins,icms,ipi',
+        fretes: 'filial_id,mes_ano,tipo,valor,pis,cofins,icms',
+        energia_agua: 'filial_id,mes_ano,tipo_operacao,tipo_servico,valor,pis,cofins,icms',
+        servicos: 'filial_id,mes_ano,tipo,descricao,valor,pis,cofins,iss',
+      };
+      
       const { error } = await supabase.from(table).upsert(batches[table], { 
-        onConflict: table === 'mercadorias' 
-          ? 'filial_id,mes_ano,tipo,descricao,valor,pis,cofins,icms,ipi'
-          : table === 'fretes'
-          ? 'filial_id,mes_ano,tipo,valor,pis,cofins,icms'
-          : 'filial_id,mes_ano,tipo_operacao,tipo_servico,valor,pis,cofins,icms',
+        onConflict: onConflictMap[table],
         ignoreDuplicates: true 
       });
       if (error) {
@@ -869,7 +922,7 @@ serve(async (req) => {
     };
 
     const flushAllBatches = async (): Promise<string | null> => {
-      for (const table of ["mercadorias", "energia_agua", "fretes"] as const) {
+      for (const table of ["mercadorias", "energia_agua", "fretes", "servicos"] as const) {
         const err = await flushBatch(table);
         if (err) return err;
       }
@@ -1135,7 +1188,7 @@ serve(async (req) => {
             .update({ progress, total_lines: totalLinesProcessed, counts })
             .eq("id", jobId);
           lastProgressUpdate = linesProcessedInChunk;
-          console.log(`Job ${jobId}: Progress ${progress}% (${totalLinesProcessed} lines, mercadorias: ${counts.mercadorias}, energia_agua: ${counts.energia_agua}, fretes: ${counts.fretes})`);
+          console.log(`Job ${jobId}: Progress ${progress}% (${totalLinesProcessed} lines, mercadorias: ${counts.mercadorias}, servicos: ${counts.servicos}, energia_agua: ${counts.energia_agua}, fretes: ${counts.fretes})`);
         }
       }
 
@@ -1146,8 +1199,8 @@ serve(async (req) => {
     }
 
     // Log block limits and seen counts info
-    console.log(`Job ${jobId}: Block counts - C100: ${blockLimits.c100.count}, C500: ${blockLimits.c500.count}, C600: ${blockLimits.c600.count}, D100: ${blockLimits.d100.count}, D500: ${blockLimits.d500.count}`);
-    console.log(`Job ${jobId}: Seen counts - C100: ${seenCounts.c100}, C500: ${seenCounts.c500}, C600: ${seenCounts.c600}, D100: ${seenCounts.d100}, D101: ${seenCounts.d101}, D105: ${seenCounts.d105}, D500: ${seenCounts.d500}, D501: ${seenCounts.d501}, D505: ${seenCounts.d505}`);
+    console.log(`Job ${jobId}: Block counts - A100: ${blockLimits.a100.count}, C100: ${blockLimits.c100.count}, C500: ${blockLimits.c500.count}, C600: ${blockLimits.c600.count}, D100: ${blockLimits.d100.count}, D500: ${blockLimits.d500.count}`);
+    console.log(`Job ${jobId}: Seen counts - A100: ${seenCounts.a100}, C100: ${seenCounts.c100}, C500: ${seenCounts.c500}, C600: ${seenCounts.c600}, D100: ${seenCounts.d100}, D101: ${seenCounts.d101}, D105: ${seenCounts.d105}, D500: ${seenCounts.d500}, D501: ${seenCounts.d501}, D505: ${seenCounts.d505}`);
 
     // Finalize any pending D100/D500 records before flushing (important for chunk boundaries)
     const chunkFinalD100 = finalizePendingD100(context);
@@ -1253,9 +1306,9 @@ serve(async (req) => {
     }
 
     // Job fully completed
-    const totalRecords = counts.mercadorias + counts.energia_agua + counts.fretes;
+    const totalRecords = counts.mercadorias + counts.servicos + counts.energia_agua + counts.fretes;
     console.log(`Job ${jobId}: Completed! Total lines: ${totalLinesProcessed}, Total records: ${totalRecords}`);
-    console.log(`Job ${jobId}: Final seen counts - D100: ${seenCounts.d100}, D101: ${seenCounts.d101}, D105: ${seenCounts.d105}, D500: ${seenCounts.d500}, D501: ${seenCounts.d501}, D505: ${seenCounts.d505}`);
+    console.log(`Job ${jobId}: Final seen counts - A100: ${seenCounts.a100}, D100: ${seenCounts.d100}, D101: ${seenCounts.d101}, D105: ${seenCounts.d105}, D500: ${seenCounts.d500}, D501: ${seenCounts.d501}, D505: ${seenCounts.d505}`);
 
     // Refresh materialized views so /mercadorias shows updated data immediately
     console.log(`Job ${jobId}: Refreshing materialized views...`);
