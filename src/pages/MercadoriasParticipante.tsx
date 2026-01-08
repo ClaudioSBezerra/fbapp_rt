@@ -5,14 +5,16 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Download, Search, Users, HelpCircle } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { Download, Users, HelpCircle, ChevronsUpDown, Check, ArrowDownRight, ArrowUpRight } from 'lucide-react';
 import { exportToExcel } from '@/lib/exportToExcel';
+import { cn } from '@/lib/utils';
 
 interface Aliquota {
   ano: number;
@@ -223,6 +225,7 @@ export default function MercadoriasParticipante() {
   const [filterMesAno, setFilterMesAno] = useState<string>('all');
   const [filterParticipante, setFilterParticipante] = useState('');
   const [selectedYear, setSelectedYear] = useState(2027);
+  const [openCombobox, setOpenCombobox] = useState(false);
 
   // Buscar alíquotas
   const { data: aliquotas = [] } = useQuery({
@@ -255,6 +258,21 @@ export default function MercadoriasParticipante() {
 
   // Anos disponíveis para projeção
   const anosDisponiveis = useMemo(() => aliquotas.map(a => a.ano), [aliquotas]);
+
+  // Participantes únicos para o combobox
+  const participantesUnicos = useMemo(() => {
+    const map = new Map<string, { cod_part: string; nome: string; cnpj: string | null }>();
+    participanteData.forEach(row => {
+      if (!map.has(row.participante_nome)) {
+        map.set(row.participante_nome, {
+          cod_part: row.cod_part,
+          nome: row.participante_nome,
+          cnpj: row.participante_cnpj
+        });
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => a.nome.localeCompare(b.nome));
+  }, [participanteData]);
 
   // Filtrar dados
   const filteredData = useMemo(() => {
@@ -299,9 +317,24 @@ export default function MercadoriasParticipante() {
       const totalImpostosAtuais = icms + pisCofins;
       const totalReforma = ibsProjetado + cbsProjetado;
       const totalImpostosPagar = icmsProjetado + pisCofinsProjetado + ibsProjetado + cbsProjetado;
+      const diferencaProjetado = totalImpostosAtuais - totalReforma;
       const diferencaReal = totalImpostosPagar - (icms + pisCofins);
       
-      return { valor, totalImpostosAtuais, totalReforma, diferencaReal };
+      return { 
+        valor, 
+        icms, 
+        pisCofins, 
+        icmsProjetado, 
+        pisCofinsProjetado, 
+        baseIbsCbs, 
+        ibsProjetado, 
+        cbsProjetado, 
+        totalImpostosAtuais, 
+        totalReforma, 
+        totalImpostosPagar, 
+        diferencaProjetado, 
+        diferencaReal 
+      };
     };
     
     return { 
@@ -391,18 +424,62 @@ export default function MercadoriasParticipante() {
               </Select>
             </div>
 
-            {/* Filtro Participante */}
-            <div className="space-y-1 flex-1 min-w-[200px] max-w-[350px]">
-              <Label className="text-xs">Buscar Participante</Label>
-              <div className="relative">
-                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Nome ou CNPJ..."
-                  value={filterParticipante}
-                  onChange={(e) => setFilterParticipante(e.target.value)}
-                  className="pl-8"
-                />
-              </div>
+            {/* Filtro Participante - Combobox */}
+            <div className="space-y-1 flex-1 min-w-[200px] max-w-[400px]">
+              <Label className="text-xs">Participante</Label>
+              <Popover open={openCombobox} onOpenChange={setOpenCombobox}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={openCombobox}
+                    className="w-full justify-between font-normal"
+                  >
+                    <span className="truncate">
+                      {filterParticipante || "Todos os participantes"}
+                    </span>
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[400px] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Buscar participante..." />
+                    <CommandList>
+                      <CommandEmpty>Nenhum participante encontrado.</CommandEmpty>
+                      <CommandGroup>
+                        <CommandItem 
+                          value="todos"
+                          onSelect={() => {
+                            setFilterParticipante('');
+                            setOpenCombobox(false);
+                          }}
+                        >
+                          <Check className={cn("mr-2 h-4 w-4", filterParticipante === '' ? "opacity-100" : "opacity-0")} />
+                          Todos os participantes
+                        </CommandItem>
+                        {participantesUnicos.map((participante) => (
+                          <CommandItem
+                            key={participante.cod_part}
+                            value={`${participante.nome} ${participante.cnpj || ''}`}
+                            onSelect={() => {
+                              setFilterParticipante(participante.nome);
+                              setOpenCombobox(false);
+                            }}
+                          >
+                            <Check className={cn("mr-2 h-4 w-4", filterParticipante === participante.nome ? "opacity-100" : "opacity-0")} />
+                            <span className="truncate flex-1">{participante.nome}</span>
+                            {participante.cnpj && (
+                              <span className="ml-2 text-xs text-muted-foreground shrink-0">
+                                {formatCNPJ(participante.cnpj)}
+                              </span>
+                            )}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
 
             {/* Ano de Projeção */}
@@ -423,68 +500,136 @@ export default function MercadoriasParticipante() {
         </CardContent>
       </Card>
 
-      {/* Cards de Resumo */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card>
+      {/* Cards de Resumo - Formato detalhado igual Mercadorias */}
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card className="border-border/50">
           <CardHeader className="pb-2">
-            <CardTitle className="text-lg">Entradas</CardTitle>
-            <CardDescription>Total de compras por participante</CardDescription>
+            <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-2">
+              <ArrowDownRight className="h-3.5 w-3.5" /> Total Entradas (Créditos) - Projeção {selectedYear}
+            </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-2 text-sm">
-              <div>
-                <p className="text-muted-foreground">Valor Total</p>
-                <p className="font-bold text-lg">{formatCurrency(totals.entradas.valor)}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">Tot. Impostos Atuais</p>
-                <p className="font-bold">{formatCurrency(totals.entradas.totalImpostosAtuais)}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground text-ibs-cbs">Total Reforma</p>
-                <p className="font-bold text-ibs-cbs">{formatCurrency(totals.entradas.totalReforma)}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">Dif. a pagar</p>
-                <Badge
-                  variant={totals.entradas.diferencaReal > 0 ? 'destructive' : totals.entradas.diferencaReal < 0 ? 'default' : 'secondary'}
-                  className={`text-xs ${totals.entradas.diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}`}
-                >
-                  {totals.entradas.diferencaReal > 0 ? '+' : ''}{formatCurrency(totals.entradas.diferencaReal)}
-                </Badge>
-              </div>
+          <CardContent className="space-y-1.5">
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] text-muted-foreground">Valor (VL_DOC):</span>
+              <span className="text-sm font-bold">{formatCurrency(totals.entradas.valor)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] text-muted-foreground">ICMS:</span>
+              <span className="text-sm font-bold">{formatCurrency(totals.entradas.icms)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] text-muted-foreground">ICMS Projetado:</span>
+              <span className="text-sm font-bold">{formatCurrency(totals.entradas.icmsProjetado)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] text-muted-foreground">PIS+COFINS:</span>
+              <span className="text-sm font-bold text-pis-cofins">{formatCurrency(totals.entradas.pisCofins)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] text-muted-foreground">PIS+COFINS Projetado:</span>
+              <span className="text-sm font-bold text-pis-cofins">{formatCurrency(totals.entradas.pisCofinsProjetado)}</span>
+            </div>
+            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
+              <span className="text-[10px] font-medium">Tot. Impostos Atuais:</span>
+              <span className="text-sm font-bold">{formatCurrency(totals.entradas.totalImpostosAtuais)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] text-muted-foreground">Base IBS/CBS:</span>
+              <span className="text-sm font-bold">{formatCurrency(totals.entradas.baseIbsCbs)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] text-muted-foreground">IBS Projetado:</span>
+              <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totals.entradas.ibsProjetado)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] text-muted-foreground">CBS Projetado:</span>
+              <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totals.entradas.cbsProjetado)}</span>
+            </div>
+            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
+              <span className="text-[10px] font-medium text-ibs-cbs">Total Reforma:</span>
+              <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totals.entradas.totalReforma)}</span>
+            </div>
+            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
+              <span className="text-[10px] font-medium">Tot. Imp. a pagar:</span>
+              <span className="text-sm font-bold">{formatCurrency(totals.entradas.totalImpostosPagar)}</span>
+            </div>
+            <div className="flex justify-between items-center pt-1 border-t">
+              <span className="text-[10px] text-muted-foreground">Dif. Imp. Atual e Imp. Proj.:</span>
+              <Badge variant={totals.entradas.diferencaProjetado > 0 ? 'destructive' : totals.entradas.diferencaProjetado < 0 ? 'default' : 'secondary'} className={totals.entradas.diferencaProjetado < 0 ? 'bg-positive text-positive-foreground' : ''}>
+                {totals.entradas.diferencaProjetado > 0 ? '+' : ''}{formatCurrency(totals.entradas.diferencaProjetado)}
+              </Badge>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] text-muted-foreground">Dif. a pagar:</span>
+              <Badge variant={totals.entradas.diferencaReal > 0 ? 'destructive' : totals.entradas.diferencaReal < 0 ? 'default' : 'secondary'} className={totals.entradas.diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}>
+                {totals.entradas.diferencaReal > 0 ? '+' : ''}{formatCurrency(totals.entradas.diferencaReal)}
+              </Badge>
             </div>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="border-border/50">
           <CardHeader className="pb-2">
-            <CardTitle className="text-lg">Saídas</CardTitle>
-            <CardDescription>Total de vendas por participante</CardDescription>
+            <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-2">
+              <ArrowUpRight className="h-3.5 w-3.5" /> Total Saídas (Débitos) - Projeção {selectedYear}
+            </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-2 text-sm">
-              <div>
-                <p className="text-muted-foreground">Valor Total</p>
-                <p className="font-bold text-lg">{formatCurrency(totals.saidas.valor)}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">Tot. Impostos Atuais</p>
-                <p className="font-bold">{formatCurrency(totals.saidas.totalImpostosAtuais)}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground text-ibs-cbs">Total Reforma</p>
-                <p className="font-bold text-ibs-cbs">{formatCurrency(totals.saidas.totalReforma)}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">Dif. a pagar</p>
-                <Badge
-                  variant={totals.saidas.diferencaReal > 0 ? 'destructive' : totals.saidas.diferencaReal < 0 ? 'default' : 'secondary'}
-                  className={`text-xs ${totals.saidas.diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}`}
-                >
-                  {totals.saidas.diferencaReal > 0 ? '+' : ''}{formatCurrency(totals.saidas.diferencaReal)}
-                </Badge>
-              </div>
+          <CardContent className="space-y-1.5">
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] text-muted-foreground">Valor (VL_DOC):</span>
+              <span className="text-sm font-bold">{formatCurrency(totals.saidas.valor)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] text-muted-foreground">ICMS:</span>
+              <span className="text-sm font-bold">{formatCurrency(totals.saidas.icms)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] text-muted-foreground">ICMS Projetado:</span>
+              <span className="text-sm font-bold">{formatCurrency(totals.saidas.icmsProjetado)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] text-muted-foreground">PIS+COFINS:</span>
+              <span className="text-sm font-bold text-pis-cofins">{formatCurrency(totals.saidas.pisCofins)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] text-muted-foreground">PIS+COFINS Projetado:</span>
+              <span className="text-sm font-bold text-pis-cofins">{formatCurrency(totals.saidas.pisCofinsProjetado)}</span>
+            </div>
+            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
+              <span className="text-[10px] font-medium">Tot. Impostos Atuais:</span>
+              <span className="text-sm font-bold">{formatCurrency(totals.saidas.totalImpostosAtuais)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] text-muted-foreground">Base IBS/CBS:</span>
+              <span className="text-sm font-bold">{formatCurrency(totals.saidas.baseIbsCbs)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] text-muted-foreground">IBS Projetado:</span>
+              <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totals.saidas.ibsProjetado)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] text-muted-foreground">CBS Projetado:</span>
+              <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totals.saidas.cbsProjetado)}</span>
+            </div>
+            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
+              <span className="text-[10px] font-medium text-ibs-cbs">Total Reforma:</span>
+              <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totals.saidas.totalReforma)}</span>
+            </div>
+            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
+              <span className="text-[10px] font-medium">Tot. Imp. a pagar:</span>
+              <span className="text-sm font-bold">{formatCurrency(totals.saidas.totalImpostosPagar)}</span>
+            </div>
+            <div className="flex justify-between items-center pt-1 border-t">
+              <span className="text-[10px] text-muted-foreground">Dif. Imp. Atual e Imp. Proj.:</span>
+              <Badge variant={totals.saidas.diferencaProjetado > 0 ? 'destructive' : totals.saidas.diferencaProjetado < 0 ? 'default' : 'secondary'} className={totals.saidas.diferencaProjetado < 0 ? 'bg-positive text-positive-foreground' : ''}>
+                {totals.saidas.diferencaProjetado > 0 ? '+' : ''}{formatCurrency(totals.saidas.diferencaProjetado)}
+              </Badge>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] text-muted-foreground">Dif. a pagar:</span>
+              <Badge variant={totals.saidas.diferencaReal > 0 ? 'destructive' : totals.saidas.diferencaReal < 0 ? 'default' : 'secondary'} className={totals.saidas.diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}>
+                {totals.saidas.diferencaReal > 0 ? '+' : ''}{formatCurrency(totals.saidas.diferencaReal)}
+              </Badge>
             </div>
           </CardContent>
         </Card>
