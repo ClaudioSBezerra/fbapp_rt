@@ -139,7 +139,7 @@ const ServicosTable = ({ data, tipo, aliquotas, selectedYear }: ServicosTablePro
             <TableHead className="text-right text-xs">
               <Tooltip>
                 <TooltipTrigger className="cursor-help underline decoration-dotted decoration-muted-foreground inline-flex items-center gap-1 whitespace-nowrap">
-                  Dif. a pagar
+                  Dif. deb/cred.
                   <HelpCircle className="h-3 w-3 text-muted-foreground" />
                 </TooltipTrigger>
                 <TooltipContent side="top" className="max-w-xs">
@@ -377,7 +377,7 @@ export default function Servicos() {
         'Total Reforma': totalReforma,
         'Tot. Imp. a pagar': totalImpostosPagar,
         'Dif. Imp. Atual e Imp. Proj.': diferencaProjetado,
-        'Dif. a pagar': diferencaReal,
+        'Dif. deb/cred.': diferencaReal,
       };
     });
     exportToExcel(exportData, 'servicos');

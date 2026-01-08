@@ -151,7 +151,7 @@ function ParticipanteTable({ data, tipo, aliquotas, selectedYear, isLoading }: P
             <TableHead className="text-right text-xs">
               <Tooltip>
                 <TooltipTrigger className="cursor-help underline decoration-dotted decoration-muted-foreground inline-flex items-center gap-1 whitespace-nowrap">
-                  Dif. a pagar
+                  Dif. deb/cred.
                   <HelpCircle className="h-3 w-3 text-muted-foreground" />
                 </TooltipTrigger>
                 <TooltipContent side="top" className="max-w-xs">
@@ -445,7 +445,7 @@ export default function MercadoriasParticipante() {
         'Total Reforma': totalReforma,
         'Tot. Imp. a pagar': totalImpostosPagar,
         'Dif. Imp. Atual e Proj.': diferencaProjetado,
-        'Dif. a pagar': diferencaReal,
+        'Dif. deb/cred.': diferencaReal,
       };
     });
     exportToExcel(exportData, 'mercadorias-participante');
@@ -647,7 +647,7 @@ export default function MercadoriasParticipante() {
               </Badge>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground">Dif. a pagar:</span>
+              <span className="text-[10px] text-muted-foreground">Dif. deb/cred.:</span>
               <Badge variant={totals.entradas.diferencaReal > 0 ? 'destructive' : totals.entradas.diferencaReal < 0 ? 'default' : 'secondary'} className={totals.entradas.diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}>
                 {totals.entradas.diferencaReal > 0 ? '+' : ''}{formatCurrency(totals.entradas.diferencaReal)}
               </Badge>
@@ -713,7 +713,7 @@ export default function MercadoriasParticipante() {
               </Badge>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground">Dif. a pagar:</span>
+              <span className="text-[10px] text-muted-foreground">Dif. deb/cred.:</span>
               <Badge variant={totals.saidas.diferencaReal > 0 ? 'destructive' : totals.saidas.diferencaReal < 0 ? 'default' : 'secondary'} className={totals.saidas.diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}>
                 {totals.saidas.diferencaReal > 0 ? '+' : ''}{formatCurrency(totals.saidas.diferencaReal)}
               </Badge>

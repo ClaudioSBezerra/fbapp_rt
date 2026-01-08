@@ -376,7 +376,7 @@ export default function Dashboard() {
           </span>
         </div>
         <div className="flex justify-between items-center">
-          <span className="text-[10px] text-muted-foreground">Dif. a pagar:</span>
+          <span className="text-[10px] text-muted-foreground">Dif. deb/cred.:</span>
           <span className={`text-xs font-bold ${totais.diferencaReal > 0 ? 'text-destructive' : totais.diferencaReal < 0 ? 'text-positive' : ''}`}>
             {totais.diferencaReal > 0 ? '+' : ''}{formatCurrency(totais.diferencaReal)}
           </span>
