@@ -368,11 +368,11 @@ export default function Mercadorias() {
 
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 sm:space-y-6 animate-fade-in">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <h1 className="text-xl font-bold text-foreground">Painel de Mercadorias</h1>
-          <p className="text-sm text-muted-foreground">Comparativo PIS+COFINS vs IBS+CBS agregado por Filial e Mês</p>
+          <h1 className="text-lg sm:text-xl font-bold text-foreground">Painel de Mercadorias</h1>
+          <p className="text-xs sm:text-sm text-muted-foreground">Comparativo PIS+COFINS vs IBS+CBS agregado por Filial e Mês</p>
         </div>
         <div className="flex items-center gap-2">
           <Button 
@@ -406,15 +406,15 @@ export default function Mercadorias() {
       {/* Filters */}
       <Card className="border-border/50">
         <CardContent className="pt-4">
-          <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-4 w-full">
             <div className="flex items-center gap-2">
               <Filter className="h-3.5 w-3.5 text-muted-foreground" />
               <span className="text-xs font-medium">Filtros:</span>
             </div>
-            <div className="flex items-center gap-2">
-              <Label className="text-xs">Filial:</Label>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <Label className="text-xs whitespace-nowrap">Filial:</Label>
               <Select value={filterFilial} onValueChange={setFilterFilial}>
-                <SelectTrigger className="w-[200px]">
+                <SelectTrigger className="w-full sm:w-[200px]">
                   <SelectValue placeholder="Todas" />
                 </SelectTrigger>
                 <SelectContent>
@@ -427,10 +427,10 @@ export default function Mercadorias() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex items-center gap-2">
-              <Label className="text-xs">Mês/Ano:</Label>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <Label className="text-xs whitespace-nowrap">Mês/Ano:</Label>
               <Select value={filterMesAno} onValueChange={setFilterMesAno}>
-                <SelectTrigger className="w-[150px]">
+                <SelectTrigger className="w-full sm:w-[150px]">
                   <SelectValue placeholder="Todos" />
                 </SelectTrigger>
                 <SelectContent>
@@ -443,11 +443,11 @@ export default function Mercadorias() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex items-center gap-2">
-              <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
-              <Label className="text-xs">Ano Projeção:</Label>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <Calendar className="h-3.5 w-3.5 text-muted-foreground hidden sm:block" />
+              <Label className="text-xs whitespace-nowrap">Ano Projeção:</Label>
               <Select value={anoProjecao.toString()} onValueChange={(v) => setAnoProjecao(parseInt(v))}>
-                <SelectTrigger className="w-[120px]">
+                <SelectTrigger className="w-full sm:w-[120px]">
                   <SelectValue placeholder="Ano" />
                 </SelectTrigger>
                 <SelectContent>
@@ -461,7 +461,7 @@ export default function Mercadorias() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-3 sm:gap-4 grid-cols-1 md:grid-cols-2">
         <Card className="border-border/50">
           <CardHeader className="pb-2">
             <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-2">
@@ -590,7 +590,7 @@ export default function Mercadorias() {
           </CardHeader>
           <CardContent>
             <div className="mb-4">
-              <TabsList className="justify-start">
+              <TabsList className="grid w-full grid-cols-2 sm:w-auto sm:inline-flex">
                 <TabsTrigger value="entradas">Entradas</TabsTrigger>
                 <TabsTrigger value="saidas">Saídas</TabsTrigger>
               </TabsList>

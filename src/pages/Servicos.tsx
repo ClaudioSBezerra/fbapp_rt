@@ -387,12 +387,12 @@ export default function Servicos() {
   }
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Serviços</h1>
-          <p className="text-muted-foreground">Análise de aquisição e prestação de serviços (Bloco A - EFD Contribuições)</p>
+          <h1 className="text-lg sm:text-2xl font-bold text-foreground">Serviços</h1>
+          <p className="text-xs sm:text-sm text-muted-foreground">Análise de aquisição e prestação de serviços (Bloco A - EFD Contribuições)</p>
         </div>
         <Button onClick={handleExport} variant="outline" size="sm">
           <Download className="h-4 w-4 mr-2" />
@@ -461,7 +461,7 @@ export default function Servicos() {
       </Card>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
         {/* Aquisições (Entradas) */}
         <Card>
           <CardHeader className="pb-2">
@@ -558,7 +558,7 @@ export default function Servicos() {
       <Card>
         <CardContent className="pt-6">
           <Tabs defaultValue="aquisicoes" className="w-full">
-            <TabsList className="mb-4">
+            <TabsList className="mb-4 grid w-full grid-cols-2 sm:w-auto sm:inline-flex">
               <TabsTrigger value="aquisicoes">Aquisições de Serviços</TabsTrigger>
               <TabsTrigger value="prestacoes">Prestações de Serviços</TabsTrigger>
             </TabsList>

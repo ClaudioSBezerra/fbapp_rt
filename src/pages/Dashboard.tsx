@@ -380,21 +380,21 @@ export default function Dashboard() {
   );
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between flex-wrap gap-4">
+    <div className="space-y-4 sm:space-y-6 animate-fade-in">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <h1 className="text-xl font-bold text-foreground">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">
+          <h1 className="text-lg sm:text-xl font-bold text-foreground">Dashboard</h1>
+          <p className="text-xs sm:text-sm text-muted-foreground">
             Visão consolidada da carga tributária 
             {periodoSelecionado && ` - ${formatPeriodo(periodoSelecionado)}`}
           </p>
         </div>
-        <div className="flex items-center gap-4 flex-wrap">
-          <div className="flex items-center gap-2">
-            <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
-            <Label className="text-xs font-medium">Período:</Label>
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-4 w-full sm:w-auto">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <CalendarDays className="h-3.5 w-3.5 text-muted-foreground hidden sm:block" />
+            <Label className="text-xs font-medium whitespace-nowrap">Período:</Label>
             <Select value={periodoSelecionado} onValueChange={setPeriodoSelecionado}>
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-full sm:w-[180px]">
                 <SelectValue placeholder="Selecione o período" />
               </SelectTrigger>
               <SelectContent>
@@ -406,11 +406,11 @@ export default function Dashboard() {
               </SelectContent>
             </Select>
           </div>
-          <div className="flex items-center gap-2">
-            <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
-            <Label className="text-xs font-medium">Ano Projeção:</Label>
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <Calendar className="h-3.5 w-3.5 text-muted-foreground hidden sm:block" />
+            <Label className="text-xs font-medium whitespace-nowrap">Ano Projeção:</Label>
             <Select value={anoProjecao.toString()} onValueChange={(v) => setAnoProjecao(parseInt(v))}>
-              <SelectTrigger className="w-[120px]">
+              <SelectTrigger className="w-full sm:w-[120px]">
                 <SelectValue placeholder="Ano" />
               </SelectTrigger>
               <SelectContent>
@@ -424,7 +424,7 @@ export default function Dashboard() {
       </div>
 
       {/* Resumo Geral */}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
         <Card className="border-border/50">
           <CardHeader className="pb-2">
             <CardTitle className="text-xs font-medium text-muted-foreground">Imposto Atual (Líquido)</CardTitle>
@@ -524,7 +524,7 @@ export default function Dashboard() {
         <h2 className="text-base font-semibold text-foreground mb-3 flex items-center gap-2">
           <Package className="h-4 w-4" /> Mercadorias
         </h2>
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-3 sm:gap-4 grid-cols-1 md:grid-cols-2">
           <TotaisCard
             title="Entradas (Créditos)"
             icon={TrendingDown}
@@ -545,7 +545,7 @@ export default function Dashboard() {
         <h2 className="text-base font-semibold text-foreground mb-3 flex items-center gap-2">
           <Truck className="h-4 w-4" /> Fretes
         </h2>
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-3 sm:gap-4 grid-cols-1 md:grid-cols-2">
           <TotaisCard
             title="Entradas (Créditos)"
             icon={TrendingDown}
@@ -566,7 +566,7 @@ export default function Dashboard() {
         <h2 className="text-base font-semibold text-foreground mb-3 flex items-center gap-2">
           <Zap className="h-4 w-4" /> Energia/Água
         </h2>
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-3 sm:gap-4 grid-cols-1 md:grid-cols-2">
           <TotaisCard
             title="Créditos"
             icon={TrendingDown}
