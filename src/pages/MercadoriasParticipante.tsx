@@ -587,34 +587,6 @@ export default function MercadoriasParticipante() {
         </CardContent>
       </Card>
 
-      {/* Debug: Totais do Backend */}
-      <Card className="border-dashed border-muted-foreground/30 bg-muted/10">
-        <CardContent className="py-3">
-          <div className="flex flex-col gap-2 text-xs">
-            <div className="flex flex-wrap gap-4">
-              <span className="text-muted-foreground font-medium">Debug - Totais do BACKEND (sem limite de 1000):</span>
-              <span>Registros: <strong>{totals.totalRegistros}</strong></span>
-              <span>Valor Total: <strong>{formatCurrency((backendTotals?.total_valor || 0))}</strong></span>
-              <span>Entradas: <strong className="text-green-600">{formatCurrency(totals.entradas.valor)}</strong></span>
-              <span>Saídas: <strong className="text-red-600">{formatCurrency(totals.saidas.valor)}</strong></span>
-            </div>
-            <div className="flex flex-wrap gap-4">
-              <span className="text-muted-foreground font-medium">Debug - Página atual:</span>
-              <span>Página: <strong>{page}/{totalPages || 1}</strong></span>
-              <span>Linhas carregadas: <strong>{participanteData.length}</strong></span>
-              <span>Entradas na página: <strong>{entradasNaPagina}</strong></span>
-              <span>Saídas na página: <strong>{saidasNaPagina}</strong></span>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <span className="text-muted-foreground font-medium">Filtros ativos:</span>
-              {filterMesAno === 'all' && !filterParticipante && <Badge variant="secondary">Nenhum</Badge>}
-              {filterMesAno !== 'all' && <Badge variant="outline">Mês: {formatMesAno(filterMesAno)}</Badge>}
-              {filterParticipante && <Badge variant="outline">Participante: {filterParticipante}</Badge>}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Cards de Resumo - Formato detalhado igual Mercadorias */}
       <div className="grid gap-4 md:grid-cols-2">
         <Card className="border-border/50">
