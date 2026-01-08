@@ -637,7 +637,7 @@ export default function MercadoriasParticipante() {
               <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totals.entradas.totalReforma)}</span>
             </div>
             <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
-              <span className="text-[10px] font-medium">Tot. Imp. a pagar:</span>
+              <span className="text-[10px] font-medium">Tot. Créditos:</span>
               <span className="text-sm font-bold">{formatCurrency(totals.entradas.totalImpostosPagar)}</span>
             </div>
             <div className="flex justify-between items-center pt-1 border-t">
@@ -703,7 +703,7 @@ export default function MercadoriasParticipante() {
               <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totals.saidas.totalReforma)}</span>
             </div>
             <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
-              <span className="text-[10px] font-medium">Tot. Imp. a pagar:</span>
+              <span className="text-[10px] font-medium">Tot. Débitos:</span>
               <span className="text-sm font-bold">{formatCurrency(totals.saidas.totalImpostosPagar)}</span>
             </div>
             <div className="flex justify-between items-center pt-1 border-t">
