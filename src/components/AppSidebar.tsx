@@ -122,26 +122,21 @@ export function AppSidebar() {
           <div className="mb-3 px-2 space-y-1">
             {/* Informações da sessão */}
             <div className="text-xs space-y-0.5">
-              {tenantNome && (
-                <p className="text-sidebar-foreground/80 flex items-center gap-1">
-                  <span className="text-sidebar-foreground/50">Ambiente:</span>
-                  <span className="font-medium">{tenantNome}</span>
+              {/* Ambiente e Grupo na mesma linha */}
+              {(tenantNome || grupoNome) && (
+                <p className="text-sidebar-foreground/80">
+                  {tenantNome}
+                  {tenantNome && grupoNome && ' | '}
+                  {grupoNome}
                 </p>
               )}
-              {grupoNome && (
-                <p className="text-sidebar-foreground/80 flex items-center gap-1">
-                  <span className="text-sidebar-foreground/50">Grupo:</span>
-                  <span className="font-medium">{grupoNome}</span>
-                </p>
-              )}
+              
+              {/* Empresa em itálico e negrito */}
               {empresas.length > 0 && (
-                <p className="text-sidebar-foreground/80 flex items-center gap-1">
-                  <span className="text-sidebar-foreground/50">Empresa:</span>
-                  <span className="font-medium truncate">
-                    {isAdmin 
-                      ? `Todas (${empresas.length})` 
-                      : empresas.map(e => e.nome).join(', ')}
-                  </span>
+                <p className="font-semibold italic text-sidebar-foreground truncate">
+                  {isAdmin 
+                    ? `Todas (${empresas.length})` 
+                    : empresas.map(e => e.nome).join(', ')}
                 </p>
               )}
             </div>
