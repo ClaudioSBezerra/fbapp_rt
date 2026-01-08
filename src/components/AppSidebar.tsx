@@ -14,6 +14,7 @@ import {
 import { NavLink } from '@/components/NavLink';
 import { useAuth } from '@/hooks/useAuth';
 import { useRole } from '@/hooks/useRole';
+import { useSessionInfo } from '@/hooks/useSessionInfo';
 import { useLocation } from 'react-router-dom';
 import {
   Sidebar,
@@ -56,6 +57,7 @@ export function AppSidebar() {
   const location = useLocation();
   const { signOut, user } = useAuth();
   const { isAdmin } = useRole();
+  const { tenantNome, grupoNome, empresas } = useSessionInfo();
 
   const isActive = (path: string) => location.pathname === path;
 
@@ -117,7 +119,37 @@ export function AppSidebar() {
 
       <SidebarFooter className="border-t border-sidebar-border p-4">
         {!collapsed && user && (
-          <div className="mb-3 px-2">
+          <div className="mb-3 px-2 space-y-1">
+            {/* Informações da sessão */}
+            <div className="text-xs space-y-0.5">
+              {tenantNome && (
+                <p className="text-sidebar-foreground/80 flex items-center gap-1">
+                  <span className="text-sidebar-foreground/50">Ambiente:</span>
+                  <span className="font-medium">{tenantNome}</span>
+                </p>
+              )}
+              {grupoNome && (
+                <p className="text-sidebar-foreground/80 flex items-center gap-1">
+                  <span className="text-sidebar-foreground/50">Grupo:</span>
+                  <span className="font-medium">{grupoNome}</span>
+                </p>
+              )}
+              {empresas.length > 0 && (
+                <p className="text-sidebar-foreground/80 flex items-center gap-1">
+                  <span className="text-sidebar-foreground/50">Empresa:</span>
+                  <span className="font-medium truncate">
+                    {isAdmin 
+                      ? `Todas (${empresas.length})` 
+                      : empresas.map(e => e.nome).join(', ')}
+                  </span>
+                </p>
+              )}
+            </div>
+            
+            {/* Separador */}
+            <div className="border-t border-sidebar-border/50 my-2" />
+            
+            {/* Email do usuário */}
             <p className="text-xs text-sidebar-foreground/60 truncate">
               {user.email}
             </p>
