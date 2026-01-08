@@ -9,8 +9,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Download, Search, Users } from 'lucide-react';
+import { Download, Search, Users, HelpCircle } from 'lucide-react';
 import { exportToExcel } from '@/lib/exportToExcel';
 
 interface Aliquota {
@@ -37,7 +38,7 @@ interface ParticipanteRow {
 
 // Formata moeda BRL
 const formatCurrency = (value: number) => {
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+  return new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
 };
 
 // Formata CNPJ
@@ -51,9 +52,6 @@ const formatMesAno = (date: string) => {
   const d = new Date(date);
   return `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
 };
-
-// Extrai ano de uma data
-const extractYear = (date: string) => new Date(date).getFullYear();
 
 // Componente de tabela por participante
 interface ParticipanteTableProps {
@@ -99,38 +97,73 @@ function ParticipanteTable({ data, tipo, aliquotas, selectedYear, isLoading }: P
     <div className="overflow-x-auto">
       <Table>
         <TableHeader>
-          <TableRow>
-            <TableHead className="min-w-[200px]">Participante</TableHead>
-            <TableHead className="w-[100px]">CNPJ</TableHead>
-            <TableHead className="w-[80px] text-center">Mês/Ano</TableHead>
-            <TableHead className="text-right">Valor</TableHead>
-            <TableHead className="text-right">ICMS</TableHead>
-            <TableHead className="text-right">PIS+COFINS</TableHead>
-            {aliquota && (
-              <>
-                <TableHead className="text-right text-primary">IBS+CBS Proj.</TableHead>
-                <TableHead className="text-right text-primary">Diferença</TableHead>
-              </>
-            )}
+          <TableRow className="text-xs">
+            <TableHead className="text-xs">Participante</TableHead>
+            <TableHead className="text-xs whitespace-nowrap">Mês/Ano</TableHead>
+            <TableHead className="text-right text-xs">Valor</TableHead>
+            <TableHead className="text-right text-xs">ICMS</TableHead>
+            <TableHead className="text-right text-xs whitespace-nowrap">
+              ICMS Proj. {aliquota && <span className="text-muted-foreground font-normal">(-{aliquota.reduc_icms}%)</span>}
+            </TableHead>
+            <TableHead className="text-right text-xs text-pis-cofins">PIS+COFINS</TableHead>
+            <TableHead className="text-right text-xs text-pis-cofins whitespace-nowrap">
+              PIS+COFINS Proj. {aliquota && <span className="text-muted-foreground font-normal">(-{aliquota.reduc_piscofins}%)</span>}
+            </TableHead>
+            <TableHead className="text-right text-xs font-semibold bg-muted/30 whitespace-nowrap">Tot. Imp. Atuais</TableHead>
+            <TableHead className="text-right text-xs whitespace-nowrap">Base IBS/CBS</TableHead>
+            <TableHead className="text-right text-xs text-ibs-cbs whitespace-nowrap">
+              IBS Proj. {aliquota && <span className="text-muted-foreground font-normal">({(aliquota.ibs_estadual + aliquota.ibs_municipal).toFixed(1)}%)</span>}
+            </TableHead>
+            <TableHead className="text-right text-xs text-ibs-cbs whitespace-nowrap">
+              CBS Proj. {aliquota && <span className="text-muted-foreground font-normal">({aliquota.cbs.toFixed(1)}%)</span>}
+            </TableHead>
+            <TableHead className="text-right text-xs font-semibold text-ibs-cbs bg-muted/30 whitespace-nowrap">Total Reforma</TableHead>
+            <TableHead className="text-right text-xs font-semibold bg-muted/30 whitespace-nowrap">Tot. Imp. a pagar</TableHead>
+            <TableHead className="text-right text-xs">
+              <Tooltip>
+                <TooltipTrigger className="cursor-help underline decoration-dotted decoration-muted-foreground inline-flex items-center gap-1 whitespace-nowrap">
+                  Dif. Imp. Atual e Imp. Proj.
+                  <HelpCircle className="h-3 w-3 text-muted-foreground" />
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-xs">
+                  <p className="font-semibold mb-1">Fórmula:</p>
+                  <p className="font-mono text-xs">(ICMS + PIS/COFINS) − (IBS + CBS)</p>
+                  <p className="text-muted-foreground text-xs mt-1">Compara impostos atuais com os novos impostos da reforma</p>
+                </TooltipContent>
+              </Tooltip>
+            </TableHead>
+            <TableHead className="text-right text-xs">
+              <Tooltip>
+                <TooltipTrigger className="cursor-help underline decoration-dotted decoration-muted-foreground inline-flex items-center gap-1 whitespace-nowrap">
+                  Dif. a pagar
+                  <HelpCircle className="h-3 w-3 text-muted-foreground" />
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-xs">
+                  <p className="font-semibold mb-1">Fórmula:</p>
+                  <p className="font-mono text-xs">(ICMS + PIS/COFINS) − (ICMS Proj. + PIS/COFINS Proj. + IBS + CBS)</p>
+                  <p className="text-muted-foreground text-xs mt-1">Compara impostos atuais com TODOS os impostos projetados (transição + novos)</p>
+                </TooltipContent>
+              </Tooltip>
+            </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {sortedData.map((row, idx) => {
-            const pisCofins = row.pis + row.cofins;
-            const impostoAtual = row.icms + pisCofins;
-            
-            // Projeção IBS+CBS
-            let ibsCbsProj = 0;
-            let diferenca = 0;
-            if (aliquota) {
-              const ibsTotal = aliquota.ibs_estadual + aliquota.ibs_municipal;
-              const cbsTotal = aliquota.cbs;
-              ibsCbsProj = row.valor * ((ibsTotal + cbsTotal) / 100);
-              diferenca = ibsCbsProj - impostoAtual;
-            }
+            const vlIcms = row.icms;
+            const vlIcmsProjetado = aliquota ? vlIcms * (1 - (aliquota.reduc_icms / 100)) : vlIcms;
+            const vlPisCofins = row.pis + row.cofins;
+            const vlPisCofinsProjetado = aliquota ? vlPisCofins * (1 - (aliquota.reduc_piscofins / 100)) : vlPisCofins;
+            const totalImpostosAtuais = vlIcms + vlPisCofins;
+            const baseIbsCbs = row.valor - vlIcmsProjetado - vlPisCofinsProjetado;
+            const vlIbsProjetado = aliquota ? baseIbsCbs * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
+            const vlCbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
+            const totalReforma = vlIbsProjetado + vlCbsProjetado;
+            const totalImpostosPagar = vlIcmsProjetado + vlPisCofinsProjetado + vlIbsProjetado + vlCbsProjetado;
+            const diferencaProjetado = totalImpostosAtuais - totalReforma;
+            const diferencaReal = totalImpostosPagar - (vlIcms + vlPisCofins);
 
             return (
-              <TableRow key={`${row.cod_part}-${row.mes_ano}-${idx}`}>
+              <TableRow key={`${row.cod_part}-${row.mes_ano}-${idx}`} className="text-xs">
                 <TableCell className="py-1 px-2 max-w-[200px]">
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -148,23 +181,34 @@ function ParticipanteTable({ data, tipo, aliquotas, selectedYear, isLoading }: P
                     </TooltipContent>
                   </Tooltip>
                 </TableCell>
-                <TableCell className="text-[10px] text-muted-foreground">
-                  {row.participante_cnpj ? formatCNPJ(row.participante_cnpj).substring(0, 10) + '...' : '-'}
+                <TableCell className="text-xs whitespace-nowrap">{formatMesAno(row.mes_ano)}</TableCell>
+                <TableCell className="text-right font-mono text-xs">{formatCurrency(row.valor)}</TableCell>
+                <TableCell className="text-right font-mono text-xs">{formatCurrency(vlIcms)}</TableCell>
+                <TableCell className="text-right font-mono text-xs">{formatCurrency(vlIcmsProjetado)}</TableCell>
+                <TableCell className="text-right font-mono text-xs text-pis-cofins">{formatCurrency(vlPisCofins)}</TableCell>
+                <TableCell className="text-right font-mono text-xs text-pis-cofins">{formatCurrency(vlPisCofinsProjetado)}</TableCell>
+                <TableCell className="text-right font-mono text-xs font-semibold bg-muted/30">{formatCurrency(totalImpostosAtuais)}</TableCell>
+                <TableCell className="text-right font-mono text-xs">{formatCurrency(baseIbsCbs)}</TableCell>
+                <TableCell className="text-right font-mono text-xs text-ibs-cbs">{formatCurrency(vlIbsProjetado)}</TableCell>
+                <TableCell className="text-right font-mono text-xs text-ibs-cbs">{formatCurrency(vlCbsProjetado)}</TableCell>
+                <TableCell className="text-right font-mono text-xs font-semibold text-ibs-cbs bg-muted/30">{formatCurrency(totalReforma)}</TableCell>
+                <TableCell className="text-right font-mono text-xs font-semibold bg-muted/30">{formatCurrency(totalImpostosPagar)}</TableCell>
+                <TableCell className="text-right">
+                  <Badge
+                    variant={diferencaProjetado > 0 ? 'destructive' : diferencaProjetado < 0 ? 'default' : 'secondary'}
+                    className={`text-xs ${diferencaProjetado < 0 ? 'bg-positive text-positive-foreground' : ''}`}
+                  >
+                    {diferencaProjetado > 0 ? '+' : ''}{formatCurrency(diferencaProjetado)}
+                  </Badge>
                 </TableCell>
-                <TableCell className="text-center text-xs">{formatMesAno(row.mes_ano)}</TableCell>
-                <TableCell className="text-right text-xs font-medium">{formatCurrency(row.valor)}</TableCell>
-                <TableCell className="text-right text-xs">{formatCurrency(row.icms)}</TableCell>
-                <TableCell className="text-right text-xs">{formatCurrency(pisCofins)}</TableCell>
-                {aliquota && (
-                  <>
-                    <TableCell className="text-right text-xs text-primary font-medium">
-                      {formatCurrency(ibsCbsProj)}
-                    </TableCell>
-                    <TableCell className={`text-right text-xs font-medium ${diferenca >= 0 ? 'text-destructive' : 'text-green-600'}`}>
-                      {diferenca >= 0 ? '+' : ''}{formatCurrency(diferenca)}
-                    </TableCell>
-                  </>
-                )}
+                <TableCell className="text-right">
+                  <Badge
+                    variant={diferencaReal > 0 ? 'destructive' : diferencaReal < 0 ? 'default' : 'secondary'}
+                    className={`text-xs ${diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}`}
+                  >
+                    {diferencaReal > 0 ? '+' : ''}{formatCurrency(diferencaReal)}
+                  </Badge>
+                </TableCell>
               </TableRow>
             );
           })}
@@ -230,40 +274,79 @@ export default function MercadoriasParticipante() {
     });
   }, [participanteData, filterMesAno, filterParticipante]);
 
-  // Totais por tipo
+  // Buscar alíquota selecionada
+  const aliquotaSelecionada = useMemo(() => {
+    return aliquotas.find((a) => a.ano === selectedYear) || null;
+  }, [aliquotas, selectedYear]);
+
+  // Totais por tipo com cálculos completos
   const totals = useMemo(() => {
     const entradas = filteredData.filter(r => r.tipo === 'entrada');
     const saidas = filteredData.filter(r => r.tipo === 'saida');
     
-    const sumEntradas = {
-      valor: entradas.reduce((s, r) => s + r.valor, 0),
-      pis: entradas.reduce((s, r) => s + r.pis, 0),
-      cofins: entradas.reduce((s, r) => s + r.cofins, 0),
-      icms: entradas.reduce((s, r) => s + r.icms, 0),
+    const calcTotals = (rows: ParticipanteRow[]) => {
+      const valor = rows.reduce((s, r) => s + r.valor, 0);
+      const icms = rows.reduce((s, r) => s + r.icms, 0);
+      const pisCofins = rows.reduce((s, r) => s + r.pis + r.cofins, 0);
+      
+      const aliquota = aliquotaSelecionada;
+      const icmsProjetado = aliquota ? icms * (1 - (aliquota.reduc_icms / 100)) : icms;
+      const pisCofinsProjetado = aliquota ? pisCofins * (1 - (aliquota.reduc_piscofins / 100)) : pisCofins;
+      const baseIbsCbs = valor - icmsProjetado - pisCofinsProjetado;
+      const ibsProjetado = aliquota ? baseIbsCbs * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
+      const cbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
+      
+      const totalImpostosAtuais = icms + pisCofins;
+      const totalReforma = ibsProjetado + cbsProjetado;
+      const totalImpostosPagar = icmsProjetado + pisCofinsProjetado + ibsProjetado + cbsProjetado;
+      const diferencaReal = totalImpostosPagar - (icms + pisCofins);
+      
+      return { valor, totalImpostosAtuais, totalReforma, diferencaReal };
     };
     
-    const sumSaidas = {
-      valor: saidas.reduce((s, r) => s + r.valor, 0),
-      pis: saidas.reduce((s, r) => s + r.pis, 0),
-      cofins: saidas.reduce((s, r) => s + r.cofins, 0),
-      icms: saidas.reduce((s, r) => s + r.icms, 0),
+    return { 
+      entradas: calcTotals(entradas), 
+      saidas: calcTotals(saidas) 
     };
-    
-    return { entradas: sumEntradas, saidas: sumSaidas };
-  }, [filteredData]);
+  }, [filteredData, aliquotaSelecionada]);
 
-  // Exportar para Excel
+  // Exportar para Excel com todas as colunas
   const handleExport = () => {
-    const exportData = filteredData.map(row => ({
-      'Participante': row.participante_nome,
-      'CNPJ': formatCNPJ(row.participante_cnpj),
-      'Tipo': row.tipo === 'entrada' ? 'Entrada' : 'Saída',
-      'Mês/Ano': formatMesAno(row.mes_ano),
-      'Valor': row.valor,
-      'ICMS': row.icms,
-      'PIS': row.pis,
-      'COFINS': row.cofins,
-    }));
+    const aliquota = aliquotaSelecionada;
+    const exportData = filteredData.map(row => {
+      const vlIcms = row.icms;
+      const vlIcmsProjetado = aliquota ? vlIcms * (1 - (aliquota.reduc_icms / 100)) : vlIcms;
+      const vlPisCofins = row.pis + row.cofins;
+      const vlPisCofinsProjetado = aliquota ? vlPisCofins * (1 - (aliquota.reduc_piscofins / 100)) : vlPisCofins;
+      const totalImpostosAtuais = vlIcms + vlPisCofins;
+      const baseIbsCbs = row.valor - vlIcmsProjetado - vlPisCofinsProjetado;
+      const vlIbsProjetado = aliquota ? baseIbsCbs * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
+      const vlCbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
+      const totalReforma = vlIbsProjetado + vlCbsProjetado;
+      const totalImpostosPagar = vlIcmsProjetado + vlPisCofinsProjetado + vlIbsProjetado + vlCbsProjetado;
+      const diferencaProjetado = totalImpostosAtuais - totalReforma;
+      const diferencaReal = totalImpostosPagar - (vlIcms + vlPisCofins);
+
+      return {
+        'Participante': row.participante_nome,
+        'CNPJ': formatCNPJ(row.participante_cnpj),
+        'Tipo': row.tipo === 'entrada' ? 'Entrada' : 'Saída',
+        'Mês/Ano': formatMesAno(row.mes_ano),
+        'Valor': row.valor,
+        'ICMS': vlIcms,
+        'ICMS Proj.': vlIcmsProjetado,
+        'PIS+COFINS': vlPisCofins,
+        'PIS+COFINS Proj.': vlPisCofinsProjetado,
+        'Tot. Imp. Atuais': totalImpostosAtuais,
+        'Base IBS/CBS': baseIbsCbs,
+        'IBS Proj.': vlIbsProjetado,
+        'CBS Proj.': vlCbsProjetado,
+        'Total Reforma': totalReforma,
+        'Tot. Imp. a pagar': totalImpostosPagar,
+        'Dif. Imp. Atual e Proj.': diferencaProjetado,
+        'Dif. a pagar': diferencaReal,
+      };
+    });
     exportToExcel(exportData, 'mercadorias-participante');
   };
 
@@ -354,8 +437,21 @@ export default function MercadoriasParticipante() {
                 <p className="font-bold text-lg">{formatCurrency(totals.entradas.valor)}</p>
               </div>
               <div>
-                <p className="text-muted-foreground">ICMS + PIS/COFINS</p>
-                <p className="font-bold">{formatCurrency(totals.entradas.icms + totals.entradas.pis + totals.entradas.cofins)}</p>
+                <p className="text-muted-foreground">Tot. Impostos Atuais</p>
+                <p className="font-bold">{formatCurrency(totals.entradas.totalImpostosAtuais)}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground text-ibs-cbs">Total Reforma</p>
+                <p className="font-bold text-ibs-cbs">{formatCurrency(totals.entradas.totalReforma)}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Dif. a pagar</p>
+                <Badge
+                  variant={totals.entradas.diferencaReal > 0 ? 'destructive' : totals.entradas.diferencaReal < 0 ? 'default' : 'secondary'}
+                  className={`text-xs ${totals.entradas.diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}`}
+                >
+                  {totals.entradas.diferencaReal > 0 ? '+' : ''}{formatCurrency(totals.entradas.diferencaReal)}
+                </Badge>
               </div>
             </div>
           </CardContent>
@@ -373,8 +469,21 @@ export default function MercadoriasParticipante() {
                 <p className="font-bold text-lg">{formatCurrency(totals.saidas.valor)}</p>
               </div>
               <div>
-                <p className="text-muted-foreground">ICMS + PIS/COFINS</p>
-                <p className="font-bold">{formatCurrency(totals.saidas.icms + totals.saidas.pis + totals.saidas.cofins)}</p>
+                <p className="text-muted-foreground">Tot. Impostos Atuais</p>
+                <p className="font-bold">{formatCurrency(totals.saidas.totalImpostosAtuais)}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground text-ibs-cbs">Total Reforma</p>
+                <p className="font-bold text-ibs-cbs">{formatCurrency(totals.saidas.totalReforma)}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Dif. a pagar</p>
+                <Badge
+                  variant={totals.saidas.diferencaReal > 0 ? 'destructive' : totals.saidas.diferencaReal < 0 ? 'default' : 'secondary'}
+                  className={`text-xs ${totals.saidas.diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}`}
+                >
+                  {totals.saidas.diferencaReal > 0 ? '+' : ''}{formatCurrency(totals.saidas.diferencaReal)}
+                </Badge>
               </div>
             </div>
           </CardContent>
