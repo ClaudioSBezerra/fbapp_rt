@@ -72,7 +72,7 @@ function calcularProjecoes(
 ) {
   const icmsProjetado = aliquota ? totais.icms * (1 - aliquota.reduc_icms / 100) : totais.icms;
   const pisCofinsProjetado = aliquota ? totais.pisCofins * (1 - aliquota.reduc_piscofins / 100) : totais.pisCofins;
-  const baseIbsCbs = totais.valor - icmsProjetado - pisCofinsProjetado;
+  const baseIbsCbs = totais.valor - totais.icms - totais.pisCofins;
   const ibsProjetado = aliquota ? baseIbsCbs * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
   const cbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
   const totalImpostosAtuais = totais.icms + totais.pisCofins;
@@ -278,13 +278,13 @@ export default function Dashboard() {
 
       const icmsSaidas = totaisSaidas.icms * (1 - aliq.reduc_icms / 100);
       const pisCofinsProjetadoSaidas = totaisSaidas.pisCofins * (1 - aliq.reduc_piscofins / 100);
-      const baseIbsCbsSaidas = totaisSaidas.valor - icmsSaidas - pisCofinsProjetadoSaidas;
+      const baseIbsCbsSaidas = totaisSaidas.valor - totaisSaidas.icms - totaisSaidas.pisCofins;
       const ibsSaidas = baseIbsCbsSaidas * ((aliq.ibs_estadual + aliq.ibs_municipal) / 100);
       const cbsSaidas = baseIbsCbsSaidas * (aliq.cbs / 100);
 
       const icmsEntradas = totaisEntradas.icms * (1 - aliq.reduc_icms / 100);
       const pisCofinsProjetadoEntradas = totaisEntradas.pisCofins * (1 - aliq.reduc_piscofins / 100);
-      const baseIbsCbsEntradas = totaisEntradas.valor - icmsEntradas - pisCofinsProjetadoEntradas;
+      const baseIbsCbsEntradas = totaisEntradas.valor - totaisEntradas.icms - totaisEntradas.pisCofins;
       const ibsEntradas = baseIbsCbsEntradas * ((aliq.ibs_estadual + aliq.ibs_municipal) / 100);
       const cbsEntradas = baseIbsCbsEntradas * (aliq.cbs / 100);
 
