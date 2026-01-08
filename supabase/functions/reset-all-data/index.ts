@@ -62,8 +62,7 @@ Deno.serve(async (req) => {
     await supabaseAdmin.from("audit_logs").delete().neq("id", "00000000-0000-0000-0000-000000000000");
     results.audit_logs = 1;
 
-    await supabaseAdmin.from("aliquotas").delete().neq("id", "00000000-0000-0000-0000-000000000000");
-    results.aliquotas = 1;
+    // Alíquotas NÃO são limpas - são dados de referência da reforma tributária
 
     // 7. Deletar todos os usuários do auth.users
     const { data: usersData, error: listError } = await supabaseAdmin.auth.admin.listUsers();
