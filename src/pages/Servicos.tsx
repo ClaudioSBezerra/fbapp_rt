@@ -137,18 +137,6 @@ const ServicosTable = ({ data, tipo, aliquotas, selectedYear }: ServicosTablePro
             <TableHead className="text-right text-xs">
               <Tooltip>
                 <TooltipTrigger className="cursor-help underline decoration-dotted decoration-muted-foreground inline-flex items-center gap-1 whitespace-nowrap">
-                  Dif. Imp. Atual e Imp. Proj.
-                  <HelpCircle className="h-3 w-3 text-muted-foreground" />
-                </TooltipTrigger>
-                <TooltipContent side="top" className="max-w-xs">
-                  <p className="font-semibold mb-1">Fórmula:</p>
-                  <p className="font-mono text-xs">(ISS + PIS/COFINS) − (IBS + CBS)</p>
-                </TooltipContent>
-              </Tooltip>
-            </TableHead>
-            <TableHead className="text-right text-xs">
-              <Tooltip>
-                <TooltipTrigger className="cursor-help underline decoration-dotted decoration-muted-foreground inline-flex items-center gap-1 whitespace-nowrap">
                   Dif. deb/cred.
                   <HelpCircle className="h-3 w-3 text-muted-foreground" />
                 </TooltipTrigger>
@@ -208,14 +196,6 @@ const ServicosTable = ({ data, tipo, aliquotas, selectedYear }: ServicosTablePro
                 <TableCell className="text-right font-mono text-xs text-ibs-cbs py-1 px-2">{formatCurrency(vlCbsProjetado)}</TableCell>
                 <TableCell className="text-right font-mono text-xs font-semibold text-ibs-cbs bg-muted/30 py-1 px-2">{formatCurrency(totalReforma)}</TableCell>
                 <TableCell className="text-right font-mono text-xs font-semibold bg-muted/30 py-1 px-2">{formatCurrency(totalImpostosPagar)}</TableCell>
-                <TableCell className="text-right py-1 px-2">
-                  <Badge 
-                    variant={diferencaProjetado < 0 ? 'destructive' : 'default'}
-                    className={`text-xs ${diferencaProjetado >= 0 ? 'bg-positive text-positive-foreground' : ''}`}
-                  >
-                    {diferencaProjetado >= 0 ? '+' : ''}{formatCurrency(diferencaProjetado)}
-                  </Badge>
-                </TableCell>
                 <TableCell className="text-right py-1 px-2">
                   <Badge 
                     variant={diferencaReal < 0 ? 'destructive' : 'default'}
@@ -386,7 +366,6 @@ export default function Servicos() {
         'CBS Proj.': vlCbsProjetado,
         'Total Reforma': totalReforma,
         'Tot. Imp. a pagar': totalImpostosPagar,
-        'Dif. Imp. Atual e Imp. Proj.': diferencaProjetado,
         'Dif. deb/cred.': diferencaReal,
       };
     });
