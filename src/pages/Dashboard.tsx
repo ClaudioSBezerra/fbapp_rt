@@ -371,14 +371,14 @@ export default function Dashboard() {
         </div>
         <div className="flex justify-between items-center pt-1 border-t">
           <span className="text-[10px] text-muted-foreground">Dif. Imp. Atual e Imp. Proj.:</span>
-          <span className={`text-xs font-bold ${totais.diferencaProjetado > 0 ? 'text-destructive' : totais.diferencaProjetado < 0 ? 'text-positive' : ''}`}>
-            {totais.diferencaProjetado > 0 ? '+' : ''}{formatCurrency(totais.diferencaProjetado)}
+          <span className={`text-xs font-bold ${totais.diferencaProjetado < 0 ? 'text-destructive' : 'text-positive'}`}>
+            {totais.diferencaProjetado >= 0 ? '+' : ''}{formatCurrency(totais.diferencaProjetado)}
           </span>
         </div>
         <div className="flex justify-between items-center">
           <span className="text-[10px] text-muted-foreground">Dif. deb/cred.:</span>
-          <span className={`text-xs font-bold ${totais.diferencaReal > 0 ? 'text-destructive' : totais.diferencaReal < 0 ? 'text-positive' : ''}`}>
-            {totais.diferencaReal > 0 ? '+' : ''}{formatCurrency(totais.diferencaReal)}
+          <span className={`text-xs font-bold ${totais.diferencaReal < 0 ? 'text-destructive' : 'text-positive'}`}>
+            {totais.diferencaReal >= 0 ? '+' : ''}{formatCurrency(totais.diferencaReal)}
           </span>
         </div>
       </CardContent>
@@ -451,15 +451,15 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className={`border-border/50 ${diferencaImposto < 0 ? 'bg-green-500/10' : diferencaImposto > 0 ? 'bg-red-500/10' : ''}`}>
+        <Card className={`border-border/50 ${diferencaImposto >= 0 ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
           <CardHeader className="pb-2">
             <CardTitle className="text-xs font-medium text-muted-foreground">Diferença {anoProjecao}</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className={`text-xl font-bold ${diferencaImposto < 0 ? 'text-green-600' : diferencaImposto > 0 ? 'text-red-600' : ''}`}>
+            <div className={`text-xl font-bold ${diferencaImposto >= 0 ? 'text-green-600' : 'text-red-600'}`}>
               {diferencaImposto >= 0 ? '+' : ''}{formatCurrency(diferencaImposto)}
             </div>
-            <p className="text-[10px] text-muted-foreground">{diferencaImposto < 0 ? 'Economia projetada' : diferencaImposto > 0 ? 'Aumento projetado' : 'Sem alteração'}</p>
+            <p className="text-[10px] text-muted-foreground">{diferencaImposto >= 0 ? 'Economia projetada' : 'Aumento projetado'}</p>
           </CardContent>
         </Card>
       </div>

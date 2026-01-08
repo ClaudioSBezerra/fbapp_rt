@@ -344,19 +344,19 @@ export default function Fretes() {
                   <TableCell className="text-right font-mono text-xs font-semibold bg-muted/30">{formatCurrency(totalImpostosPagar)}</TableCell>
                   <TableCell className="text-right">
                     <Badge
-                      variant={diferencaProjetado > 0 ? 'destructive' : diferencaProjetado < 0 ? 'default' : 'secondary'}
-                      className={`text-xs ${diferencaProjetado < 0 ? 'bg-positive text-positive-foreground' : ''}`}
+                      variant={diferencaProjetado < 0 ? 'destructive' : 'default'}
+                      className={`text-xs ${diferencaProjetado >= 0 ? 'bg-positive text-positive-foreground' : ''}`}
                     >
-                      {diferencaProjetado > 0 ? '+' : ''}
+                      {diferencaProjetado >= 0 ? '+' : ''}
                       {formatCurrency(diferencaProjetado)}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
                     <Badge
-                      variant={diferencaReal > 0 ? 'destructive' : diferencaReal < 0 ? 'default' : 'secondary'}
-                      className={`text-xs ${diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}`}
+                      variant={diferencaReal < 0 ? 'destructive' : 'default'}
+                      className={`text-xs ${diferencaReal >= 0 ? 'bg-positive text-positive-foreground' : ''}`}
                     >
-                      {diferencaReal > 0 ? '+' : ''}
+                      {diferencaReal >= 0 ? '+' : ''}
                       {formatCurrency(diferencaReal)}
                     </Badge>
                   </TableCell>
@@ -504,14 +504,14 @@ export default function Fretes() {
             </div>
             <div className="flex justify-between items-center pt-1 border-t">
               <span className="text-[10px] text-muted-foreground">Dif. Imp. Atual e Imp. Proj.:</span>
-              <Badge variant={totaisEntradas.diferencaProjetado > 0 ? 'destructive' : totaisEntradas.diferencaProjetado < 0 ? 'default' : 'secondary'} className={totaisEntradas.diferencaProjetado < 0 ? 'bg-positive text-positive-foreground' : ''}>
-                {totaisEntradas.diferencaProjetado > 0 ? '+' : ''}{formatCurrency(totaisEntradas.diferencaProjetado)}
+              <Badge variant={totaisEntradas.diferencaProjetado < 0 ? 'destructive' : 'default'} className={totaisEntradas.diferencaProjetado >= 0 ? 'bg-positive text-positive-foreground' : ''}>
+                {totaisEntradas.diferencaProjetado >= 0 ? '+' : ''}{formatCurrency(totaisEntradas.diferencaProjetado)}
               </Badge>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-[10px] text-muted-foreground">Dif. deb/cred.:</span>
-              <Badge variant={totaisEntradas.diferencaReal > 0 ? 'destructive' : totaisEntradas.diferencaReal < 0 ? 'default' : 'secondary'} className={totaisEntradas.diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}>
-                {totaisEntradas.diferencaReal > 0 ? '+' : ''}{formatCurrency(totaisEntradas.diferencaReal)}
+              <Badge variant={totaisEntradas.diferencaReal < 0 ? 'destructive' : 'default'} className={totaisEntradas.diferencaReal >= 0 ? 'bg-positive text-positive-foreground' : ''}>
+                {totaisEntradas.diferencaReal >= 0 ? '+' : ''}{formatCurrency(totaisEntradas.diferencaReal)}
               </Badge>
             </div>
           </CardContent>
@@ -571,14 +571,14 @@ export default function Fretes() {
             </div>
             <div className="flex justify-between items-center pt-1 border-t">
               <span className="text-[10px] text-muted-foreground">Dif. Imp. Atual e Imp. Proj.:</span>
-              <Badge variant={totaisSaidas.diferencaProjetado > 0 ? 'destructive' : totaisSaidas.diferencaProjetado < 0 ? 'default' : 'secondary'} className={totaisSaidas.diferencaProjetado < 0 ? 'bg-positive text-positive-foreground' : ''}>
-                {totaisSaidas.diferencaProjetado > 0 ? '+' : ''}{formatCurrency(totaisSaidas.diferencaProjetado)}
+              <Badge variant={totaisSaidas.diferencaProjetado < 0 ? 'destructive' : 'default'} className={totaisSaidas.diferencaProjetado >= 0 ? 'bg-positive text-positive-foreground' : ''}>
+                {totaisSaidas.diferencaProjetado >= 0 ? '+' : ''}{formatCurrency(totaisSaidas.diferencaProjetado)}
               </Badge>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-[10px] text-muted-foreground">Dif. deb/cred.:</span>
-              <Badge variant={totaisSaidas.diferencaReal > 0 ? 'destructive' : totaisSaidas.diferencaReal < 0 ? 'default' : 'secondary'} className={totaisSaidas.diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}>
-                {totaisSaidas.diferencaReal > 0 ? '+' : ''}{formatCurrency(totaisSaidas.diferencaReal)}
+              <Badge variant={totaisSaidas.diferencaReal < 0 ? 'destructive' : 'default'} className={totaisSaidas.diferencaReal >= 0 ? 'bg-positive text-positive-foreground' : ''}>
+                {totaisSaidas.diferencaReal >= 0 ? '+' : ''}{formatCurrency(totaisSaidas.diferencaReal)}
               </Badge>
             </div>
           </CardContent>

@@ -210,18 +210,18 @@ const ServicosTable = ({ data, tipo, aliquotas, selectedYear }: ServicosTablePro
                 <TableCell className="text-right font-mono text-xs font-semibold bg-muted/30 py-1 px-2">{formatCurrency(totalImpostosPagar)}</TableCell>
                 <TableCell className="text-right py-1 px-2">
                   <Badge 
-                    variant={diferencaProjetado > 0 ? 'destructive' : diferencaProjetado < 0 ? 'default' : 'secondary'}
-                    className={`text-xs ${diferencaProjetado < 0 ? 'bg-positive text-positive-foreground' : ''}`}
+                    variant={diferencaProjetado < 0 ? 'destructive' : 'default'}
+                    className={`text-xs ${diferencaProjetado >= 0 ? 'bg-positive text-positive-foreground' : ''}`}
                   >
-                    {diferencaProjetado > 0 ? '+' : ''}{formatCurrency(diferencaProjetado)}
+                    {diferencaProjetado >= 0 ? '+' : ''}{formatCurrency(diferencaProjetado)}
                   </Badge>
                 </TableCell>
                 <TableCell className="text-right py-1 px-2">
                   <Badge 
-                    variant={diferencaReal > 0 ? 'destructive' : diferencaReal < 0 ? 'default' : 'secondary'}
-                    className={`text-xs ${diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}`}
+                    variant={diferencaReal < 0 ? 'destructive' : 'default'}
+                    className={`text-xs ${diferencaReal >= 0 ? 'bg-positive text-positive-foreground' : ''}`}
                   >
-                    {diferencaReal > 0 ? '+' : ''}{formatCurrency(diferencaReal)}
+                    {diferencaReal >= 0 ? '+' : ''}{formatCurrency(diferencaReal)}
                   </Badge>
                 </TableCell>
               </TableRow>
@@ -559,8 +559,8 @@ export default function Servicos() {
               <div className="border-t pt-2 flex justify-between text-sm font-medium">
                 <span>Diferença:</span>
                 <span className={
-                  (totals.saidas.ibsCbsProj - totals.entradas.ibsCbsProj) > 
-                  (totals.saidas.pisCofins - totals.entradas.pisCofins)
+                  ((totals.saidas.ibsCbsProj - totals.entradas.ibsCbsProj) - 
+                   (totals.saidas.pisCofins - totals.entradas.pisCofins)) < 0
                     ? 'text-destructive'
                     : 'text-green-600'
                 }>
