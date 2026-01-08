@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
-import { Download, Users, HelpCircle, ChevronsUpDown, Check, ArrowDownRight, ArrowUpRight } from 'lucide-react';
+import { Download, Users, HelpCircle, ChevronsUpDown, Check, ArrowDownRight, ArrowUpRight, RefreshCw } from 'lucide-react';
 import { exportToExcel } from '@/lib/exportToExcel';
 import { cn } from '@/lib/utils';
 
@@ -222,6 +222,7 @@ function ParticipanteTable({ data, tipo, aliquotas, selectedYear, isLoading }: P
 
 // Componente principal
 export default function MercadoriasParticipante() {
+  const queryClient = useQueryClient();
   const [filterMesAno, setFilterMesAno] = useState<string>('all');
   const [filterParticipante, setFilterParticipante] = useState('');
   const [selectedYear, setSelectedYear] = useState(2027);
@@ -396,10 +397,19 @@ export default function MercadoriasParticipante() {
             Comparativo PIS+COFINS vs IBS+CBS agregado por parceiro comercial
           </p>
         </div>
-        <Button variant="outline" onClick={handleExport} disabled={filteredData.length === 0}>
-          <Download className="h-4 w-4 mr-2" />
-          Exportar Excel
-        </Button>
+        <div className="flex gap-2">
+          <Button 
+            variant="outline" 
+            onClick={() => queryClient.invalidateQueries({ queryKey: ['mercadorias-participante'] })}
+          >
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Atualizar
+          </Button>
+          <Button variant="outline" onClick={handleExport} disabled={filteredData.length === 0}>
+            <Download className="h-4 w-4 mr-2" />
+            Exportar Excel
+          </Button>
+        </div>
       </div>
 
       {/* Filtros */}
@@ -503,14 +513,27 @@ export default function MercadoriasParticipante() {
       {/* Debug: Totais Brutos Carregados */}
       <Card className="border-dashed border-muted-foreground/30 bg-muted/10">
         <CardContent className="py-3">
-          <div className="flex flex-wrap gap-4 text-xs">
-            <span className="text-muted-foreground font-medium">Debug - Totais Brutos (antes de filtros):</span>
-            <span>Registros: <strong>{participanteData.length}</strong></span>
-            <span>Valor Total: <strong>{formatCurrency(participanteData.reduce((s, r) => s + r.valor, 0))}</strong></span>
-            <span>Entradas: <strong>{formatCurrency(participanteData.filter(r => r.tipo === 'entrada').reduce((s, r) => s + r.valor, 0))}</strong></span>
-            <span>Saídas: <strong>{formatCurrency(participanteData.filter(r => r.tipo === 'saida').reduce((s, r) => s + r.valor, 0))}</strong></span>
-            {filterMesAno !== 'all' && <Badge variant="outline">Filtro: {formatMesAno(filterMesAno)}</Badge>}
-            {filterParticipante && <Badge variant="outline">Participante: {filterParticipante}</Badge>}
+          <div className="flex flex-col gap-2 text-xs">
+            <div className="flex flex-wrap gap-4">
+              <span className="text-muted-foreground font-medium">Debug - Totais BRUTOS (sem filtros):</span>
+              <span>Registros: <strong>{participanteData.length}</strong></span>
+              <span>Valor Total: <strong>{formatCurrency(participanteData.reduce((s, r) => s + r.valor, 0))}</strong></span>
+              <span>Entradas: <strong className="text-green-600">{formatCurrency(participanteData.filter(r => r.tipo === 'entrada').reduce((s, r) => s + r.valor, 0))}</strong></span>
+              <span>Saídas: <strong className="text-red-600">{formatCurrency(participanteData.filter(r => r.tipo === 'saida').reduce((s, r) => s + r.valor, 0))}</strong></span>
+            </div>
+            <div className="flex flex-wrap gap-4">
+              <span className="text-muted-foreground font-medium">Debug - Totais APÓS FILTROS:</span>
+              <span>Registros: <strong>{filteredData.length}</strong></span>
+              <span>Valor Total: <strong>{formatCurrency(filteredData.reduce((s, r) => s + r.valor, 0))}</strong></span>
+              <span>Entradas: <strong className="text-green-600">{formatCurrency(totals.entradas.valor)}</strong></span>
+              <span>Saídas: <strong className="text-red-600">{formatCurrency(totals.saidas.valor)}</strong></span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <span className="text-muted-foreground font-medium">Filtros ativos:</span>
+              {filterMesAno === 'all' && !filterParticipante && <Badge variant="secondary">Nenhum</Badge>}
+              {filterMesAno !== 'all' && <Badge variant="outline">Mês: {formatMesAno(filterMesAno)}</Badge>}
+              {filterParticipante && <Badge variant="outline">Participante: {filterParticipante}</Badge>}
+            </div>
           </div>
         </CardContent>
       </Card>
