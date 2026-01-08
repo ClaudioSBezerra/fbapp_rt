@@ -279,7 +279,7 @@ export default function EnergiaAgua() {
               <TableHead className="text-right text-xs">
                 <Tooltip>
                   <TooltipTrigger className="cursor-help underline decoration-dotted decoration-muted-foreground inline-flex items-center gap-1 whitespace-nowrap">
-                    Dif. Projetado
+                  Dif. Imp. Atual e Imp. Proj.
                     <HelpCircle className="h-3 w-3 text-muted-foreground" />
                   </TooltipTrigger>
                   <TooltipContent side="top" className="max-w-xs">
@@ -491,7 +491,7 @@ export default function EnergiaAgua() {
               <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totaisCreditos.totalReforma)}</span>
             </div>
             <div className="flex justify-between items-center pt-1 border-t">
-              <span className="text-[10px] text-muted-foreground">Dif. Projetado:</span>
+              <span className="text-[10px] text-muted-foreground">Dif. Imp. Atual e Imp. Proj.:</span>
               <Badge variant={totaisCreditos.diferencaProjetado > 0 ? 'destructive' : totaisCreditos.diferencaProjetado < 0 ? 'default' : 'secondary'} className={totaisCreditos.diferencaProjetado < 0 ? 'bg-positive text-positive-foreground' : ''}>
                 {totaisCreditos.diferencaProjetado > 0 ? '+' : ''}{formatCurrency(totaisCreditos.diferencaProjetado)}
               </Badge>
@@ -554,7 +554,7 @@ export default function EnergiaAgua() {
               <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totaisDebitos.totalReforma)}</span>
             </div>
             <div className="flex justify-between items-center pt-1 border-t">
-              <span className="text-[10px] text-muted-foreground">Dif. Projetado:</span>
+              <span className="text-[10px] text-muted-foreground">Dif. Imp. Atual e Imp. Proj.:</span>
               <Badge variant={totaisDebitos.diferencaProjetado > 0 ? 'destructive' : totaisDebitos.diferencaProjetado < 0 ? 'default' : 'secondary'} className={totaisDebitos.diferencaProjetado < 0 ? 'bg-positive text-positive-foreground' : ''}>
                 {totaisDebitos.diferencaProjetado > 0 ? '+' : ''}{formatCurrency(totaisDebitos.diferencaProjetado)}
               </Badge>
