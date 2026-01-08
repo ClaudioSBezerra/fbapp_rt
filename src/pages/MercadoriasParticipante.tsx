@@ -500,6 +500,21 @@ export default function MercadoriasParticipante() {
         </CardContent>
       </Card>
 
+      {/* Debug: Totais Brutos Carregados */}
+      <Card className="border-dashed border-muted-foreground/30 bg-muted/10">
+        <CardContent className="py-3">
+          <div className="flex flex-wrap gap-4 text-xs">
+            <span className="text-muted-foreground font-medium">Debug - Totais Brutos (antes de filtros):</span>
+            <span>Registros: <strong>{participanteData.length}</strong></span>
+            <span>Valor Total: <strong>{formatCurrency(participanteData.reduce((s, r) => s + r.valor, 0))}</strong></span>
+            <span>Entradas: <strong>{formatCurrency(participanteData.filter(r => r.tipo === 'entrada').reduce((s, r) => s + r.valor, 0))}</strong></span>
+            <span>Saídas: <strong>{formatCurrency(participanteData.filter(r => r.tipo === 'saida').reduce((s, r) => s + r.valor, 0))}</strong></span>
+            {filterMesAno !== 'all' && <Badge variant="outline">Filtro: {formatMesAno(filterMesAno)}</Badge>}
+            {filterParticipante && <Badge variant="outline">Participante: {filterParticipante}</Badge>}
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Cards de Resumo - Formato detalhado igual Mercadorias */}
       <div className="grid gap-4 md:grid-cols-2">
         <Card className="border-border/50">
