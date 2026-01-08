@@ -430,19 +430,7 @@ export default function Dashboard() {
       </div>
 
       {/* Resumo Geral */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card className="border-border/50">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-muted-foreground">Empresas</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-2">
-              <Building2 className="h-4 w-4 text-muted-foreground" />
-              <span className="text-xl font-bold">{stats.totalEmpresas}</span>
-            </div>
-          </CardContent>
-        </Card>
-
+      <div className="grid gap-4 md:grid-cols-3">
         <Card className="border-border/50">
           <CardHeader className="pb-2">
             <CardTitle className="text-xs font-medium text-muted-foreground">Imposto Atual (Líquido)</CardTitle>
