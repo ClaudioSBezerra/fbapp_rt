@@ -616,16 +616,31 @@ export default function ImportarEFD() {
             <Upload className="h-5 w-5" />
             Importar EFD Contribuições
           </CardTitle>
-          <Button 
-            variant="outline" 
-            size="sm"
-            className="text-destructive border-destructive hover:bg-destructive hover:text-destructive-foreground"
-            onClick={() => setShowClearConfirm(true)}
-            disabled={uploading || isClearing}
-          >
-            <Trash2 className="h-4 w-4 mr-2" />
-            Limpar Base
-          </Button>
+          <div className="flex gap-2">
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={handleRefreshViews}
+              disabled={refreshingViews || uploading}
+            >
+              {refreshingViews ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <RefreshCw className="h-4 w-4 mr-2" />
+              )}
+              Atualizar Painéis
+            </Button>
+            <Button 
+              variant="outline" 
+              size="sm"
+              className="text-destructive border-destructive hover:bg-destructive hover:text-destructive-foreground"
+              onClick={() => setShowClearConfirm(true)}
+              disabled={uploading || isClearing}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Limpar Base
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
