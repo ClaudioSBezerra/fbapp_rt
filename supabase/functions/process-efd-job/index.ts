@@ -336,10 +336,11 @@ function processLine(
           const indOper = fields[2];
           const tipo = indOper === "0" ? "entrada" : "saida";
           const codPartRaw = fields[4] || null;
-          // Para SAÍDAS sem cod_part válido, usar código padrão "CONSUMIDOR FINAL"
-          const codPart = (!codPartRaw || codPartRaw.trim() === '' || codPartRaw === '0') && tipo === 'saida' 
-            ? '9999999999' 
-            : codPartRaw;
+          // Para entradas/saídas sem cod_part válido, usar código padrão apropriado
+          let codPart = codPartRaw;
+          if (!codPartRaw || codPartRaw.trim() === '' || codPartRaw === '0') {
+            codPart = tipo === 'saida' ? '9999999999' : '8888888888';
+          }
           const valorDoc = parseNumber(fields[12]); // Campo 12: VL_DOC
           
           if (valorDoc > 0) {
@@ -367,10 +368,11 @@ function processLine(
           const indOper = fields[2];
           const tipo = indOper === "0" ? "entrada" : "saida";
           const codPartRaw = fields[4] || null;
-          // Para SAÍDAS sem cod_part válido, usar código padrão "CONSUMIDOR FINAL"
-          const codPart = (!codPartRaw || codPartRaw.trim() === '' || codPartRaw === '0') && tipo === 'saida' 
-            ? '9999999999' 
-            : codPartRaw;
+          // Para entradas/saídas sem cod_part válido, usar código padrão apropriado
+          let codPart = codPartRaw;
+          if (!codPartRaw || codPartRaw.trim() === '' || codPartRaw === '0') {
+            codPart = tipo === 'saida' ? '9999999999' : '8888888888';
+          }
           const valorDoc = parseNumber(fields[12]); // Campo 12: VL_DOC
           
           if (valorDoc > 0) {

@@ -186,6 +186,11 @@ function ParticipanteTable({ data, tipo, aliquotas, selectedYear, isLoading }: P
                         CF
                       </Badge>
                     )}
+                    {row.cod_part === '8888888888' && (
+                      <Badge variant="secondary" className="text-[8px] px-1 py-0 shrink-0 bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100">
+                        FNI
+                      </Badge>
+                    )}
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <span className="block text-[10px] leading-tight truncate cursor-help">
@@ -197,7 +202,7 @@ function ParticipanteTable({ data, tipo, aliquotas, selectedYear, isLoading }: P
                         <p className="text-xs text-muted-foreground">
                           Código: {row.cod_part}
                         </p>
-                        {row.participante_cnpj && row.cod_part !== '9999999999' && (
+                        {row.participante_cnpj && row.cod_part !== '9999999999' && row.cod_part !== '8888888888' && (
                           <p className="text-xs text-muted-foreground">
                             CNPJ: {formatCNPJ(row.participante_cnpj)}
                           </p>
@@ -205,6 +210,11 @@ function ParticipanteTable({ data, tipo, aliquotas, selectedYear, isLoading }: P
                         {row.cod_part === '9999999999' && (
                           <p className="text-xs text-amber-600 mt-1">
                             Vendas agregadas a consumidor final
+                          </p>
+                        )}
+                        {row.cod_part === '8888888888' && (
+                          <p className="text-xs text-blue-600 mt-1">
+                            Compras com fornecedor não identificado no EFD
                           </p>
                         )}
                       </TooltipContent>
