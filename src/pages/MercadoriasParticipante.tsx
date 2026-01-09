@@ -281,39 +281,28 @@ export default function MercadoriasParticipante() {
     }
   });
 
-  // Buscar meses disponíveis (ainda usa a função antiga só para popular o filtro)
-  const { data: mesesData = [] } = useQuery({
-    queryKey: ['mercadorias-participante-meses'],
+  // Buscar meses disponíveis (função otimizada - retorna apenas meses únicos)
+  const { data: mesesDisponiveis = [] } = useQuery({
+    queryKey: ['participante-meses'],
     queryFn: async () => {
-      const { data, error } = await supabase.rpc('get_mv_mercadorias_participante');
+      const { data, error } = await supabase.rpc('get_mercadorias_participante_meses');
       if (error) throw error;
-      return (data || []) as ParticipanteRow[];
+      return (data || []).map((r: { mes_ano: string }) => r.mes_ano);
     }
   });
 
-  // Extrair meses/anos únicos para filtro
-  const mesesDisponiveis = useMemo(() => {
-    const unique = [...new Set(mesesData.map(r => r.mes_ano))];
-    return unique.sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
-  }, [mesesData]);
+  // Buscar participantes únicos (função otimizada - retorna apenas participantes distintos)
+  const { data: participantesUnicos = [] } = useQuery({
+    queryKey: ['participante-lista'],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('get_mercadorias_participante_lista');
+      if (error) throw error;
+      return (data || []) as { cod_part: string; nome: string; cnpj: string | null }[];
+    }
+  });
 
   // Anos disponíveis para projeção
   const anosDisponiveis = useMemo(() => aliquotas.map(a => a.ano), [aliquotas]);
-
-  // Participantes únicos para o combobox
-  const participantesUnicos = useMemo(() => {
-    const map = new Map<string, { cod_part: string; nome: string; cnpj: string | null }>();
-    mesesData.forEach(row => {
-      if (!map.has(row.participante_nome)) {
-        map.set(row.participante_nome, {
-          cod_part: row.cod_part,
-          nome: row.participante_nome,
-          cnpj: row.participante_cnpj
-        });
-      }
-    });
-    return Array.from(map.values()).sort((a, b) => a.nome.localeCompare(b.nome));
-  }, [mesesData]);
 
   // Buscar alíquota selecionada
   const aliquotaSelecionada = useMemo(() => {
