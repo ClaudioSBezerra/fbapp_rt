@@ -53,15 +53,6 @@ function formatCurrency(value: number): string {
   }).format(value);
 }
 
-function cleanFilialName(nome: string): string {
-  return nome.replace(/^Filial\s+/i, '');
-}
-
-// Mascara CNPJs que aparecem dentro de textos (ex: "Filial 10.230.480/0001-30")
-function maskCNPJInText(text: string): string {
-  const cnpjRegex = /(\d{2}\.\d{3}\.\d{3})\/(\d{4}-\d{2})/g;
-  return text.replace(cnpjRegex, '**********/$2');
-}
 
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr);
@@ -227,7 +218,7 @@ export default function EnergiaAgua() {
       return {
         'Tipo Operação': row.tipo_operacao === 'credito' ? 'Crédito' : 'Débito',
         'Tipo Serviço': row.tipo_servico === 'energia' ? 'Energia' : 'Água',
-        'Filial': maskCNPJInText(cleanFilialName(row.filial_nome)),
+        'Filial': formatFilialDisplayFormatted(row.filial_cod_est, row.filial_cnpj || ''),
         'Mês/Ano': formatDate(row.mes_ano),
         'Valor': row.valor,
         'ICMS': vlIcms,

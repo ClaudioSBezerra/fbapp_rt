@@ -54,14 +54,6 @@ const formatCurrency = (value: number) => {
   }).format(value);
 };
 
-const cleanFilialName = (name: string) => {
-  if (!name) return 'Filial';
-  return name
-    .replace(/^(FILIAL\s*[-:]?\s*)/i, '')
-    .replace(/\s+/g, ' ')
-    .trim() || 'Filial';
-};
-
 const formatMonthYear = (dateStr: string) => {
   try {
     const date = parse(dateStr, 'yyyy-MM-dd', new Date());
@@ -72,15 +64,6 @@ const formatMonthYear = (dateStr: string) => {
 };
 
 
-// Mascara CNPJ mostrando apenas o sufixo (após a /) para compliance
-const maskCNPJ = (cnpj: string): string => {
-  const cleaned = cnpj.replace(/\D/g, '');
-  if (cleaned.length === 14) {
-    const sufixo = cleaned.slice(8);
-    return `**********/${sufixo.slice(0, 4)}-${sufixo.slice(4)}`;
-  }
-  return cnpj;
-};
 
 // ServicosTable Component
 interface ServicosTableProps {
@@ -375,7 +358,7 @@ export default function Servicos() {
       const diferencaReal = totalImpostosPagar - totalImpostosAtuais;
 
       return {
-        'Filial': cleanFilialName(row.filial_nome),
+        'Filial': formatFilialDisplayFormatted(row.filial_cod_est, row.filial_cnpj || ''),
         'Mês/Ano': formatMonthYear(row.mes_ano),
         'Tipo': row.tipo === 'entrada' ? 'Aquisição' : 'Prestação',
         'Valor': row.valor,
