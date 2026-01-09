@@ -335,7 +335,11 @@ function processLine(
         if (fields.length > 12) {
           const indOper = fields[2];
           const tipo = indOper === "0" ? "entrada" : "saida";
-          const codPart = fields[4] || null; // COD_PART para relacionar com 0150
+          const codPartRaw = fields[4] || null;
+          // Para SAÍDAS sem cod_part válido, usar código padrão "CONSUMIDOR FINAL"
+          const codPart = (!codPartRaw || codPartRaw.trim() === '' || codPartRaw === '0') && tipo === 'saida' 
+            ? '9999999999' 
+            : codPartRaw;
           const valorDoc = parseNumber(fields[12]); // Campo 12: VL_DOC
           
           if (valorDoc > 0) {
@@ -351,7 +355,7 @@ function processLine(
                 cofins: fields.length > 27 ? parseNumber(fields[27]) : 0, // Campo 27: VL_COFINS (se existir)
                 icms: fields.length > 22 ? parseNumber(fields[22]) : 0,   // Campo 22: VL_ICMS (se existir)
                 ipi: fields.length > 25 ? parseNumber(fields[25]) : 0,    // Campo 25: VL_IPI (se existir)
-                cod_part: codPart, // Referência ao participante
+                cod_part: codPart, // Referência ao participante (ou CONSUMIDOR FINAL)
               },
             };
           }
@@ -362,7 +366,11 @@ function processLine(
         if (fields.length > 27) {
           const indOper = fields[2];
           const tipo = indOper === "0" ? "entrada" : "saida";
-          const codPart = fields[4] || null; // COD_PART para relacionar com 0150
+          const codPartRaw = fields[4] || null;
+          // Para SAÍDAS sem cod_part válido, usar código padrão "CONSUMIDOR FINAL"
+          const codPart = (!codPartRaw || codPartRaw.trim() === '' || codPartRaw === '0') && tipo === 'saida' 
+            ? '9999999999' 
+            : codPartRaw;
           const valorDoc = parseNumber(fields[12]); // Campo 12: VL_DOC
           
           if (valorDoc > 0) {
@@ -378,7 +386,7 @@ function processLine(
                 cofins: parseNumber(fields[27]), // Campo 27: VL_COFINS
                 icms: parseNumber(fields[22]),   // Campo 22: VL_ICMS
                 ipi: parseNumber(fields[25]),    // Campo 25: VL_IPI
-                cod_part: codPart, // Referência ao participante
+                cod_part: codPart, // Referência ao participante (ou CONSUMIDOR FINAL)
               },
             };
           }
