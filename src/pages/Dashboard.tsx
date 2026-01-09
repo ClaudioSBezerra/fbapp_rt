@@ -46,12 +46,15 @@ export default function Dashboard() {
     const fetchInitialData = async () => {
       console.log('[Dashboard] Iniciando fetch inicial...');
       
+      let hasError = false;
+      
       try {
         // Buscar períodos a partir da view materializada (muito mais leve)
         const { data: statsData, error: statsError } = await supabase.rpc('get_mv_dashboard_stats');
         
         if (statsError) {
           console.error('[Dashboard] Erro ao carregar stats iniciais:', statsError);
+          hasError = true;
         }
         
         const periodosSet = new Set<string>();
@@ -62,10 +65,19 @@ export default function Dashboard() {
 
         const periodos = Array.from(periodosSet).sort().reverse();
         setPeriodosDisponiveis(periodos);
-        if (periodos.length > 0) setPeriodoSelecionado(periodos[0]);
+        if (periodos.length > 0) {
+          setPeriodoSelecionado(periodos[0]);
+        } else {
+          // Sem períodos disponíveis - parar o loading
+          console.log('[Dashboard] Nenhum período disponível');
+          setLoading(false);
+        }
         console.log('[Dashboard] Períodos carregados:', periodos.length);
       } catch (err) {
         console.error('[Dashboard] Erro ao carregar períodos:', err);
+        hasError = true;
+        setLoading(false);
+        setLoadError('Erro ao carregar períodos. Verifique se há dados importados.');
       }
 
       // Buscar filiais
@@ -89,7 +101,7 @@ export default function Dashboard() {
         console.error('[Dashboard] Erro ao carregar alíquotas:', err);
       }
       
-      console.log('[Dashboard] Fetch inicial concluído');
+      console.log('[Dashboard] Fetch inicial concluído, hasError:', hasError);
     };
 
     fetchInitialData();

@@ -743,31 +743,18 @@ export type Database = {
           total_valor: number
         }[]
       }
-      get_mv_dashboard_stats:
-        | {
-            Args: { _mes_ano?: string }
-            Returns: {
-              categoria: string
-              cofins: number
-              icms: number
-              mes_ano: string
-              pis: number
-              subtipo: string
-              valor: number
-            }[]
-          }
-        | {
-            Args: { _filial_id?: string; _mes_ano?: string }
-            Returns: {
-              categoria: string
-              cofins: number
-              icms: number
-              mes_ano: string
-              pis: number
-              subtipo: string
-              valor: number
-            }[]
-          }
+      get_mv_dashboard_stats: {
+        Args: { _filial_id?: string; _mes_ano?: string }
+        Returns: {
+          categoria: string
+          cofins: number
+          icms: number
+          mes_ano: string
+          pis: number
+          subtipo: string
+          valor: number
+        }[]
+      }
       get_mv_energia_agua_aggregated: {
         Args: never
         Returns: {
