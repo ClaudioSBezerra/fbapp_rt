@@ -234,12 +234,22 @@ function finalizePendingD500(context: ProcessingContext): ParsedRecord | null {
   return record;
 }
 
+// Return type for processLine now includes createFilial for 0140 records
+interface ProcessLineResult {
+  record: ParsedRecord | null;
+  context: ProcessingContext;
+  blockType?: string;
+  filialUpdate?: string; // CNPJ for C010/D010/A010 context switch
+  participanteData?: Participante;
+  createFilial?: { cnpj: string; nome: string; codEst: string }; // For 0140 to create filial
+}
+
 function processLine(
   line: string,
   context: ProcessingContext,
   validPrefixes: string[],
   updateFilial?: (cnpj: string) => Promise<string | null>
-): { record: ParsedRecord | null; context: ProcessingContext; blockType?: string; filialUpdate?: string; participanteData?: Participante } {
+): ProcessLineResult {
   if (!validPrefixes.some(p => line.startsWith(p))) {
     return { record: null, context };
   }
@@ -273,13 +283,35 @@ function processLine(
       // Registro de Estabelecimentos (Cadastro de Estabelecimentos)
       // Layout: |0140|COD_EST|NOME|CNPJ|UF|IE|COD_MUN|IM|SUFRAMA|
       // Índices: 2=COD_EST, 3=NOME, 4=CNPJ, 5=UF, 6=IE, 7=COD_MUN
+      // IMPORTANTE: Criar filial AQUI, não no C010/D010/A010
       if (fields.length > 4) {
         const codEst = fields[2] || "";
+        const nome = fields[3] || "";
         const cnpj = fields[4]?.replace(/\D/g, "") || "";
         
         if (codEst && cnpj) {
           context.estabelecimentosMap.set(cnpj, codEst);
-          console.log(`Parsed 0140: COD_EST=${codEst}, CNPJ=${cnpj}`);
+          console.log(`Parsed 0140: COD_EST=${codEst}, NOME=${nome}, CNPJ=${cnpj}`);
+          
+          // Check if filial already exists in map
+          if (context.filialMap.has(cnpj)) {
+            context.currentFilialId = context.filialMap.get(cnpj)!;
+            context.currentCNPJ = cnpj;
+            console.log(`0140: Switched to existing filial ${cnpj} -> ${context.currentFilialId}`);
+            // Return signal to update cod_est on existing filial
+            return { 
+              record: null, 
+              context, 
+              createFilial: { cnpj, nome: nome || `Filial ${cnpj}`, codEst } 
+            };
+          } else {
+            // Return signal to CREATE new filial with all data
+            return { 
+              record: null, 
+              context, 
+              createFilial: { cnpj, nome: nome || `Filial ${cnpj}`, codEst } 
+            };
+          }
         }
       }
       break;
@@ -288,7 +320,7 @@ function processLine(
       // Registro de Participantes (Cadastro de Parceiros)
       // Layout: |0150|COD_PART|NOME|COD_PAIS|CNPJ|CPF|IE|COD_MUN|SUFRAMA|END|NUM|COMPL|BAIRRO|
       // Índices: 2=COD_PART, 3=NOME, 4=COD_PAIS, 5=CNPJ, 6=CPF, 7=IE, 8=COD_MUN
-      // NOTA: Participantes agora são retornados para processamento em batch (não mais acumulados no map)
+      // Participantes são vinculados à filial atual (definida pelo 0140)
       if (fields.length > 3) {
         const codPart = fields[2] || "";
         const nome = (fields[3] || "").substring(0, 100);
@@ -314,11 +346,22 @@ function processLine(
     case "A010":
     case "C010":
     case "D010":
+      // Estes registros apenas TROCAM o contexto para a filial existente
+      // A filial já foi criada no 0140 correspondente
       if (fields.length > 2 && fields[2]) {
         const cnpj = fields[2].replace(/\D/g, "");
         context.currentCNPJ = cnpj;
-        // Return the CNPJ to be processed for filial lookup/creation
-        return { record: null, context, filialUpdate: cnpj };
+        
+        // Look up existing filial (should already exist from 0140)
+        if (context.filialMap.has(cnpj)) {
+          context.currentFilialId = context.filialMap.get(cnpj)!;
+          console.log(`${registro}: Switched to filial ${cnpj} -> ${context.currentFilialId}`);
+        } else {
+          // Fallback: filial not found in map, signal to create it
+          // This can happen if 0140 was missed or on chunk resumption
+          console.warn(`${registro}: Filial ${cnpj} not found in map, will create`);
+          return { record: null, context, filialUpdate: cnpj };
+        }
       }
       break;
 
@@ -964,27 +1007,22 @@ serve(async (req) => {
       pendingD100: null, // Pending records are finalized at chunk end
       pendingD500: null,
       filialMap,
-      participantesMap: new Map(), // Will be populated from 0150 records
-      estabelecimentosMap: new Map(), // Will be populated from 0140 records
+      participantesMap: new Map(), // Will be populated from 0150 records (not persisted between chunks)
+      estabelecimentosMap: new Map(), // Will be populated from 0140 records (not persisted between chunks)
     };
     
-    // Restore participantesMap from context if resuming
-    if (existingContext?.participantesMapEntries) {
-      for (const [codPart, data] of existingContext.participantesMapEntries) {
-        context.participantesMap.set(codPart, data);
-      }
-    }
-    
-    // Restore estabelecimentosMap from context if resuming
-    if (existingContext?.estabelecimentosMapEntries) {
-      for (const [cnpj, codEst] of existingContext.estabelecimentosMapEntries) {
-        context.estabelecimentosMap.set(cnpj, codEst);
-      }
-    }
+    // NOTE: participantesMap and estabelecimentosMap are NO LONGER restored from context
+    // because they can grow to 100k+ entries and cause DB timeout on UPDATE.
+    // These maps are used for lookup during current chunk only.
+    // Participantes are inserted directly to DB via batch processing.
+    // Estabelecimentos (filiais) are persisted in the filiais table.
     
     if (isResuming && existingContext) {
-      console.log(`Job ${jobId}: Restored context from previous chunk - period: ${context.currentPeriod}, CNPJ: ${context.currentCNPJ}, filialId: ${context.currentFilialId}, efdType: ${context.efdType}, participantes: ${context.participantesMap.size}, estabelecimentos: ${context.estabelecimentosMap.size}`);
+      console.log(`Job ${jobId}: Restored context from previous chunk - period: ${context.currentPeriod}, CNPJ: ${context.currentCNPJ}, filialId: ${context.currentFilialId}, efdType: ${context.efdType}`);
     }
+    
+    // Track if generic participants have been created for current filial
+    const genericParticipantsCreated = new Set<string>(); // Set of filial_ids
 
     // Initialize block limits
     const blockLimits = createBlockLimits(recordLimit, importScope);
@@ -1078,38 +1116,39 @@ serve(async (req) => {
           const result = processLine(trimmedLine, context, validPrefixes);
           context = result.context;
           
-          // Handle filial update from C010/D010
-          if (result.filialUpdate) {
-            const cnpj = result.filialUpdate;
-            const codEst = context.estabelecimentosMap.get(cnpj) || null;
-            
+          // Handle filial creation from 0140 (for final buffer line)
+          if (result.createFilial) {
+            const { cnpj, nome, codEst } = result.createFilial;
             if (context.filialMap.has(cnpj)) {
               context.currentFilialId = context.filialMap.get(cnpj)!;
-              
-              // Update cod_est if we have it from 0140
-              if (codEst) {
-                await supabase
-                  .from("filiais")
-                  .update({ cod_est: codEst })
-                  .eq("id", context.currentFilialId);
-              }
+              await supabase.from("filiais").update({ cod_est: codEst, razao_social: nome }).eq("id", context.currentFilialId);
             } else {
-              // Create new filial with cod_est
-              const { data: newFilial } = await supabase
-                .from("filiais")
-                .insert({
-                  empresa_id: job.empresa_id,
-                  cnpj: cnpj,
-                  razao_social: `Filial ${cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5")}`,
-                  cod_est: codEst,
-                })
-                .select("id")
-                .single();
-              
+              const { data: newFilial } = await supabase.from("filiais")
+                .insert({ empresa_id: job.empresa_id, cnpj, razao_social: nome, cod_est: codEst })
+                .select("id").single();
               if (newFilial) {
                 context.filialMap.set(cnpj, newFilial.id);
                 context.currentFilialId = newFilial.id;
-                console.log(`Job ${jobId}: Created new filial ${cnpj} -> ${newFilial.id}`);
+              }
+            }
+          }
+          
+          // Handle filial update from C010/D010 (fallback for final buffer line)
+          if (result.filialUpdate) {
+            const cnpj = result.filialUpdate;
+            const codEst = context.estabelecimentosMap.get(cnpj) || null;
+            if (context.filialMap.has(cnpj)) {
+              context.currentFilialId = context.filialMap.get(cnpj)!;
+              if (codEst) {
+                await supabase.from("filiais").update({ cod_est: codEst }).eq("id", context.currentFilialId);
+              }
+            } else {
+              const { data: newFilial } = await supabase.from("filiais")
+                .insert({ empresa_id: job.empresa_id, cnpj, razao_social: `Filial ${cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5")}`, cod_est: codEst })
+                .select("id").single();
+              if (newFilial) {
+                context.filialMap.set(cnpj, newFilial.id);
+                context.currentFilialId = newFilial.id;
               }
             }
           }
@@ -1192,14 +1231,90 @@ serve(async (req) => {
         const result = processLine(trimmedLine, context, validPrefixes);
         context = result.context;
         
-        // Handle filial update from C010/D010
+        // Handle filial creation from 0140 (preferred) or fallback from C010/D010/A010
+        if (result.createFilial) {
+          const { cnpj, nome, codEst } = result.createFilial;
+          
+          if (context.filialMap.has(cnpj)) {
+            // Filial exists - update cod_est and switch context
+            context.currentFilialId = context.filialMap.get(cnpj)!;
+            context.currentCNPJ = cnpj;
+            console.log(`Job ${jobId}: 0140 - Switched to existing filial ${cnpj} -> ${context.currentFilialId}`);
+            
+            // Update cod_est and razao_social if we have better data from 0140
+            await supabase
+              .from("filiais")
+              .update({ cod_est: codEst, razao_social: nome })
+              .eq("id", context.currentFilialId);
+            console.log(`Job ${jobId}: Updated filial ${context.currentFilialId} with cod_est: ${codEst}, nome: ${nome}`);
+          } else {
+            // Create new filial with full data from 0140
+            const { data: newFilial } = await supabase
+              .from("filiais")
+              .insert({
+                empresa_id: job.empresa_id,
+                cnpj: cnpj,
+                razao_social: nome,
+                cod_est: codEst,
+              })
+              .select("id")
+              .single();
+            
+            if (newFilial) {
+              context.filialMap.set(cnpj, newFilial.id);
+              context.currentFilialId = newFilial.id;
+              context.currentCNPJ = cnpj;
+              console.log(`Job ${jobId}: 0140 - Created new filial ${cnpj} -> ${newFilial.id} with cod_est: ${codEst}, nome: ${nome}`);
+              
+              // Create generic participants for this new filial
+              if (!genericParticipantsCreated.has(newFilial.id)) {
+                genericParticipantsCreated.add(newFilial.id);
+                
+                // Insert CONSUMIDOR FINAL and FORNECEDOR NÃO IDENTIFICADO
+                const genericParticipants = [
+                  {
+                    filial_id: newFilial.id,
+                    cod_part: '9999999999',
+                    nome: 'CONSUMIDOR FINAL',
+                    cnpj: null,
+                    cpf: null,
+                    ie: null,
+                    cod_mun: null,
+                  },
+                  {
+                    filial_id: newFilial.id,
+                    cod_part: '8888888888',
+                    nome: 'FORNECEDOR NÃO IDENTIFICADO',
+                    cnpj: null,
+                    cpf: null,
+                    ie: null,
+                    cod_mun: null,
+                  },
+                ];
+                
+                const { error: genPartError } = await supabase
+                  .from("participantes")
+                  .upsert(genericParticipants, { onConflict: 'filial_id,cod_part', ignoreDuplicates: true });
+                
+                if (genPartError) {
+                  console.warn(`Job ${jobId}: Failed to create generic participants for filial ${newFilial.id}: ${genPartError.message}`);
+                } else {
+                  console.log(`Job ${jobId}: Created generic participants (CONSUMIDOR FINAL, FORNECEDOR NÃO IDENTIFICADO) for filial ${newFilial.id}`);
+                  counts.participantes += 2;
+                }
+              }
+            }
+          }
+        }
+        
+        // Handle filial update from C010/D010/A010 (fallback - filial should already exist from 0140)
         if (result.filialUpdate) {
           const cnpj = result.filialUpdate;
           const codEst = context.estabelecimentosMap.get(cnpj) || null;
           
           if (context.filialMap.has(cnpj)) {
             context.currentFilialId = context.filialMap.get(cnpj)!;
-            console.log(`Job ${jobId}: Switched to filial ${cnpj} -> ${context.currentFilialId}`);
+            console.log(`Job ${jobId}: C/D/A010 - Switched to filial ${cnpj} -> ${context.currentFilialId}`);
             
             // Update cod_est if we have it from 0140
             if (codEst) {
@@ -1207,10 +1322,9 @@ serve(async (req) => {
                 .from("filiais")
                 .update({ cod_est: codEst })
                 .eq("id", context.currentFilialId);
-              console.log(`Job ${jobId}: Updated filial ${context.currentFilialId} with cod_est: ${codEst}`);
             }
           } else {
-            // Create new filial with cod_est
+            // Fallback: Create new filial (should rarely happen)
             const { data: newFilial } = await supabase
               .from("filiais")
               .insert({
@@ -1225,7 +1339,20 @@ serve(async (req) => {
             if (newFilial) {
               context.filialMap.set(cnpj, newFilial.id);
               context.currentFilialId = newFilial.id;
-              console.log(`Job ${jobId}: Created new filial ${cnpj} -> ${newFilial.id} with cod_est: ${codEst}`);
+              console.log(`Job ${jobId}: C/D/A010 - Created fallback filial ${cnpj} -> ${newFilial.id}`);
+              
+              // Also create generic participants for fallback filial
+              if (!genericParticipantsCreated.has(newFilial.id)) {
+                genericParticipantsCreated.add(newFilial.id);
+                
+                const genericParticipants = [
+                  { filial_id: newFilial.id, cod_part: '9999999999', nome: 'CONSUMIDOR FINAL', cnpj: null, cpf: null, ie: null, cod_mun: null },
+                  { filial_id: newFilial.id, cod_part: '8888888888', nome: 'FORNECEDOR NÃO IDENTIFICADO', cnpj: null, cpf: null, ie: null, cod_mun: null },
+                ];
+                
+                await supabase.from("participantes").upsert(genericParticipants, { onConflict: 'filial_id,cod_part', ignoreDuplicates: true });
+                counts.participantes += 2;
+              }
             }
           }
         }
