@@ -13,6 +13,7 @@ import { Download, FileText, TrendingUp, TrendingDown, Building2, HelpCircle } f
 import { exportToExcel } from '@/lib/exportToExcel';
 import { format, parse } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { formatFilialDisplayFormatted } from '@/lib/formatFilial';
 
 // Types
 interface Aliquota {
@@ -197,7 +198,7 @@ const ServicosTable = ({ data, tipo, aliquotas, selectedYear }: ServicosTablePro
             return (
               <TableRow key={`${row.filial_id}-${row.mes_ano}-${idx}`} className="text-xs">
                 <TableCell className="font-medium text-xs whitespace-nowrap py-1 px-2">
-                  {row.filial_cod_est ? `${row.filial_cod_est} - ${row.filial_cnpj?.replace(/\D/g, '') || ''}` : row.filial_cnpj?.replace(/\D/g, '') || cleanFilialName(row.filial_nome)}
+                  {formatFilialDisplayFormatted(row.filial_cod_est, row.filial_cnpj || '')}
                 </TableCell>
                 <TableCell className="text-xs whitespace-nowrap py-1 px-2">{formatMonthYear(row.mes_ano)}</TableCell>
                 <TableCell className="text-right font-mono text-xs py-1 px-2">{formatCurrency(row.valor)}</TableCell>
@@ -440,7 +441,7 @@ export default function Servicos() {
                   <SelectItem value="all">Todas as filiais</SelectItem>
                   {filiais.map(f => (
                     <SelectItem key={f.id} value={f.id}>
-                      {f.cod_est ? `${f.cod_est} - ${f.cnpj.replace(/\D/g, '')}` : f.cnpj.replace(/\D/g, '')}
+                      {formatFilialDisplayFormatted(f.cod_est, f.cnpj)}
                     </SelectItem>
                   ))}
                 </SelectContent>

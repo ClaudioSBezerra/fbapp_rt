@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ArrowUpRight, ArrowDownRight, Building2, Filter, Calendar, HelpCircle, Download } from 'lucide-react';
 import { exportToExcel } from '@/lib/exportToExcel';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { formatFilialDisplayFormatted } from '@/lib/formatFilial';
 
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -175,7 +176,7 @@ function MercadoriasTable({ data, aliquotas, tipo, anoProjecao }: MercadoriasTab
 
             return (
               <TableRow key={`${row.filial_id}-${row.mes_ano}-${index}`} className="text-xs">
-                <TableCell className="font-medium text-xs whitespace-nowrap py-1 px-2">{row.filial_cod_est ? `${row.filial_cod_est} - ${row.filial_cnpj?.replace(/\D/g, '') || ''}` : row.filial_cnpj?.replace(/\D/g, '') || cleanFilialName(row.filial_nome)}</TableCell>
+                <TableCell className="font-medium text-xs whitespace-nowrap py-1 px-2">{formatFilialDisplayFormatted(row.filial_cod_est, row.filial_cnpj || '')}</TableCell>
                 <TableCell className="text-xs whitespace-nowrap">{formatDate(row.mes_ano)}</TableCell>
                 <TableCell className="text-right font-mono text-xs">{formatCurrency(row.valor)}</TableCell>
                 <TableCell className="text-right font-mono text-xs">{formatCurrency(vlIcms)}</TableCell>
@@ -431,14 +432,14 @@ export default function Mercadorias() {
             <div className="flex items-center gap-2 w-full sm:w-auto">
               <Label className="text-xs whitespace-nowrap">Filial:</Label>
               <Select value={filterFilial} onValueChange={setFilterFilial}>
-                <SelectTrigger className="w-full sm:w-[200px]">
+                <SelectTrigger className="w-full sm:w-[220px]">
                   <SelectValue placeholder="Todas" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todas</SelectItem>
                   {filiais.map((filial) => (
                     <SelectItem key={filial.id} value={filial.id}>
-                      {filial.cod_est ? `${filial.cod_est} - ${filial.cnpj.replace(/\D/g, '')}` : filial.cnpj.replace(/\D/g, '')}
+                      {formatFilialDisplayFormatted(filial.cod_est, filial.cnpj)}
                     </SelectItem>
                   ))}
                 </SelectContent>

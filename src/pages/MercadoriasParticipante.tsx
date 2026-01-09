@@ -16,6 +16,7 @@ import { Pagination, PaginationContent, PaginationItem, PaginationLink, Paginati
 import { Download, Users, HelpCircle, ChevronsUpDown, Check, ArrowDownRight, ArrowUpRight, RefreshCw } from 'lucide-react';
 import { exportToExcel } from '@/lib/exportToExcel';
 import { cn } from '@/lib/utils';
+import { formatCNPJMasked } from '@/lib/formatFilial';
 
 interface Aliquota {
   ano: number;
@@ -59,10 +60,10 @@ const formatCurrency = (value: number) => {
   return new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
 };
 
-// Formata CNPJ
+// Formata CNPJ - usa função centralizada
 const formatCNPJ = (cnpj: string | null) => {
   if (!cnpj) return '-';
-  return cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+  return formatCNPJMasked(cnpj);
 };
 
 // Formata data para MM/YYYY
