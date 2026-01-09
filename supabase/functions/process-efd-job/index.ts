@@ -70,6 +70,7 @@ interface BatchBuffers {
   energia_agua: any[];
   fretes: any[];
   servicos: any[];
+  participantes: any[];
 }
 
 interface InsertCounts {
@@ -77,6 +78,7 @@ interface InsertCounts {
   energia_agua: number;
   fretes: number;
   servicos: number;
+  participantes: number;
 }
 
 interface SeenCounts {
@@ -237,7 +239,7 @@ function processLine(
   context: ProcessingContext,
   validPrefixes: string[],
   updateFilial?: (cnpj: string) => Promise<string | null>
-): { record: ParsedRecord | null; context: ProcessingContext; blockType?: string; filialUpdate?: string } {
+): { record: ParsedRecord | null; context: ProcessingContext; blockType?: string; filialUpdate?: string; participanteData?: Participante } {
   if (!validPrefixes.some(p => line.startsWith(p))) {
     return { record: null, context };
   }
@@ -286,6 +288,7 @@ function processLine(
       // Registro de Participantes (Cadastro de Parceiros)
       // Layout: |0150|COD_PART|NOME|COD_PAIS|CNPJ|CPF|IE|COD_MUN|SUFRAMA|END|NUM|COMPL|BAIRRO|
       // Índices: 2=COD_PART, 3=NOME, 4=COD_PAIS, 5=CNPJ, 6=CPF, 7=IE, 8=COD_MUN
+      // NOTA: Participantes agora são retornados para processamento em batch (não mais acumulados no map)
       if (fields.length > 3) {
         const codPart = fields[2] || "";
         const nome = (fields[3] || "").substring(0, 100);
@@ -295,7 +298,15 @@ function processLine(
         const codMun = fields.length > 8 ? (fields[8] || null) : null;
         
         if (codPart && nome) {
+          // Still add to map for lookup purposes (cod_part -> nome)
           context.participantesMap.set(codPart, { codPart, nome, cnpj, cpf, ie, codMun });
+          
+          // Return as a special participante record for batch processing
+          return {
+            record: null,
+            context,
+            participanteData: { codPart, nome, cnpj, cpf, ie, codMun }
+          };
         }
       }
       break;
@@ -905,15 +916,17 @@ serve(async (req) => {
       energia_agua: [],
       fretes: [],
       servicos: [],
+      participantes: [],
     };
     
     // Initialize counts with existing values (for resumption)
-    const existingCounts = job.counts as any || { mercadorias: 0, energia_agua: 0, fretes: 0, servicos: 0 };
+    const existingCounts = job.counts as any || { mercadorias: 0, energia_agua: 0, fretes: 0, servicos: 0, participantes: 0 };
     const counts: InsertCounts = {
       mercadorias: existingCounts.mercadorias || 0,
       energia_agua: existingCounts.energia_agua || 0,
       fretes: existingCounts.fretes || 0,
       servicos: existingCounts.servicos || 0,
+      participantes: existingCounts.participantes || 0,
     };
     
     // Track seen record counts (for diagnostics)
@@ -989,6 +1002,7 @@ serve(async (req) => {
         fretes: 'filial_id,mes_ano,tipo,valor,pis,cofins,icms',
         energia_agua: 'filial_id,mes_ano,tipo_operacao,tipo_servico,valor,pis,cofins,icms',
         servicos: 'filial_id,mes_ano,tipo,descricao,valor,pis,cofins,iss',
+        participantes: 'filial_id,cod_part',
       };
       
       const { error } = await supabase.from(table).upsert(batches[table], { 
@@ -1016,7 +1030,7 @@ serve(async (req) => {
     };
 
     const flushAllBatches = async (): Promise<string | null> => {
-      for (const table of ["mercadorias", "energia_agua", "fretes", "servicos"] as const) {
+      for (const table of ["mercadorias", "energia_agua", "fretes", "servicos", "participantes"] as const) {
         const err = await flushBatch(table);
         if (err) return err;
       }
@@ -1231,6 +1245,30 @@ serve(async (req) => {
         if (registro === "D501" && "d501" in seenCounts) seenCounts.d501++;
         if (registro === "D505" && "d505" in seenCounts) seenCounts.d505++;
 
+        // Handle participante data from 0150 records - batch insert instead of accumulating
+        if (result.participanteData && context.currentFilialId) {
+          const p = result.participanteData;
+          batches.participantes.push({
+            filial_id: context.currentFilialId,
+            cod_part: p.codPart,
+            nome: p.nome,
+            cnpj: p.cnpj,
+            cpf: p.cpf,
+            ie: p.ie,
+            cod_mun: p.codMun,
+          });
+          
+          // Flush participantes batch when it reaches BATCH_SIZE
+          if (batches.participantes.length >= BATCH_SIZE) {
+            const err = await flushBatch("participantes");
+            if (err) {
+              console.warn(`Job ${jobId}: Failed to flush participantes batch: ${err}`);
+              // Don't fail the job for participantes errors, just log and continue
+              batches.participantes = [];
+            }
+          }
+        }
+
         if (result.record && result.blockType) {
           const blockKey = result.blockType as keyof BlockLimits;
           
@@ -1305,7 +1343,7 @@ serve(async (req) => {
             .update({ progress, total_lines: totalLinesProcessed, counts })
             .eq("id", jobId);
           lastProgressUpdate = linesProcessedInChunk;
-          console.log(`Job ${jobId}: Progress ${progress}% (${totalLinesProcessed} lines, mercadorias: ${counts.mercadorias}, servicos: ${counts.servicos}, energia_agua: ${counts.energia_agua}, fretes: ${counts.fretes})`);
+          console.log(`Job ${jobId}: Progress ${progress}% (${totalLinesProcessed} lines, mercadorias: ${counts.mercadorias}, servicos: ${counts.servicos}, energia_agua: ${counts.energia_agua}, fretes: ${counts.fretes}, participantes: ${counts.participantes})`);
         }
       }
 
@@ -1361,33 +1399,9 @@ serve(async (req) => {
       throw new Error(`Final flush error: ${flushErr}`);
     }
 
-    // Insert participantes collected from 0150 records
-    if (context.participantesMap.size > 0 && context.currentFilialId) {
-      const participantesToInsert = Array.from(context.participantesMap.values()).map(p => ({
-        filial_id: context.currentFilialId,
-        cod_part: p.codPart,
-        nome: p.nome,
-        cnpj: p.cnpj,
-        cpf: p.cpf,
-        ie: p.ie,
-        cod_mun: p.codMun,
-      }));
-      
-      console.log(`Job ${jobId}: Inserting ${participantesToInsert.length} participantes...`);
-      
-      const { error: partError } = await supabase
-        .from("participantes")
-        .upsert(participantesToInsert, { 
-          onConflict: 'filial_id,cod_part',
-          ignoreDuplicates: true 
-        });
-      
-      if (partError) {
-        console.warn(`Job ${jobId}: Failed to insert participantes:`, partError);
-      } else {
-        console.log(`Job ${jobId}: Participantes inserted successfully`);
-      }
-    }
+    // NOTE: Participantes are now inserted in batches during processing (via flushBatch)
+    // No more mass insertion at chunk end - this was causing CPU timeout on large files
+    console.log(`Job ${jobId}: Chunk completed. Participantes inserted: ${counts.participantes}, Map size: ${context.participantesMap.size}`);
 
     // If we need to continue with another chunk
     if (shouldContinueNextChunk) {
