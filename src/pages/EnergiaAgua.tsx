@@ -98,6 +98,25 @@ export default function EnergiaAgua() {
     }
   };
 
+  // Enriquece os dados agregados com cod_est e cnpj da tabela filiais
+  const enrichedAggregatedData = useMemo(() => {
+    if (filiais.length === 0) return aggregatedData;
+    
+    const filiaisById = new Map(filiais.map(f => [f.id, f]));
+    
+    return aggregatedData.map(row => {
+      const filial = filiaisById.get(row.filial_id);
+      if (filial) {
+        return {
+          ...row,
+          filial_cod_est: filial.cod_est || row.filial_cod_est,
+          filial_cnpj: filial.cnpj || row.filial_cnpj,
+        };
+      }
+      return row;
+    });
+  }, [aggregatedData, filiais]);
+
   useEffect(() => {
     async function fetchData() {
       try {
@@ -130,18 +149,18 @@ export default function EnergiaAgua() {
 
   // Get unique mes_ano options from aggregated data
   const mesAnoOptions = useMemo(() => {
-    const unique = [...new Set(aggregatedData.map(i => i.mes_ano))];
+    const unique = [...new Set(enrichedAggregatedData.map(i => i.mes_ano))];
     return unique.sort((a, b) => b.localeCompare(a));
-  }, [aggregatedData]);
+  }, [enrichedAggregatedData]);
 
   // Filter aggregated data
   const filteredData = useMemo(() => {
-    return aggregatedData.filter(i => {
+    return enrichedAggregatedData.filter(i => {
       if (filterFilial !== 'all' && i.filial_id !== filterFilial) return false;
       if (filterMesAno !== 'all' && i.mes_ano !== filterMesAno) return false;
       return true;
     });
-  }, [aggregatedData, filterFilial, filterMesAno]);
+  }, [enrichedAggregatedData, filterFilial, filterMesAno]);
 
   const creditosAgregados = useMemo(() => 
     filteredData.filter(i => i.tipo_operacao === 'credito'), 

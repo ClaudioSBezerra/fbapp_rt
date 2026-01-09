@@ -262,21 +262,40 @@ export default function Servicos() {
     },
   });
 
+  // Enriquece os dados agregados com cod_est e cnpj da tabela filiais
+  const enrichedServicosData = useMemo(() => {
+    if (filiais.length === 0) return servicosData;
+    
+    const filiaisById = new Map(filiais.map(f => [f.id, f]));
+    
+    return servicosData.map(row => {
+      const filial = filiaisById.get(row.filial_id);
+      if (filial) {
+        return {
+          ...row,
+          filial_cod_est: filial.cod_est || row.filial_cod_est,
+          filial_cnpj: filial.cnpj || row.filial_cnpj,
+        };
+      }
+      return row;
+    });
+  }, [servicosData, filiais]);
+
   // Get unique months
   const uniqueMonths = useMemo(() => {
     const months = new Set<string>();
-    servicosData.forEach(row => months.add(row.mes_ano));
+    enrichedServicosData.forEach(row => months.add(row.mes_ano));
     return Array.from(months).sort().reverse();
-  }, [servicosData]);
+  }, [enrichedServicosData]);
 
   // Filter data
   const filteredData = useMemo(() => {
-    return servicosData.filter(row => {
+    return enrichedServicosData.filter(row => {
       if (selectedFilial !== 'all' && row.filial_id !== selectedFilial) return false;
       if (selectedMonthYear !== 'all' && row.mes_ano !== selectedMonthYear) return false;
       return true;
     });
-  }, [servicosData, selectedFilial, selectedMonthYear]);
+  }, [enrichedServicosData, selectedFilial, selectedMonthYear]);
 
   // Calculate totals
   const totals = useMemo(() => {

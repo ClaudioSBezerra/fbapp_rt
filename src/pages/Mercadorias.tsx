@@ -261,20 +261,39 @@ export default function Mercadorias() {
     fetchAggregatedData();
   }, [user]);
 
+  // Enriquece os dados agregados com cod_est e cnpj da tabela filiais
+  const enrichedAggregatedData = useMemo(() => {
+    if (filiais.length === 0) return aggregatedData;
+    
+    const filiaisById = new Map(filiais.map(f => [f.id, f]));
+    
+    return aggregatedData.map(row => {
+      const filial = filiaisById.get(row.filial_id);
+      if (filial) {
+        return {
+          ...row,
+          filial_cod_est: filial.cod_est || row.filial_cod_est,
+          filial_cnpj: filial.cnpj || row.filial_cnpj,
+        };
+      }
+      return row;
+    });
+  }, [aggregatedData, filiais]);
+
   // Get unique mes_ano options from aggregated data
   const mesAnoOptions = useMemo(() => {
-    const unique = [...new Set(aggregatedData.map(m => m.mes_ano))];
+    const unique = [...new Set(enrichedAggregatedData.map(m => m.mes_ano))];
     return unique.sort((a, b) => b.localeCompare(a));
-  }, [aggregatedData]);
+  }, [enrichedAggregatedData]);
 
   // Filter aggregated data
   const filteredData = useMemo(() => {
-    return aggregatedData.filter(m => {
+    return enrichedAggregatedData.filter(m => {
       if (filterFilial !== 'all' && m.filial_id !== filterFilial) return false;
       if (filterMesAno !== 'all' && m.mes_ano !== filterMesAno) return false;
       return true;
     });
-  }, [aggregatedData, filterFilial, filterMesAno]);
+  }, [enrichedAggregatedData, filterFilial, filterMesAno]);
 
   const entradasAgregadas = useMemo(() => 
     filteredData.filter(m => m.tipo === 'entrada').sort((a, b) => b.mes_ano.localeCompare(a.mes_ano)), 
