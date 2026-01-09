@@ -12,6 +12,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { Building2, Plus, Users, Store, Copy, Check } from 'lucide-react';
+import { formatCNPJMasked } from '@/lib/formatFilial';
 
 interface Tenant {
   id: string;
@@ -41,10 +42,6 @@ interface Filial {
   nome_fantasia: string | null;
 }
 
-function formatCNPJ(cnpj: string): string {
-  const cleaned = cnpj.replace(/\D/g, '');
-  return cleaned.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
-}
 
 // Mascara CNPJ mostrando apenas o sufixo (após a /) para compliance
 function maskCNPJ(cnpj: string): string {

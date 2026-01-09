@@ -68,10 +68,6 @@ function formatDate(dateStr: string): string {
   return `${month}/${year}`;
 }
 
-function formatCNPJ(cnpj: string): string {
-  const cleaned = cnpj.replace(/\D/g, '');
-  return cleaned.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
-}
 
 function getYearFromMesAno(mesAno: string): number {
   return new Date(mesAno).getFullYear();
