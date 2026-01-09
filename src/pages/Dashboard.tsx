@@ -384,12 +384,12 @@ export default function Dashboard() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-emerald-500" />
+              <TrendingUp className="h-4 w-4 text-orange-500" />
               CBS Projetado
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-emerald-600">
+            <div className="text-2xl font-bold text-orange-600">
               {formatCurrency(projecaoAno.cbsProjetado)}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
@@ -404,7 +404,7 @@ export default function Dashboard() {
         <CardHeader>
           <CardTitle className="text-base font-semibold">Evolução Tributária 2027-2033</CardTitle>
           <p className="text-xs text-muted-foreground">
-            ICMS e PIS/COFINS em extinção gradual, IBS e CBS em ascensão
+            ICMS em extinção gradual, IBS e CBS em ascensão
           </p>
         </CardHeader>
         <CardContent>
@@ -438,18 +438,9 @@ export default function Dashboard() {
                 />
                 <Line
                   type="monotone"
-                  dataKey="pisCofinsProjetado"
-                  name="PIS/COFINS"
-                  stroke="hsl(280, 60%, 50%)"
-                  strokeWidth={3}
-                  dot={{ r: 4 }}
-                  activeDot={{ r: 6 }}
-                />
-                <Line
-                  type="monotone"
                   dataKey="ibsProjetado"
                   name="IBS"
-                  stroke="hsl(142, 71%, 45%)"
+                  stroke="hsl(142, 71%, 35%)"
                   strokeWidth={3}
                   dot={{ r: 4 }}
                   activeDot={{ r: 6 }}
@@ -458,7 +449,7 @@ export default function Dashboard() {
                   type="monotone"
                   dataKey="cbsProjetado"
                   name="CBS"
-                  stroke="hsl(160, 60%, 45%)"
+                  stroke="hsl(25, 95%, 53%)"
                   strokeWidth={3}
                   dot={{ r: 4 }}
                   activeDot={{ r: 6 }}
