@@ -146,14 +146,52 @@ export default function ImportarEFD() {
 
   const handleRefreshViews = async () => {
     setRefreshingViews(true);
+    
+    // Create abort controller with 120s timeout (views can take time to refresh)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 120000);
+    
     try {
+      toast.info('Atualizando painéis... Isso pode levar alguns segundos.');
+      
+      // Call the refresh function
       const { error } = await supabase.rpc('refresh_materialized_views_async');
-      if (error) throw error;
-      toast.success('Views atualizadas com sucesso! Os painéis agora mostrarão os dados.');
-      setViewsStatus('ok');
-    } catch (err) {
+      
+      clearTimeout(timeoutId);
+      
+      if (error) {
+        console.error('RPC error:', error);
+        throw error;
+      }
+      
+      // Validate that refresh worked by checking if data exists
+      toast.info('Validando atualização...');
+      const { data: stats, error: checkError } = await supabase.rpc('get_mv_dashboard_stats');
+      
+      if (checkError) {
+        console.warn('Validation check failed:', checkError);
+        toast.warning('Atualização concluída, mas não foi possível validar. Verifique o Dashboard.');
+        setViewsStatus('empty');
+        return;
+      }
+      
+      if (stats && stats.length > 0) {
+        toast.success('Painéis atualizados com sucesso! Os dados estão disponíveis.');
+        setViewsStatus('ok');
+      } else {
+        toast.warning('Atualização concluída, mas ainda não há dados. Verifique se há importações finalizadas.');
+        setViewsStatus('empty');
+      }
+    } catch (err: any) {
+      clearTimeout(timeoutId);
       console.error('Failed to refresh views:', err);
-      toast.error('Falha ao atualizar views. Tente novamente em alguns minutos.');
+      
+      if (err.name === 'AbortError' || err.message?.includes('abort')) {
+        toast.error('A atualização está demorando muito. Tente novamente em alguns minutos.');
+      } else {
+        toast.error('Falha ao atualizar views. Tente novamente em alguns minutos.');
+      }
+      setViewsStatus('empty');
     } finally {
       setRefreshingViews(false);
     }
