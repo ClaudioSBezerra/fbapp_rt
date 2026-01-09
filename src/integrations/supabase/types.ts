@@ -693,6 +693,20 @@ export type Database = {
           valor: number
         }[]
       }
+      get_mercadorias_participante_lista: {
+        Args: never
+        Returns: {
+          cnpj: string
+          cod_part: string
+          nome: string
+        }[]
+      }
+      get_mercadorias_participante_meses: {
+        Args: never
+        Returns: {
+          mes_ano: string
+        }[]
+      }
       get_mercadorias_participante_page: {
         Args: {
           p_limit?: number
