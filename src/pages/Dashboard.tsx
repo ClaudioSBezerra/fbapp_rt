@@ -59,8 +59,9 @@ export default function Dashboard() {
         
         const periodosSet = new Set<string>();
         statsData?.forEach((s: { mes_ano: string }) => {
-          const date = new Date(s.mes_ano);
-          periodosSet.add(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`);
+          // Parse diretamente da string para evitar bugs de timezone
+          const [year, month] = s.mes_ano.split('-').map(Number);
+          periodosSet.add(`${year}-${String(month).padStart(2, "0")}`);
         });
 
         const periodos = Array.from(periodosSet).sort().reverse();
@@ -129,7 +130,8 @@ export default function Dashboard() {
 
       try {
         const [ano, mes] = periodoSelecionado.split("-").map(Number);
-        const mesAno = new Date(ano, mes - 1, 1).toISOString().split("T")[0];
+        // Construir string diretamente para evitar conversão UTC
+        const mesAno = `${ano}-${String(mes).padStart(2, '0')}-01`;
         
         console.log('[Dashboard] Chamando get_mv_dashboard_stats com:', { mesAno, filial: filialSelecionada });
 
