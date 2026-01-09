@@ -1,4 +1,14 @@
 /**
+ * Formata CNPJ com máscara completa
+ * Entrada: "10230480000189" → Saída: "10.230.480/0001-89"
+ */
+export function formatCNPJMasked(cnpj: string | null | undefined): string {
+  const cleaned = cnpj?.replace(/\D/g, '') || '';
+  if (cleaned.length !== 14) return cnpj || '';
+  return cleaned.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+}
+
+/**
  * Formata o display de uma filial com COD_EST e CNPJ
  * Formato: FC010102 - 10230480001889
  */

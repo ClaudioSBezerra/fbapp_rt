@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from "recharts";
 import { Loader2, TrendingDown, TrendingUp, AlertCircle, RefreshCw } from "lucide-react";
+import { formatFilialDisplayFormatted } from "@/lib/formatFilial";
 
 // Limpa prefixos comuns do nome da filial
 function cleanFilialName(name: string): string {
@@ -319,14 +320,14 @@ export default function Dashboard() {
           </Select>
 
           <Select value={filialSelecionada} onValueChange={setFilialSelecionada}>
-            <SelectTrigger className="w-[180px]">
+            <SelectTrigger className="w-[220px]">
               <SelectValue placeholder="Filial" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="todas">Todas as filiais</SelectItem>
               {filiais.map((f) => (
                 <SelectItem key={f.id} value={f.id}>
-                  {f.cod_est ? `${f.cod_est} - ${f.cnpj.replace(/\D/g, '')}` : f.cnpj.replace(/\D/g, '')}
+                  {formatFilialDisplayFormatted(f.cod_est, f.cnpj)}
                 </SelectItem>
               ))}
             </SelectContent>
