@@ -7,6 +7,21 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from "recharts";
 import { Loader2, TrendingDown, TrendingUp, AlertCircle, RefreshCw } from "lucide-react";
 
+// Limpa prefixos comuns do nome da filial
+function cleanFilialName(name: string): string {
+  if (!name) return '';
+  return name
+    .replace(/^(FILIAL\s+)/i, '')
+    .replace(/^(MATRIZ\s+)/i, '')
+    .trim();
+}
+
+// Mascara CNPJs que aparecem dentro de textos
+function maskCNPJInText(text: string): string {
+  const cnpjRegex = /(\d{2}\.\d{3}\.\d{3})\/(\d{4}-\d{2})/g;
+  return text.replace(cnpjRegex, '**.**.***/\$2');
+}
+
 interface Aliquota {
   ano: number;
   ibs_estadual: number;
@@ -307,7 +322,7 @@ export default function Dashboard() {
               <SelectItem value="todas">Todas as filiais</SelectItem>
               {filiais.map((f) => (
                 <SelectItem key={f.id} value={f.id}>
-                  {f.nome}
+                  {maskCNPJInText(cleanFilialName(f.nome))}
                 </SelectItem>
               ))}
             </SelectContent>
