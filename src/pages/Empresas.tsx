@@ -43,15 +43,6 @@ interface Filial {
 }
 
 
-// Mascara CNPJ mostrando apenas o sufixo (após a /) para compliance
-function maskCNPJ(cnpj: string): string {
-  const cleaned = cnpj.replace(/\D/g, '');
-  if (cleaned.length === 14) {
-    const sufixo = cleaned.slice(8);
-    return `**********/${sufixo.slice(0, 4)}-${sufixo.slice(4)}`;
-  }
-  return cnpj;
-}
 
 export default function Empresas() {
   const [tenants, setTenants] = useState<Tenant[]>([]);
@@ -525,7 +516,7 @@ export default function Empresas() {
                                   {empresa.filiais.map((filial) => (
                                     <TableRow key={filial.id}>
                                       <TableCell className="font-mono text-sm">
-                                        {maskCNPJ(filial.cnpj)}
+                                        {formatCNPJMasked(filial.cnpj)}
                                       </TableCell>
                                       <TableCell>{filial.razao_social}</TableCell>
                                       <TableCell>{filial.nome_fantasia || '-'}</TableCell>
