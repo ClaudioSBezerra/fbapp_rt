@@ -21,6 +21,27 @@ const ONLY_D_PREFIXES = ["|0000|", "|0140|", "|0150|", "|D010|", "|D100|", "|D10
 
 type ImportScope = 'all' | 'only_a' | 'only_c' | 'only_d';
 
+// Intermediate save interval (save progress more frequently for recovery)
+const INTERMEDIATE_SAVE_INTERVAL = 50000; // Save bytes_processed every 50k lines
+
+// Check if an error is a recoverable stream error
+function isRecoverableStreamError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  const recoverablePatterns = [
+    'error reading a body from connection',
+    'connection closed',
+    'stream closed',
+    'network error',
+    'econnreset',
+    'socket hang up',
+    'connection reset',
+    'premature close',
+  ];
+  return recoverablePatterns.some(pattern => 
+    message.toLowerCase().includes(pattern.toLowerCase())
+  );
+}
+
 // Mapa de participantes (COD_PART -> dados do 0150)
 interface Participante {
   codPart: string;
@@ -1465,10 +1486,26 @@ serve(async (req) => {
           }
 
           const progress = Math.min(95, Math.round((totalLinesProcessed / estimatedTotalLines) * 100));
+          
+          // Save intermediate progress more frequently for better recovery from stream errors
+          const shouldSaveIntermediate = linesProcessedInChunk % INTERMEDIATE_SAVE_INTERVAL < PROGRESS_UPDATE_INTERVAL;
+          const intermediateBytesProcessed = startByte + bytesProcessedInChunk;
+          
           await supabase
             .from("import_jobs")
-            .update({ progress, total_lines: totalLinesProcessed, counts })
+            .update({ 
+              progress, 
+              total_lines: totalLinesProcessed, 
+              counts,
+              // Save bytes_processed periodically for recovery
+              ...(shouldSaveIntermediate ? { bytes_processed: intermediateBytesProcessed } : {})
+            })
             .eq("id", jobId);
+          
+          if (shouldSaveIntermediate) {
+            console.log(`Job ${jobId}: Intermediate save at ${totalLinesProcessed} lines, ${intermediateBytesProcessed} bytes`);
+          }
+          
           lastProgressUpdate = linesProcessedInChunk;
           console.log(`Job ${jobId}: Progress ${progress}% (${totalLinesProcessed} lines, mercadorias: ${counts.mercadorias}, servicos: ${counts.servicos}, energia_agua: ${counts.energia_agua}, fretes: ${counts.fretes}, participantes: ${counts.participantes})`);
         }
@@ -1671,21 +1708,71 @@ serve(async (req) => {
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`Job ${jobId}: Error processing:`, error);
     
+    // Check if this is a recoverable stream error
+    if (jobId && isRecoverableStreamError(error)) {
+      console.log(`Job ${jobId}: Recoverable stream error detected: "${errorMessage}"`);
+      
+      // Get current job state to check if we have progress
+      const { data: currentJob } = await supabase
+        .from("import_jobs")
+        .select("bytes_processed, chunk_number, total_lines")
+        .eq("id", jobId)
+        .single();
+      
+      if (currentJob && currentJob.bytes_processed > 0) {
+        console.log(`Job ${jobId}: Has progress - bytes: ${currentJob.bytes_processed}, lines: ${currentJob.total_lines}, chunk: ${currentJob.chunk_number}`);
+        console.log(`Job ${jobId}: Attempting automatic retry from saved position...`);
+        
+        // Invoke next chunk to resume (with a small delay for connection recovery)
+        try {
+          // Wait 2 seconds before retry to allow connection to recover
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          
+          const selfUrl = `${supabaseUrl}/functions/v1/process-efd-job`;
+          const retryResponse = await fetch(selfUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${supabaseKey}`,
+            },
+            body: JSON.stringify({ job_id: jobId }),
+          });
+          console.log(`Job ${jobId}: Retry invoked, status: ${retryResponse.status}`);
+          
+          return new Response(
+            JSON.stringify({ 
+              message: "Stream error recovered, retrying from saved position",
+              bytes_processed: currentJob.bytes_processed,
+              retry_status: retryResponse.status
+            }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        } catch (retryErr) {
+          console.error(`Job ${jobId}: Retry invocation failed:`, retryErr);
+          // Fall through to mark as failed
+        }
+      } else {
+        console.log(`Job ${jobId}: No progress saved yet, cannot recover`);
+      }
+    }
+    
+    // Non-recoverable error or retry failed - mark as failed
     if (jobId) {
       await supabase
         .from("import_jobs")
         .update({ 
           status: "failed", 
-          error_message: error instanceof Error ? error.message : "Unknown error",
+          error_message: errorMessage,
           completed_at: new Date().toISOString() 
         })
         .eq("id", jobId);
     }
 
     return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : "Internal server error" }),
+      JSON.stringify({ error: errorMessage }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
