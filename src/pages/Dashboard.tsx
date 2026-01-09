@@ -87,9 +87,10 @@ export default function Dashboard() {
       const [ano, mes] = periodoSelecionado.split("-").map(Number);
       const mesAno = new Date(ano, mes - 1, 1).toISOString().split("T")[0];
 
-      // Usar view materializada - muito mais rápido (~174 registros vs 1.1M+)
+      // Usar view materializada com filtro de filial
       const { data: stats, error } = await supabase.rpc('get_mv_dashboard_stats', {
-        _mes_ano: mesAno
+        _mes_ano: mesAno,
+        _filial_id: filialSelecionada !== 'todas' ? filialSelecionada : null
       });
 
       if (error) {
@@ -98,29 +99,32 @@ export default function Dashboard() {
         return;
       }
 
-      // Calcular totais líquidos (saídas - entradas)
+      // Somar apenas saídas (débitos) para exibir o volume tributário real
+      // Isso evita zerar quando créditos > débitos
       let icmsTotal = 0, pisTotal = 0, cofinsTotal = 0, valorTotal = 0;
 
       stats?.forEach((s: { subtipo: string; icms: number; pis: number; cofins: number; valor: number }) => {
-        const mult = s.subtipo === 'saida' ? 1 : -1;
-        icmsTotal += (s.icms || 0) * mult;
-        pisTotal += (s.pis || 0) * mult;
-        cofinsTotal += (s.cofins || 0) * mult;
-        valorTotal += (s.valor || 0) * mult;
+        // Apenas saídas contribuem para a base de cálculo da transição
+        if (s.subtipo === 'saida') {
+          icmsTotal += s.icms || 0;
+          pisTotal += s.pis || 0;
+          cofinsTotal += s.cofins || 0;
+          valorTotal += s.valor || 0;
+        }
       });
 
       setTotais({
-        icms: Math.max(0, icmsTotal),
-        pis: Math.max(0, pisTotal),
-        cofins: Math.max(0, cofinsTotal),
-        valor: Math.max(0, valorTotal),
+        icms: icmsTotal,
+        pis: pisTotal,
+        cofins: cofinsTotal,
+        valor: valorTotal,
       });
 
       setLoading(false);
     };
 
     fetchTotais();
-  }, [periodoSelecionado]);
+  }, [periodoSelecionado, filialSelecionada]);
 
   const aliquotaSelecionada = useMemo(
     () => aliquotas.find((a) => a.ano === anoProjecao),
