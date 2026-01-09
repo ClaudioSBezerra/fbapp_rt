@@ -180,21 +180,36 @@ function ParticipanteTable({ data, tipo, aliquotas, selectedYear, isLoading }: P
             return (
               <TableRow key={`${row.cod_part}-${row.mes_ano}-${idx}`} className="text-xs">
                 <TableCell className="py-1 px-2 max-w-[200px]">
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="block text-[10px] leading-tight truncate cursor-help">
-                        {row.participante_nome}
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent side="right" className="max-w-xs">
-                      <p className="text-xs">{row.participante_nome}</p>
-                      {row.participante_cnpj && (
-                        <p className="text-xs text-muted-foreground mt-1">
-                          CNPJ: {formatCNPJ(row.participante_cnpj)}
+                  <div className="flex items-center gap-1">
+                    {row.cod_part === '9999999999' && (
+                      <Badge variant="secondary" className="text-[8px] px-1 py-0 shrink-0 bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-100">
+                        CF
+                      </Badge>
+                    )}
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="block text-[10px] leading-tight truncate cursor-help">
+                          {row.participante_nome}
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent side="right" className="max-w-xs">
+                        <p className="text-xs font-medium">{row.participante_nome}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Código: {row.cod_part}
                         </p>
-                      )}
-                    </TooltipContent>
-                  </Tooltip>
+                        {row.participante_cnpj && row.cod_part !== '9999999999' && (
+                          <p className="text-xs text-muted-foreground">
+                            CNPJ: {formatCNPJ(row.participante_cnpj)}
+                          </p>
+                        )}
+                        {row.cod_part === '9999999999' && (
+                          <p className="text-xs text-amber-600 mt-1">
+                            Vendas agregadas a consumidor final
+                          </p>
+                        )}
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
                 </TableCell>
                 <TableCell className="text-xs whitespace-nowrap">{formatMesAno(row.mes_ano)}</TableCell>
                 <TableCell className="text-right font-mono text-xs">{formatCurrency(row.valor)}</TableCell>
