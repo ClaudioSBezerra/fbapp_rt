@@ -30,6 +30,7 @@ interface Filial {
   cnpj: string;
   razao_social: string;
   nome_fantasia: string | null;
+  cod_est: string | null;
 }
 
 interface Aliquota {
@@ -117,7 +118,7 @@ export default function Fretes() {
 
         const { data: filiaisData } = await supabase
           .from('filiais')
-          .select('id, cnpj, razao_social, nome_fantasia');
+          .select('id, cnpj, razao_social, nome_fantasia, cod_est');
 
         if (filiaisData) {
           setFiliais(filiaisData);
@@ -398,7 +399,7 @@ export default function Fretes() {
                   <SelectItem value="all">Todas</SelectItem>
                   {filiais.map((filial) => (
                     <SelectItem key={filial.id} value={filial.id}>
-                      {maskCNPJInText(cleanFilialName(filial.nome_fantasia || filial.razao_social))}
+                      {filial.cod_est ? `${filial.cod_est} - ${filial.cnpj.replace(/\D/g, '')}` : filial.cnpj.replace(/\D/g, '')}
                     </SelectItem>
                   ))}
                 </SelectContent>

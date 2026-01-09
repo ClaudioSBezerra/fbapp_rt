@@ -169,6 +169,7 @@ export type Database = {
       filiais: {
         Row: {
           cnpj: string
+          cod_est: string | null
           created_at: string
           empresa_id: string
           id: string
@@ -178,6 +179,7 @@ export type Database = {
         }
         Insert: {
           cnpj: string
+          cod_est?: string | null
           created_at?: string
           empresa_id: string
           id?: string
@@ -187,6 +189,7 @@ export type Database = {
         }
         Update: {
           cnpj?: string
+          cod_est?: string | null
           created_at?: string
           empresa_id?: string
           id?: string

@@ -14,10 +14,10 @@ const MAX_LINES_PER_CHUNK = 100000; // Process max 100k lines per execution
 const MAX_EXECUTION_TIME_MS = 45000; // Stop after 45 seconds to have safety margin
 
 // Valid prefixes by scope
-const ALL_PREFIXES = ["|0000|", "|0150|", "|A010|", "|A100|", "|C010|", "|C100|", "|C500|", "|C600|", "|D010|", "|D100|", "|D101|", "|D105|", "|D500|", "|D501|", "|D505|"];
-const ONLY_A_PREFIXES = ["|0000|", "|0150|", "|A010|", "|A100|"];
-const ONLY_C_PREFIXES = ["|0000|", "|0150|", "|C010|", "|C100|", "|C500|", "|C600|"];
-const ONLY_D_PREFIXES = ["|0000|", "|0150|", "|D010|", "|D100|", "|D101|", "|D105|", "|D500|", "|D501|", "|D505|"];
+const ALL_PREFIXES = ["|0000|", "|0140|", "|0150|", "|A010|", "|A100|", "|C010|", "|C100|", "|C500|", "|C600|", "|D010|", "|D100|", "|D101|", "|D105|", "|D500|", "|D501|", "|D505|"];
+const ONLY_A_PREFIXES = ["|0000|", "|0140|", "|0150|", "|A010|", "|A100|"];
+const ONLY_C_PREFIXES = ["|0000|", "|0140|", "|0150|", "|C010|", "|C100|", "|C500|", "|C600|"];
+const ONLY_D_PREFIXES = ["|0000|", "|0140|", "|0150|", "|D010|", "|D100|", "|D101|", "|D105|", "|D500|", "|D501|", "|D505|"];
 
 type ImportScope = 'all' | 'only_a' | 'only_c' | 'only_d';
 
@@ -62,6 +62,7 @@ interface ProcessingContext {
   pendingD500: PendingRecord | null;
   filialMap: Map<string, string>; // CNPJ -> filial_id
   participantesMap: Map<string, Participante>; // COD_PART -> Participante data
+  estabelecimentosMap: Map<string, string>; // CNPJ -> COD_EST (do registro 0140)
 }
 
 interface BatchBuffers {
@@ -263,6 +264,21 @@ function processLine(
         // ICMS/IPI: fields[9], Contribuições: fields[9] também
         context.currentCNPJ = fields[9]?.replace(/\D/g, "") || "";
         console.log(`Parsed 0000: period=${context.currentPeriod}, CNPJ=${context.currentCNPJ}`);
+      }
+      break;
+
+    case "0140":
+      // Registro de Estabelecimentos (Cadastro de Estabelecimentos)
+      // Layout: |0140|COD_EST|NOME|CNPJ|UF|IE|COD_MUN|IM|SUFRAMA|
+      // Índices: 2=COD_EST, 3=NOME, 4=CNPJ, 5=UF, 6=IE, 7=COD_MUN
+      if (fields.length > 4) {
+        const codEst = fields[2] || "";
+        const cnpj = fields[4]?.replace(/\D/g, "") || "";
+        
+        if (codEst && cnpj) {
+          context.estabelecimentosMap.set(cnpj, codEst);
+          console.log(`Parsed 0140: COD_EST=${codEst}, CNPJ=${cnpj}`);
+        }
       }
       break;
 
@@ -936,6 +952,7 @@ serve(async (req) => {
       pendingD500: null,
       filialMap,
       participantesMap: new Map(), // Will be populated from 0150 records
+      estabelecimentosMap: new Map(), // Will be populated from 0140 records
     };
     
     // Restore participantesMap from context if resuming
@@ -945,8 +962,15 @@ serve(async (req) => {
       }
     }
     
+    // Restore estabelecimentosMap from context if resuming
+    if (existingContext?.estabelecimentosMapEntries) {
+      for (const [cnpj, codEst] of existingContext.estabelecimentosMapEntries) {
+        context.estabelecimentosMap.set(cnpj, codEst);
+      }
+    }
+    
     if (isResuming && existingContext) {
-      console.log(`Job ${jobId}: Restored context from previous chunk - period: ${context.currentPeriod}, CNPJ: ${context.currentCNPJ}, filialId: ${context.currentFilialId}, efdType: ${context.efdType}, participantes: ${context.participantesMap.size}`);
+      console.log(`Job ${jobId}: Restored context from previous chunk - period: ${context.currentPeriod}, CNPJ: ${context.currentCNPJ}, filialId: ${context.currentFilialId}, efdType: ${context.efdType}, participantes: ${context.participantesMap.size}, estabelecimentos: ${context.estabelecimentosMap.size}`);
     }
 
     // Initialize block limits
@@ -1043,16 +1067,27 @@ serve(async (req) => {
           // Handle filial update from C010/D010
           if (result.filialUpdate) {
             const cnpj = result.filialUpdate;
+            const codEst = context.estabelecimentosMap.get(cnpj) || null;
+            
             if (context.filialMap.has(cnpj)) {
               context.currentFilialId = context.filialMap.get(cnpj)!;
+              
+              // Update cod_est if we have it from 0140
+              if (codEst) {
+                await supabase
+                  .from("filiais")
+                  .update({ cod_est: codEst })
+                  .eq("id", context.currentFilialId);
+              }
             } else {
-              // Create new filial
+              // Create new filial with cod_est
               const { data: newFilial } = await supabase
                 .from("filiais")
                 .insert({
                   empresa_id: job.empresa_id,
                   cnpj: cnpj,
                   razao_social: `Filial ${cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5")}`,
+                  cod_est: codEst,
                 })
                 .select("id")
                 .single();
@@ -1146,17 +1181,29 @@ serve(async (req) => {
         // Handle filial update from C010/D010
         if (result.filialUpdate) {
           const cnpj = result.filialUpdate;
+          const codEst = context.estabelecimentosMap.get(cnpj) || null;
+          
           if (context.filialMap.has(cnpj)) {
             context.currentFilialId = context.filialMap.get(cnpj)!;
             console.log(`Job ${jobId}: Switched to filial ${cnpj} -> ${context.currentFilialId}`);
+            
+            // Update cod_est if we have it from 0140
+            if (codEst) {
+              await supabase
+                .from("filiais")
+                .update({ cod_est: codEst })
+                .eq("id", context.currentFilialId);
+              console.log(`Job ${jobId}: Updated filial ${context.currentFilialId} with cod_est: ${codEst}`);
+            }
           } else {
-            // Create new filial
+            // Create new filial with cod_est
             const { data: newFilial } = await supabase
               .from("filiais")
               .insert({
                 empresa_id: job.empresa_id,
                 cnpj: cnpj,
                 razao_social: `Filial ${cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5")}`,
+                cod_est: codEst,
               })
               .select("id")
               .single();
@@ -1164,7 +1211,7 @@ serve(async (req) => {
             if (newFilial) {
               context.filialMap.set(cnpj, newFilial.id);
               context.currentFilialId = newFilial.id;
-              console.log(`Job ${jobId}: Created new filial ${cnpj} -> ${newFilial.id}`);
+              console.log(`Job ${jobId}: Created new filial ${cnpj} -> ${newFilial.id} with cod_est: ${codEst}`);
             }
           }
         }
@@ -1368,6 +1415,7 @@ serve(async (req) => {
               efdType: context.efdType,
               filialMapEntries: Array.from(context.filialMap.entries()),
               participantesMapEntries: Array.from(context.participantesMap.entries()),
+              estabelecimentosMapEntries: Array.from(context.estabelecimentosMap.entries()),
             }
           }
         })

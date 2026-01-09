@@ -29,6 +29,7 @@ interface Filial {
   razao_social: string;
   nome_fantasia: string | null;
   cnpj: string;
+  cod_est: string | null;
 }
 
 interface AggregatedRow {
@@ -251,7 +252,7 @@ export default function Servicos() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('filiais')
-        .select('id, razao_social, nome_fantasia, cnpj')
+        .select('id, razao_social, nome_fantasia, cnpj, cod_est')
         .order('razao_social');
       if (error) throw error;
       return data as Filial[];
@@ -426,7 +427,7 @@ export default function Servicos() {
                   <SelectItem value="all">Todas as filiais</SelectItem>
                   {filiais.map(f => (
                     <SelectItem key={f.id} value={f.id}>
-                      {cleanFilialName(f.nome_fantasia || f.razao_social)} - {maskCNPJ(f.cnpj)}
+                      {f.cod_est ? `${f.cod_est} - ${f.cnpj.replace(/\D/g, '')}` : f.cnpj.replace(/\D/g, '')}
                     </SelectItem>
                   ))}
                 </SelectContent>

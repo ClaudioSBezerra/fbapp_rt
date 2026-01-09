@@ -34,6 +34,8 @@ interface Aliquota {
 interface Filial {
   id: string;
   nome: string;
+  cnpj: string;
+  cod_est: string | null;
 }
 
 const ANOS_PROJECAO = [2027, 2028, 2029, 2030, 2031, 2032, 2033];
@@ -98,11 +100,13 @@ export default function Dashboard() {
 
       // Buscar filiais
       try {
-        const { data: filiaisData } = await supabase.from("filiais").select("id, nome_fantasia, razao_social");
+        const { data: filiaisData } = await supabase.from("filiais").select("id, nome_fantasia, razao_social, cnpj, cod_est");
 
         const filialsList = filiaisData?.map((f) => ({
           id: f.id,
           nome: f.nome_fantasia || f.razao_social || "Sem nome",
+          cnpj: f.cnpj || "",
+          cod_est: f.cod_est || null,
         })) || [];
         setFiliais(filialsList);
       } catch (err) {
@@ -322,7 +326,7 @@ export default function Dashboard() {
               <SelectItem value="todas">Todas as filiais</SelectItem>
               {filiais.map((f) => (
                 <SelectItem key={f.id} value={f.id}>
-                  {maskCNPJInText(cleanFilialName(f.nome))}
+                  {f.cod_est ? `${f.cod_est} - ${f.cnpj.replace(/\D/g, '')}` : f.cnpj.replace(/\D/g, '')}
                 </SelectItem>
               ))}
             </SelectContent>
