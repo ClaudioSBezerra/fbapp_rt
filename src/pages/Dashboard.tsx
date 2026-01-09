@@ -37,18 +37,15 @@ export default function Dashboard() {
   const [filialSelecionada, setFilialSelecionada] = useState<string>("todas");
   const [totais, setTotais] = useState({ icms: 0, pis: 0, cofins: 0, valor: 0 });
 
-  // Carregar períodos e filiais disponíveis
+  // Carregar dados iniciais: períodos, filiais e alíquotas
   useEffect(() => {
     const fetchInitialData = async () => {
-      // Buscar períodos
-      const { data: mercPeriodos } = await supabase
-        .from("mercadorias")
-        .select("mes_ano")
-        .order("mes_ano", { ascending: false });
-
+      // Buscar períodos a partir da view materializada (muito mais leve)
+      const { data: statsData } = await supabase.rpc('get_mv_dashboard_stats');
+      
       const periodosSet = new Set<string>();
-      mercPeriodos?.forEach((m) => {
-        const date = new Date(m.mes_ano);
+      statsData?.forEach((s: { mes_ano: string }) => {
+        const date = new Date(s.mes_ano);
         periodosSet.add(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`);
       });
 
@@ -80,7 +77,7 @@ export default function Dashboard() {
     fetchInitialData();
   }, []);
 
-  // Carregar totais do período e filial selecionados
+  // Carregar totais do período selecionado usando view materializada
   useEffect(() => {
     if (!periodoSelecionado) return;
 
@@ -88,73 +85,28 @@ export default function Dashboard() {
       setLoading(true);
 
       const [ano, mes] = periodoSelecionado.split("-").map(Number);
-      const startDate = new Date(ano, mes - 1, 1).toISOString().split("T")[0];
-      const endDate = new Date(ano, mes, 0).toISOString().split("T")[0];
+      const mesAno = new Date(ano, mes - 1, 1).toISOString().split("T")[0];
 
-      // Query mercadorias
-      let mercQuery = supabase
-        .from("mercadorias")
-        .select("icms, pis, cofins, valor, tipo")
-        .gte("mes_ano", startDate)
-        .lte("mes_ano", endDate);
+      // Usar view materializada - muito mais rápido (~174 registros vs 1.1M+)
+      const { data: stats, error } = await supabase.rpc('get_mv_dashboard_stats', {
+        _mes_ano: mesAno
+      });
 
-      if (filialSelecionada !== "todas") {
-        mercQuery = mercQuery.eq("filial_id", filialSelecionada);
+      if (error) {
+        console.error('Erro ao carregar dashboard stats:', error);
+        setLoading(false);
+        return;
       }
-
-      const { data: mercData } = await mercQuery;
 
       // Calcular totais líquidos (saídas - entradas)
       let icmsTotal = 0, pisTotal = 0, cofinsTotal = 0, valorTotal = 0;
 
-      mercData?.forEach((m) => {
-        const mult = m.tipo === "saida" ? 1 : -1;
-        icmsTotal += (m.icms || 0) * mult;
-        pisTotal += (m.pis || 0) * mult;
-        cofinsTotal += (m.cofins || 0) * mult;
-        valorTotal += (m.valor || 0) * mult;
-      });
-
-      // Query fretes
-      let fretesQuery = supabase
-        .from("fretes")
-        .select("icms, pis, cofins, valor, tipo")
-        .gte("mes_ano", startDate)
-        .lte("mes_ano", endDate);
-
-      if (filialSelecionada !== "todas") {
-        fretesQuery = fretesQuery.eq("filial_id", filialSelecionada);
-      }
-
-      const { data: fretesData } = await fretesQuery;
-
-      fretesData?.forEach((f) => {
-        const mult = f.tipo === "saida" ? 1 : -1;
-        icmsTotal += (f.icms || 0) * mult;
-        pisTotal += (f.pis || 0) * mult;
-        cofinsTotal += (f.cofins || 0) * mult;
-        valorTotal += (f.valor || 0) * mult;
-      });
-
-      // Query energia_agua
-      let energiaQuery = supabase
-        .from("energia_agua")
-        .select("icms, pis, cofins, valor, tipo_operacao")
-        .gte("mes_ano", startDate)
-        .lte("mes_ano", endDate);
-
-      if (filialSelecionada !== "todas") {
-        energiaQuery = energiaQuery.eq("filial_id", filialSelecionada);
-      }
-
-      const { data: energiaData } = await energiaQuery;
-
-      energiaData?.forEach((e) => {
-        const mult = e.tipo_operacao === "saida" ? 1 : -1;
-        icmsTotal += (e.icms || 0) * mult;
-        pisTotal += (e.pis || 0) * mult;
-        cofinsTotal += (e.cofins || 0) * mult;
-        valorTotal += (e.valor || 0) * mult;
+      stats?.forEach((s: { subtipo: string; icms: number; pis: number; cofins: number; valor: number }) => {
+        const mult = s.subtipo === 'saida' ? 1 : -1;
+        icmsTotal += (s.icms || 0) * mult;
+        pisTotal += (s.pis || 0) * mult;
+        cofinsTotal += (s.cofins || 0) * mult;
+        valorTotal += (s.valor || 0) * mult;
       });
 
       setTotais({
@@ -168,7 +120,7 @@ export default function Dashboard() {
     };
 
     fetchTotais();
-  }, [periodoSelecionado, filialSelecionada]);
+  }, [periodoSelecionado]);
 
   const aliquotaSelecionada = useMemo(
     () => aliquotas.find((a) => a.ano === anoProjecao),
