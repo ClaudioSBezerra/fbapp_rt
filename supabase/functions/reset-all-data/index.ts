@@ -30,6 +30,12 @@ Deno.serve(async (req) => {
     await supabaseAdmin.from("fretes").delete().neq("id", "00000000-0000-0000-0000-000000000000");
     results.fretes = 1;
 
+    await supabaseAdmin.from("servicos").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    results.servicos = 1;
+
+    await supabaseAdmin.from("participantes").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    results.participantes = 1;
+
     await supabaseAdmin.from("import_jobs").delete().neq("id", "00000000-0000-0000-0000-000000000000");
     results.import_jobs = 1;
 
