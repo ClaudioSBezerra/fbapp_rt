@@ -2,8 +2,10 @@ import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from "recharts";
-import { Loader2, TrendingDown, TrendingUp } from "lucide-react";
+import { Loader2, TrendingDown, TrendingUp, AlertCircle, RefreshCw } from "lucide-react";
 
 interface Aliquota {
   ano: number;
@@ -37,93 +39,154 @@ export default function Dashboard() {
   const [filialSelecionada, setFilialSelecionada] = useState<string>("todas");
   const [totais, setTotais] = useState({ icms: 0, pis: 0, cofins: 0, valor: 0 });
 
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   // Carregar dados iniciais: períodos, filiais e alíquotas
   useEffect(() => {
     const fetchInitialData = async () => {
-      // Buscar períodos a partir da view materializada (muito mais leve)
-      const { data: statsData } = await supabase.rpc('get_mv_dashboard_stats');
+      console.log('[Dashboard] Iniciando fetch inicial...');
       
-      const periodosSet = new Set<string>();
-      statsData?.forEach((s: { mes_ano: string }) => {
-        const date = new Date(s.mes_ano);
-        periodosSet.add(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`);
-      });
+      try {
+        // Buscar períodos a partir da view materializada (muito mais leve)
+        const { data: statsData, error: statsError } = await supabase.rpc('get_mv_dashboard_stats');
+        
+        if (statsError) {
+          console.error('[Dashboard] Erro ao carregar stats iniciais:', statsError);
+        }
+        
+        const periodosSet = new Set<string>();
+        statsData?.forEach((s: { mes_ano: string }) => {
+          const date = new Date(s.mes_ano);
+          periodosSet.add(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`);
+        });
 
-      const periodos = Array.from(periodosSet).sort().reverse();
-      setPeriodosDisponiveis(periodos);
-      if (periodos.length > 0) setPeriodoSelecionado(periodos[0]);
+        const periodos = Array.from(periodosSet).sort().reverse();
+        setPeriodosDisponiveis(periodos);
+        if (periodos.length > 0) setPeriodoSelecionado(periodos[0]);
+        console.log('[Dashboard] Períodos carregados:', periodos.length);
+      } catch (err) {
+        console.error('[Dashboard] Erro ao carregar períodos:', err);
+      }
 
       // Buscar filiais
-      const { data: filiaisData } = await supabase
-        .from("filiais")
-        .select("id, nome_fantasia, razao_social");
+      try {
+        const { data: filiaisData } = await supabase.from("filiais").select("id, nome_fantasia, razao_social");
 
-      const filialsList = filiaisData?.map((f) => ({
-        id: f.id,
-        nome: f.nome_fantasia || f.razao_social || "Sem nome",
-      })) || [];
-      setFiliais(filialsList);
+        const filialsList = filiaisData?.map((f) => ({
+          id: f.id,
+          nome: f.nome_fantasia || f.razao_social || "Sem nome",
+        })) || [];
+        setFiliais(filialsList);
+      } catch (err) {
+        console.error('[Dashboard] Erro ao carregar filiais:', err);
+      }
 
       // Buscar alíquotas
-      const { data: aliquotasData } = await supabase
-        .from("aliquotas")
-        .select("*")
-        .eq("is_active", true)
-        .order("ano");
-
-      setAliquotas(aliquotasData || []);
+      try {
+        const { data: aliquotasData } = await supabase.from("aliquotas").select("*").eq("is_active", true).order("ano");
+        setAliquotas(aliquotasData || []);
+      } catch (err) {
+        console.error('[Dashboard] Erro ao carregar alíquotas:', err);
+      }
+      
+      console.log('[Dashboard] Fetch inicial concluído');
     };
 
     fetchInitialData();
   }, []);
 
-  // Carregar totais do período selecionado usando view materializada
+  // Carregar totais do período selecionado usando view materializada - COM TIMEOUT
   useEffect(() => {
     if (!periodoSelecionado) return;
 
+    let isCancelled = false;
+    let timeoutId: ReturnType<typeof setTimeout>;
+
     const fetchTotais = async () => {
       setLoading(true);
+      setLoadError(null);
+      
+      console.log('[Dashboard] Iniciando fetchTotais para:', periodoSelecionado, filialSelecionada);
 
-      const [ano, mes] = periodoSelecionado.split("-").map(Number);
-      const mesAno = new Date(ano, mes - 1, 1).toISOString().split("T")[0];
-
-      // Usar view materializada com filtro de filial
-      const { data: stats, error } = await supabase.rpc('get_mv_dashboard_stats', {
-        _mes_ano: mesAno,
-        _filial_id: filialSelecionada !== 'todas' ? filialSelecionada : null
+      // Timeout de 30 segundos para evitar loading infinito
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new Error('Timeout: consulta demorou mais de 30 segundos'));
+        }, 30000);
       });
 
-      if (error) {
-        console.error('Erro ao carregar dashboard stats:', error);
-        setLoading(false);
-        return;
-      }
+      try {
+        const [ano, mes] = periodoSelecionado.split("-").map(Number);
+        const mesAno = new Date(ano, mes - 1, 1).toISOString().split("T")[0];
+        
+        console.log('[Dashboard] Chamando get_mv_dashboard_stats com:', { mesAno, filial: filialSelecionada });
 
-      // Somar apenas saídas (débitos) para exibir o volume tributário real
-      // Isso evita zerar quando créditos > débitos
-      let icmsTotal = 0, pisTotal = 0, cofinsTotal = 0, valorTotal = 0;
+        // Race entre a consulta e o timeout
+        const result = await Promise.race([
+          supabase.rpc('get_mv_dashboard_stats', {
+            _mes_ano: mesAno,
+            _filial_id: filialSelecionada !== 'todas' ? filialSelecionada : null
+          }),
+          timeoutPromise
+        ]);
 
-      stats?.forEach((s: { subtipo: string; icms: number; pis: number; cofins: number; valor: number }) => {
-        // Apenas saídas contribuem para a base de cálculo da transição
-        if (s.subtipo === 'saida') {
-          icmsTotal += s.icms || 0;
-          pisTotal += s.pis || 0;
-          cofinsTotal += s.cofins || 0;
-          valorTotal += s.valor || 0;
+        clearTimeout(timeoutId);
+        
+        if (isCancelled) return;
+
+        const { data: stats, error } = result;
+        
+        console.log('[Dashboard] Resultado get_mv_dashboard_stats:', { 
+          hasData: !!stats, 
+          count: stats?.length, 
+          error 
+        });
+
+        if (error) {
+          console.error('Erro ao carregar dashboard stats:', error);
+          setLoadError('Erro ao carregar dados. Tente novamente.');
+          setLoading(false);
+          return;
         }
-      });
 
-      setTotais({
-        icms: icmsTotal,
-        pis: pisTotal,
-        cofins: cofinsTotal,
-        valor: valorTotal,
-      });
+        // Somar apenas saídas (débitos) para exibir o volume tributário real
+        let icmsTotal = 0, pisTotal = 0, cofinsTotal = 0, valorTotal = 0;
 
-      setLoading(false);
+        stats?.forEach((s: { subtipo: string; icms: number; pis: number; cofins: number; valor: number }) => {
+          if (s.subtipo === 'saida') {
+            icmsTotal += s.icms || 0;
+            pisTotal += s.pis || 0;
+            cofinsTotal += s.cofins || 0;
+            valorTotal += s.valor || 0;
+          }
+        });
+
+        setTotais({
+          icms: icmsTotal,
+          pis: pisTotal,
+          cofins: cofinsTotal,
+          valor: valorTotal,
+        });
+
+        setLoading(false);
+      } catch (err: any) {
+        clearTimeout(timeoutId);
+        if (isCancelled) return;
+        
+        console.error('[Dashboard] Erro/Timeout ao carregar totais:', err);
+        setLoadError(err.message?.includes('Timeout') 
+          ? 'A consulta demorou muito. As views podem estar atualizando. Tente novamente em alguns segundos.'
+          : 'Erro ao carregar dados. Tente novamente.');
+        setLoading(false);
+      }
     };
 
     fetchTotais();
+
+    return () => {
+      isCancelled = true;
+      clearTimeout(timeoutId);
+    };
   }, [periodoSelecionado, filialSelecionada]);
 
   const aliquotaSelecionada = useMemo(
@@ -176,8 +239,31 @@ export default function Dashboard() {
     );
   }
 
+  // Handler para retry manual
+  const handleRetry = () => {
+    // Force re-fetch by updating a dummy state or just trigger useEffect
+    setLoadError(null);
+    setLoading(true);
+    // Trick to re-trigger the useEffect
+    setPeriodoSelecionado(prev => prev);
+  };
+
   return (
     <div className="space-y-6">
+      {/* Alerta de erro/timeout */}
+      {loadError && (
+        <Alert variant="destructive" className="mb-4">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription className="flex items-center justify-between">
+            <span>{loadError}</span>
+            <Button variant="outline" size="sm" onClick={handleRetry} className="ml-4">
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Tentar novamente
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+      
       {/* Header com filtros */}
       <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
         <div>

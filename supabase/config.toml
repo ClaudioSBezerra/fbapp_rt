@@ -26,3 +26,6 @@ verify_jwt = false
 
 [functions.reset-all-data]
 verify_jwt = false
+
+[functions.refresh-views]
+verify_jwt = false
