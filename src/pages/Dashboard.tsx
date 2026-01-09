@@ -8,20 +8,6 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsToolti
 import { Loader2, TrendingDown, TrendingUp, AlertCircle, RefreshCw } from "lucide-react";
 import { formatFilialDisplayFormatted } from "@/lib/formatFilial";
 
-// Limpa prefixos comuns do nome da filial
-function cleanFilialName(name: string): string {
-  if (!name) return '';
-  return name
-    .replace(/^(FILIAL\s+)/i, '')
-    .replace(/^(MATRIZ\s+)/i, '')
-    .trim();
-}
-
-// Mascara CNPJs que aparecem dentro de textos
-function maskCNPJInText(text: string): string {
-  const cnpjRegex = /(\d{2}\.\d{3}\.\d{3})\/(\d{4}-\d{2})/g;
-  return text.replace(cnpjRegex, '**.**.***/\$2');
-}
 
 interface Aliquota {
   ano: number;
