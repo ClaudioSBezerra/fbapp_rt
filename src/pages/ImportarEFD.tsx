@@ -19,6 +19,8 @@ interface ImportCounts {
   energia_agua: number;
   fretes: number;
   servicos: number;
+  participantes?: number;
+  estabelecimentos?: number;
   refresh_success?: boolean;
   seen?: {
     a100?: number;
@@ -43,7 +45,7 @@ interface ImportJob {
   file_path: string;
   file_name: string;
   file_size: number;
-  status: 'pending' | 'processing' | 'generating' | 'completed' | 'failed' | 'cancelled';
+  status: 'pending' | 'processing' | 'generating' | 'refreshing_views' | 'completed' | 'failed' | 'cancelled';
   progress: number;
   total_lines: number;
   counts: ImportCounts;
@@ -88,6 +90,8 @@ function getStatusInfo(status: ImportJob['status']) {
       return { label: 'Processando', color: 'bg-primary/10 text-primary', icon: Loader2 };
     case 'generating':
       return { label: 'Gerando dados...', color: 'bg-blue-500/10 text-blue-500', icon: Loader2 };
+    case 'refreshing_views':
+      return { label: 'Atualizando Painéis...', color: 'bg-purple-500/10 text-purple-500', icon: RefreshCw };
     case 'completed':
       return { label: 'Concluído', color: 'bg-positive/10 text-positive', icon: CheckCircle };
     case 'failed':
@@ -427,7 +431,7 @@ export default function ImportarEFD() {
     }
   };
 
-  const activeJobs = jobs.filter(j => j.status === 'pending' || j.status === 'processing');
+  const activeJobs = jobs.filter(j => j.status === 'pending' || j.status === 'processing' || j.status === 'refreshing_views');
   const completedJobs = jobs.filter(j => j.status === 'completed' || j.status === 'failed' || j.status === 'cancelled');
 
   // Animated progress effect for database clearing
@@ -867,11 +871,14 @@ export default function ImportarEFD() {
                     )}
                   </div>
 
-                  {job.status === 'processing' && (
-                    <div className="flex gap-4 text-xs text-muted-foreground">
+                  {(job.status === 'processing' || job.status === 'refreshing_views') && (
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                       <span>Mercadorias: {job.counts.mercadorias}</span>
+                      <span>Serviços: {job.counts.servicos || 0}</span>
                       <span>Energia/Água: {job.counts.energia_agua}</span>
                       <span>Fretes: {job.counts.fretes}</span>
+                      <span>Participantes: {job.counts.participantes || 0}</span>
+                      <span>Estabelecimentos: {job.counts.estabelecimentos || 0}</span>
                     </div>
                   )}
 
@@ -924,10 +931,14 @@ export default function ImportarEFD() {
 
                     {job.status === 'completed' && (
                       <div className="bg-muted/50 rounded-lg p-3 mt-3">
-                        <div className="grid grid-cols-3 gap-4 text-center">
+                        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 text-center">
                           <div>
                             <p className="text-lg font-semibold text-foreground">{job.counts.mercadorias}</p>
                             <p className="text-xs text-muted-foreground">Mercadorias</p>
+                          </div>
+                          <div>
+                            <p className="text-lg font-semibold text-foreground">{job.counts.servicos || 0}</p>
+                            <p className="text-xs text-muted-foreground">Serviços</p>
                           </div>
                           <div>
                             <p className="text-lg font-semibold text-foreground">{job.counts.energia_agua}</p>
@@ -937,9 +948,17 @@ export default function ImportarEFD() {
                             <p className="text-lg font-semibold text-foreground">{job.counts.fretes}</p>
                             <p className="text-xs text-muted-foreground">Fretes</p>
                           </div>
+                          <div>
+                            <p className="text-lg font-semibold text-foreground">{job.counts.participantes || 0}</p>
+                            <p className="text-xs text-muted-foreground">Participantes</p>
+                          </div>
+                          <div>
+                            <p className="text-lg font-semibold text-foreground">{job.counts.estabelecimentos || 0}</p>
+                            <p className="text-xs text-muted-foreground">Estabelecimentos</p>
+                          </div>
                         </div>
                         <div className="text-center mt-2 pt-2 border-t border-border">
-                          <p className="text-sm font-medium text-foreground">{totalRecords} registros importados</p>
+                          <p className="text-sm font-medium text-foreground">{totalRecords + (job.counts.servicos || 0)} registros importados</p>
                         </div>
                         {/* Seen Counts for diagnostics */}
                         {job.counts.seen && (job.counts.seen.d100 !== undefined || job.counts.seen.d500 !== undefined) && (
