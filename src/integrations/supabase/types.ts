@@ -721,6 +721,8 @@ export type Database = {
         Returns: {
           cod_part: string
           cofins: number
+          filial_cnpj: string
+          filial_cod_est: string
           filial_id: string
           icms: number
           mes_ano: string
@@ -762,6 +764,8 @@ export type Database = {
         Args: never
         Returns: {
           cofins: number
+          filial_cnpj: string
+          filial_cod_est: string
           filial_id: string
           filial_nome: string
           icms: number
@@ -776,6 +780,8 @@ export type Database = {
         Args: never
         Returns: {
           cofins: number
+          filial_cnpj: string
+          filial_cod_est: string
           filial_id: string
           filial_nome: string
           icms: number
@@ -789,6 +795,8 @@ export type Database = {
         Args: never
         Returns: {
           cofins: number
+          filial_cnpj: string
+          filial_cod_est: string
           filial_id: string
           filial_nome: string
           icms: number
@@ -803,6 +811,8 @@ export type Database = {
         Returns: {
           cod_part: string
           cofins: number
+          filial_cnpj: string
+          filial_cod_est: string
           filial_id: string
           icms: number
           mes_ano: string
@@ -817,6 +827,8 @@ export type Database = {
         Args: never
         Returns: {
           cofins: number
+          filial_cnpj: string
+          filial_cod_est: string
           filial_id: string
           filial_nome: string
           iss: number

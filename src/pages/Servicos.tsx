@@ -35,6 +35,8 @@ interface Filial {
 interface AggregatedRow {
   filial_id: string;
   filial_nome: string;
+  filial_cod_est?: string | null;
+  filial_cnpj?: string | null;
   mes_ano: string;
   valor: number;
   pis: number;
@@ -195,7 +197,7 @@ const ServicosTable = ({ data, tipo, aliquotas, selectedYear }: ServicosTablePro
             return (
               <TableRow key={`${row.filial_id}-${row.mes_ano}-${idx}`} className="text-xs">
                 <TableCell className="font-medium text-xs whitespace-nowrap py-1 px-2">
-                  {cleanFilialName(row.filial_nome)}
+                  {row.filial_cod_est ? `${row.filial_cod_est} - ${row.filial_cnpj?.replace(/\D/g, '') || ''}` : row.filial_cnpj?.replace(/\D/g, '') || cleanFilialName(row.filial_nome)}
                 </TableCell>
                 <TableCell className="text-xs whitespace-nowrap py-1 px-2">{formatMonthYear(row.mes_ano)}</TableCell>
                 <TableCell className="text-right font-mono text-xs py-1 px-2">{formatCurrency(row.valor)}</TableCell>
@@ -265,7 +267,18 @@ export default function Servicos() {
     queryFn: async () => {
       const { data, error } = await supabase.rpc('get_mv_servicos_aggregated');
       if (error) throw error;
-      return (data || []) as AggregatedRow[];
+      return (data || []).map((row: any) => ({
+        filial_id: row.filial_id,
+        filial_nome: row.filial_nome || '',
+        filial_cod_est: row.filial_cod_est || null,
+        filial_cnpj: row.filial_cnpj || null,
+        mes_ano: row.mes_ano,
+        valor: Number(row.valor) || 0,
+        pis: Number(row.pis) || 0,
+        cofins: Number(row.cofins) || 0,
+        iss: Number(row.iss) || 0,
+        tipo: row.tipo,
+      })) as AggregatedRow[];
     },
   });
 

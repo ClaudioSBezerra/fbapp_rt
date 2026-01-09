@@ -28,6 +28,8 @@ interface Aliquota {
 
 interface ParticipanteRow {
   filial_id: string;
+  filial_cod_est?: string | null;
+  filial_cnpj?: string | null;
   cod_part: string;
   participante_nome: string;
   participante_cnpj: string | null;
@@ -316,6 +318,8 @@ export default function MercadoriasParticipante() {
         valor: number;
       }>).map(row => ({
         filial_id: row.filial_id,
+        filial_cod_est: (row as any).filial_cod_est || null,
+        filial_cnpj: (row as any).filial_cnpj || null,
         cod_part: row.cod_part,
         participante_nome: row.participante_nome,
         participante_cnpj: row.participante_cnpj,
