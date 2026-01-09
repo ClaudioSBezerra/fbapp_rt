@@ -17,6 +17,8 @@ import { Badge } from '@/components/ui/badge';
 interface AggregatedRow {
   filial_id: string;
   filial_nome: string;
+  filial_cod_est?: string | null;
+  filial_cnpj?: string | null;
   mes_ano: string;
   tipo: string;
   valor: number;
@@ -94,6 +96,8 @@ export default function Fretes() {
       setAggregatedData(data.map((row: any) => ({
         filial_id: row.filial_id,
         filial_nome: row.filial_nome,
+        filial_cod_est: row.filial_cod_est || null,
+        filial_cnpj: row.filial_cnpj || null,
         mes_ano: row.mes_ano,
         tipo: row.tipo,
         valor: Number(row.valor) || 0,
@@ -327,8 +331,8 @@ export default function Fretes() {
               const diferencaReal = totalImpostosPagar - (vlIcms + vlPisCofins);
 
               return (
-                <TableRow key={`${row.filial_id}-${row.mes_ano}-${index}`} className="text-xs">
-                  <TableCell className="font-medium text-xs whitespace-nowrap py-1 px-2">{maskCNPJInText(cleanFilialName(row.filial_nome))}</TableCell>
+              <TableRow key={`${row.filial_id}-${row.mes_ano}-${index}`} className="text-xs">
+                  <TableCell className="font-medium text-xs whitespace-nowrap py-1 px-2">{row.filial_cod_est ? `${row.filial_cod_est} - ${row.filial_cnpj?.replace(/\D/g, '') || ''}` : row.filial_cnpj?.replace(/\D/g, '') || cleanFilialName(row.filial_nome)}</TableCell>
                   <TableCell className="text-xs whitespace-nowrap">{formatDate(row.mes_ano)}</TableCell>
                   <TableCell className="text-right font-mono text-xs">{formatCurrency(row.valor)}</TableCell>
                   <TableCell className="text-right font-mono text-xs">{formatCurrency(vlIcms)}</TableCell>

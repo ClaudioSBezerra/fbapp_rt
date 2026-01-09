@@ -175,7 +175,7 @@ function MercadoriasTable({ data, aliquotas, tipo, anoProjecao }: MercadoriasTab
 
             return (
               <TableRow key={`${row.filial_id}-${row.mes_ano}-${index}`} className="text-xs">
-                <TableCell className="font-medium text-xs whitespace-nowrap py-1 px-2">{maskCNPJInText(cleanFilialName(row.filial_nome))}</TableCell>
+                <TableCell className="font-medium text-xs whitespace-nowrap py-1 px-2">{row.filial_cod_est ? `${row.filial_cod_est} - ${row.filial_cnpj?.replace(/\D/g, '') || ''}` : row.filial_cnpj?.replace(/\D/g, '') || cleanFilialName(row.filial_nome)}</TableCell>
                 <TableCell className="text-xs whitespace-nowrap">{formatDate(row.mes_ano)}</TableCell>
                 <TableCell className="text-right font-mono text-xs">{formatCurrency(row.valor)}</TableCell>
                 <TableCell className="text-right font-mono text-xs">{formatCurrency(vlIcms)}</TableCell>
@@ -251,6 +251,8 @@ export default function Mercadorias() {
         setAggregatedData(aggregatedResult.map((item: any) => ({
           filial_id: item.filial_id,
           filial_nome: item.filial_nome || 'Filial',
+          filial_cod_est: item.filial_cod_est || null,
+          filial_cnpj: item.filial_cnpj || null,
           mes_ano: item.mes_ano,
           valor: Number(item.valor) || 0,
           pis: Number(item.pis) || 0,
