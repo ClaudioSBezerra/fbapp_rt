@@ -266,7 +266,7 @@ export default function MercadoriasParticipante() {
     }
   });
 
-  // Buscar dados paginados para a listagem
+  // Buscar dados paginados para a listagem (máximo 1000 registros no backend)
   const { data: participanteData = [], isLoading: isLoadingPage } = useQuery({
     queryKey: ['mercadorias-participante-page', mesAnoParam, participanteParam, page],
     queryFn: async () => {
@@ -277,7 +277,30 @@ export default function MercadoriasParticipante() {
         p_participante: participanteParam
       });
       if (error) throw error;
-      return (data || []) as ParticipanteRow[];
+      // Mapear resultado para interface esperada (ordem diferente no backend)
+      return ((data || []) as Array<{
+        cod_part: string;
+        cofins: number;
+        filial_id: string;
+        icms: number;
+        mes_ano: string;
+        participante_cnpj: string | null;
+        participante_nome: string;
+        pis: number;
+        tipo: string;
+        valor: number;
+      }>).map(row => ({
+        filial_id: row.filial_id,
+        cod_part: row.cod_part,
+        participante_nome: row.participante_nome,
+        participante_cnpj: row.participante_cnpj,
+        mes_ano: row.mes_ano,
+        valor: row.valor,
+        pis: row.pis,
+        cofins: row.cofins,
+        icms: row.icms,
+        tipo: row.tipo
+      })) as ParticipanteRow[];
     }
   });
 
