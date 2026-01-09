@@ -3,7 +3,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowDownRight, ArrowUpRight, Truck, Filter, Calendar, HelpCircle, Download } from 'lucide-react';
@@ -13,6 +12,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface AggregatedRow {
   filial_id: string;
@@ -444,127 +444,154 @@ export default function Fretes() {
       </Card>
 
       <div className="grid gap-3 sm:gap-4 grid-cols-1 md:grid-cols-2">
-        <Card className="border-border/50">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-2">
-              <ArrowDownRight className="h-3.5 w-3.5" />
-              Total Entradas (Fretes s/ Compras) - Projeção {anoProjecao}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-1.5">
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground">Valor (VL_DOC):</span>
-              <span className="text-sm font-bold">{formatCurrency(totaisEntradas.valor)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground">ICMS:</span>
-              <span className="text-sm font-bold">{formatCurrency(totaisEntradas.icms)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground">ICMS Projetado:</span>
-              <span className="text-sm font-bold">{formatCurrency(totaisEntradas.icmsProjetado)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground">PIS+COFINS:</span>
-              <span className="text-sm font-bold text-pis-cofins">{formatCurrency(totaisEntradas.pisCofins)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground">PIS+COFINS Projetado:</span>
-              <span className="text-sm font-bold text-pis-cofins">{formatCurrency(totaisEntradas.pisCofinsProjetado)}</span>
-            </div>
-            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
-              <span className="text-[10px] font-medium">Tot. Impostos Atuais:</span>
-              <span className="text-sm font-bold">{formatCurrency(totaisEntradas.totalImpostosAtuais)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground">Base IBS/CBS:</span>
-              <span className="text-sm font-bold">{formatCurrency(totaisEntradas.baseIbsCbs)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground">IBS Projetado:</span>
-              <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totaisEntradas.ibsProjetado)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground">CBS Projetado:</span>
-              <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totaisEntradas.cbsProjetado)}</span>
-            </div>
-            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
-              <span className="text-[10px] font-medium text-ibs-cbs">Total Reforma:</span>
-              <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totaisEntradas.totalReforma)}</span>
-            </div>
-            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
-              <span className="text-[10px] font-medium">Tot. Créditos:</span>
-              <span className="text-sm font-bold">{formatCurrency(totaisEntradas.totalImpostosPagar)}</span>
-            </div>
-            <div className="flex justify-between items-center pt-1 border-t">
-              <span className="text-[10px] text-muted-foreground">Dif. deb/cred.:</span>
-              <Badge variant={totaisEntradas.diferencaReal < 0 ? 'destructive' : 'default'} className={totaisEntradas.diferencaReal >= 0 ? 'bg-positive text-positive-foreground' : ''}>
-                {totaisEntradas.diferencaReal >= 0 ? '+' : ''}{formatCurrency(totaisEntradas.diferencaReal)}
-              </Badge>
-            </div>
-          </CardContent>
-        </Card>
+        {loading ? (
+          <>
+            <Card className="border-border/50">
+              <CardHeader className="pb-2">
+                <Skeleton className="h-4 w-48" />
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {Array.from({ length: 12 }).map((_, i) => (
+                  <Skeleton key={i} className="h-5 w-full" />
+                ))}
+              </CardContent>
+            </Card>
+            <Card className="border-border/50">
+              <CardHeader className="pb-2">
+                <Skeleton className="h-4 w-48" />
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {Array.from({ length: 12 }).map((_, i) => (
+                  <Skeleton key={i} className="h-5 w-full" />
+                ))}
+              </CardContent>
+            </Card>
+          </>
+        ) : (
+          <>
+            <Card className="border-border/50">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-2">
+                  <ArrowDownRight className="h-3.5 w-3.5" />
+                  Total Entradas (Fretes s/ Compras) - Projeção {anoProjecao}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] text-muted-foreground">Valor (VL_DOC):</span>
+                  <span className="text-sm font-bold">{formatCurrency(totaisEntradas.valor)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] text-muted-foreground">ICMS:</span>
+                  <span className="text-sm font-bold">{formatCurrency(totaisEntradas.icms)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] text-muted-foreground">ICMS Projetado:</span>
+                  <span className="text-sm font-bold">{formatCurrency(totaisEntradas.icmsProjetado)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] text-muted-foreground">PIS+COFINS:</span>
+                  <span className="text-sm font-bold text-pis-cofins">{formatCurrency(totaisEntradas.pisCofins)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] text-muted-foreground">PIS+COFINS Projetado:</span>
+                  <span className="text-sm font-bold text-pis-cofins">{formatCurrency(totaisEntradas.pisCofinsProjetado)}</span>
+                </div>
+                <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
+                  <span className="text-[10px] font-medium">Tot. Impostos Atuais:</span>
+                  <span className="text-sm font-bold">{formatCurrency(totaisEntradas.totalImpostosAtuais)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] text-muted-foreground">Base IBS/CBS:</span>
+                  <span className="text-sm font-bold">{formatCurrency(totaisEntradas.baseIbsCbs)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] text-muted-foreground">IBS Projetado:</span>
+                  <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totaisEntradas.ibsProjetado)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] text-muted-foreground">CBS Projetado:</span>
+                  <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totaisEntradas.cbsProjetado)}</span>
+                </div>
+                <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
+                  <span className="text-[10px] font-medium text-ibs-cbs">Total Reforma:</span>
+                  <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totaisEntradas.totalReforma)}</span>
+                </div>
+                <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
+                  <span className="text-[10px] font-medium">Tot. Créditos:</span>
+                  <span className="text-sm font-bold">{formatCurrency(totaisEntradas.totalImpostosPagar)}</span>
+                </div>
+                <div className="flex justify-between items-center pt-1 border-t">
+                  <span className="text-[10px] text-muted-foreground">Dif. deb/cred.:</span>
+                  <Badge variant={totaisEntradas.diferencaReal < 0 ? 'destructive' : 'default'} className={totaisEntradas.diferencaReal >= 0 ? 'bg-positive text-positive-foreground' : ''}>
+                    {totaisEntradas.diferencaReal >= 0 ? '+' : ''}{formatCurrency(totaisEntradas.diferencaReal)}
+                  </Badge>
+                </div>
+              </CardContent>
+            </Card>
 
-        <Card className="border-border/50">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-2">
-              <ArrowUpRight className="h-3.5 w-3.5" />
-              Total Saídas (Fretes s/ Vendas) - Projeção {anoProjecao}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-1.5">
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground">Valor (VL_DOC):</span>
-              <span className="text-sm font-bold">{formatCurrency(totaisSaidas.valor)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground">ICMS:</span>
-              <span className="text-sm font-bold">{formatCurrency(totaisSaidas.icms)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground">ICMS Projetado:</span>
-              <span className="text-sm font-bold">{formatCurrency(totaisSaidas.icmsProjetado)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground">PIS+COFINS:</span>
-              <span className="text-sm font-bold text-pis-cofins">{formatCurrency(totaisSaidas.pisCofins)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground">PIS+COFINS Projetado:</span>
-              <span className="text-sm font-bold text-pis-cofins">{formatCurrency(totaisSaidas.pisCofinsProjetado)}</span>
-            </div>
-            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
-              <span className="text-[10px] font-medium">Tot. Impostos Atuais:</span>
-              <span className="text-sm font-bold">{formatCurrency(totaisSaidas.totalImpostosAtuais)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground">Base IBS/CBS:</span>
-              <span className="text-sm font-bold">{formatCurrency(totaisSaidas.baseIbsCbs)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground">IBS Projetado:</span>
-              <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totaisSaidas.ibsProjetado)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground">CBS Projetado:</span>
-              <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totaisSaidas.cbsProjetado)}</span>
-            </div>
-            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
-              <span className="text-[10px] font-medium text-ibs-cbs">Total Reforma:</span>
-              <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totaisSaidas.totalReforma)}</span>
-            </div>
-            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
-              <span className="text-[10px] font-medium">Tot. Débitos:</span>
-              <span className="text-sm font-bold">{formatCurrency(totaisSaidas.totalImpostosPagar)}</span>
-            </div>
-            <div className="flex justify-between items-center pt-1 border-t">
-              <span className="text-[10px] text-muted-foreground">Dif. deb/cred.:</span>
-              <Badge variant={totaisSaidas.diferencaReal < 0 ? 'destructive' : 'default'} className={totaisSaidas.diferencaReal >= 0 ? 'bg-positive text-positive-foreground' : ''}>
-                {totaisSaidas.diferencaReal >= 0 ? '+' : ''}{formatCurrency(totaisSaidas.diferencaReal)}
-              </Badge>
-            </div>
-          </CardContent>
-        </Card>
+            <Card className="border-border/50">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-2">
+                  <ArrowUpRight className="h-3.5 w-3.5" />
+                  Total Saídas (Fretes s/ Vendas) - Projeção {anoProjecao}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] text-muted-foreground">Valor (VL_DOC):</span>
+                  <span className="text-sm font-bold">{formatCurrency(totaisSaidas.valor)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] text-muted-foreground">ICMS:</span>
+                  <span className="text-sm font-bold">{formatCurrency(totaisSaidas.icms)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] text-muted-foreground">ICMS Projetado:</span>
+                  <span className="text-sm font-bold">{formatCurrency(totaisSaidas.icmsProjetado)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] text-muted-foreground">PIS+COFINS:</span>
+                  <span className="text-sm font-bold text-pis-cofins">{formatCurrency(totaisSaidas.pisCofins)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] text-muted-foreground">PIS+COFINS Projetado:</span>
+                  <span className="text-sm font-bold text-pis-cofins">{formatCurrency(totaisSaidas.pisCofinsProjetado)}</span>
+                </div>
+                <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
+                  <span className="text-[10px] font-medium">Tot. Impostos Atuais:</span>
+                  <span className="text-sm font-bold">{formatCurrency(totaisSaidas.totalImpostosAtuais)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] text-muted-foreground">Base IBS/CBS:</span>
+                  <span className="text-sm font-bold">{formatCurrency(totaisSaidas.baseIbsCbs)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] text-muted-foreground">IBS Projetado:</span>
+                  <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totaisSaidas.ibsProjetado)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] text-muted-foreground">CBS Projetado:</span>
+                  <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totaisSaidas.cbsProjetado)}</span>
+                </div>
+                <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
+                  <span className="text-[10px] font-medium text-ibs-cbs">Total Reforma:</span>
+                  <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totaisSaidas.totalReforma)}</span>
+                </div>
+                <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
+                  <span className="text-[10px] font-medium">Tot. Débitos:</span>
+                  <span className="text-sm font-bold">{formatCurrency(totaisSaidas.totalImpostosPagar)}</span>
+                </div>
+                <div className="flex justify-between items-center pt-1 border-t">
+                  <span className="text-[10px] text-muted-foreground">Dif. deb/cred.:</span>
+                  <Badge variant={totaisSaidas.diferencaReal < 0 ? 'destructive' : 'default'} className={totaisSaidas.diferencaReal >= 0 ? 'bg-positive text-positive-foreground' : ''}>
+                    {totaisSaidas.diferencaReal >= 0 ? '+' : ''}{formatCurrency(totaisSaidas.diferencaReal)}
+                  </Badge>
+                </div>
+              </CardContent>
+            </Card>
+          </>
+        )}
       </div>
 
       <Tabs defaultValue="entradas" className="w-full">
