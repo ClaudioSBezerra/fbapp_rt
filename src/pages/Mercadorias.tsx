@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ArrowUpRight, ArrowDownRight, Building2, Filter, Calendar, HelpCircle, Download } from 'lucide-react';
 import { exportToExcel } from '@/lib/exportToExcel';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { formatFilialDisplayFormatted } from '@/lib/formatFilial';
+import { formatFilialDisplayFormatted, formatFilialFromRow } from '@/lib/formatFilial';
 
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -163,7 +163,7 @@ function MercadoriasTable({ data, aliquotas, tipo, anoProjecao }: MercadoriasTab
 
             return (
               <TableRow key={`${row.filial_id}-${row.mes_ano}-${index}`} className="text-xs">
-                <TableCell className="font-medium text-xs whitespace-nowrap py-1 px-2">{formatFilialDisplayFormatted(row.filial_cod_est, row.filial_cnpj || '')}</TableCell>
+                <TableCell className="font-medium text-xs whitespace-nowrap py-1 px-2">{formatFilialFromRow(row)}</TableCell>
                 <TableCell className="text-xs whitespace-nowrap">{formatDate(row.mes_ano)}</TableCell>
                 <TableCell className="text-right font-mono text-xs">{formatCurrency(row.valor)}</TableCell>
                 <TableCell className="text-right font-mono text-xs">{formatCurrency(vlIcms)}</TableCell>
@@ -351,7 +351,7 @@ export default function Mercadorias() {
 
       return {
         'Tipo': row.tipo === 'entrada' ? 'Entrada' : 'Saída',
-        'Filial': formatFilialDisplayFormatted(row.filial_cod_est, row.filial_cnpj || ''),
+        'Filial': formatFilialFromRow(row),
         'Mês/Ano': formatDate(row.mes_ano),
         'Valor': row.valor,
         'ICMS': vlIcms,

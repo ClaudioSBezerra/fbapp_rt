@@ -13,7 +13,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { formatFilialDisplayFormatted } from '@/lib/formatFilial';
+import { formatFilialDisplayFormatted, formatFilialFromRow } from '@/lib/formatFilial';
 
 interface AggregatedRow {
   filial_id: string;
@@ -218,7 +218,7 @@ export default function EnergiaAgua() {
       return {
         'Tipo Operação': row.tipo_operacao === 'credito' ? 'Crédito' : 'Débito',
         'Tipo Serviço': row.tipo_servico === 'energia' ? 'Energia' : 'Água',
-        'Filial': formatFilialDisplayFormatted(row.filial_cod_est, row.filial_cnpj || ''),
+        'Filial': formatFilialFromRow(row),
         'Mês/Ano': formatDate(row.mes_ano),
         'Valor': row.valor,
         'ICMS': vlIcms,
@@ -323,7 +323,7 @@ export default function EnergiaAgua() {
 
               return (
               <TableRow key={`${row.filial_id}-${row.mes_ano}-${index}`} className="text-xs">
-                  <TableCell className="font-medium text-xs whitespace-nowrap py-1 px-2">{formatFilialDisplayFormatted(row.filial_cod_est, row.filial_cnpj || '')}</TableCell>
+                  <TableCell className="font-medium text-xs whitespace-nowrap py-1 px-2">{formatFilialFromRow(row)}</TableCell>
                   <TableCell className="text-xs whitespace-nowrap">{formatDate(row.mes_ano)}</TableCell>
                   <TableCell className="text-right font-mono text-xs">{formatCurrency(row.valor)}</TableCell>
                   <TableCell className="text-right font-mono text-xs">{formatCurrency(vlIcms)}</TableCell>
