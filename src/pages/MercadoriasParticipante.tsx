@@ -66,10 +66,14 @@ const formatCNPJ = (cnpj: string | null) => {
   return formatCNPJMasked(cnpj);
 };
 
-// Formata data para MM/YYYY
+// Parse manual para evitar bug de timezone
 const formatMesAno = (date: string) => {
-  const d = new Date(date);
-  return `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+  if (!date) return '-';
+  const parts = date.split('-');
+  if (parts.length >= 2) {
+    return `${parts[1]}/${parts[0]}`;
+  }
+  return date;
 };
 
 // Componente de tabela por participante

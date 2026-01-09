@@ -54,13 +54,14 @@ const formatCurrency = (value: number) => {
   }).format(value);
 };
 
+// Parse manual para evitar bug de timezone
 const formatMonthYear = (dateStr: string) => {
-  try {
-    const date = parse(dateStr, 'yyyy-MM-dd', new Date());
-    return format(date, 'MMM/yyyy', { locale: ptBR });
-  } catch {
-    return dateStr;
+  if (!dateStr) return '-';
+  const parts = dateStr.split('-');
+  if (parts.length >= 2) {
+    return `${parts[1]}/${parts[0]}`;
   }
+  return dateStr;
 };
 
 

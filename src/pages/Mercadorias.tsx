@@ -52,16 +52,21 @@ function formatCurrency(value: number): string {
 }
 
 
+// Parse manual para evitar bug de timezone
 function formatDate(dateStr: string): string {
-  const date = new Date(dateStr);
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const year = date.getFullYear();
-  return `${month}/${year}`;
+  if (!dateStr) return '-';
+  const parts = dateStr.split('-');
+  if (parts.length >= 2) {
+    return `${parts[1]}/${parts[0]}`;
+  }
+  return dateStr;
 }
 
 
 function getYearFromMesAno(mesAno: string): number {
-  return new Date(mesAno).getFullYear();
+  if (!mesAno) return new Date().getFullYear();
+  const parts = mesAno.split('-');
+  return parts.length >= 1 ? parseInt(parts[0], 10) : new Date().getFullYear();
 }
 
 interface MercadoriasTableProps {
