@@ -1412,6 +1412,8 @@ serve(async (req) => {
       
       // Save progress for resumption (include seenCounts and context for proper resumption)
       // CRITICAL: Save context so next chunk knows the period, CNPJ, and filialId
+      // NOTE: We NO LONGER save participantesMapEntries or estabelecimentosMapEntries
+      // because they can grow to 100k+ entries and cause DB timeout on UPDATE
       await supabase
         .from("import_jobs")
         .update({ 
@@ -1422,14 +1424,14 @@ serve(async (req) => {
           counts: { 
             ...counts, 
             seen: seenCounts,
+            estabelecimentos: context.estabelecimentosMap.size,
             context: {
               currentPeriod: context.currentPeriod,
               currentCNPJ: context.currentCNPJ,
               currentFilialId: context.currentFilialId,
               efdType: context.efdType,
               filialMapEntries: Array.from(context.filialMap.entries()),
-              participantesMapEntries: Array.from(context.participantesMap.entries()),
-              estabelecimentosMapEntries: Array.from(context.estabelecimentosMap.entries()),
+              // participantesMap and estabelecimentosMap are rebuilt from DB if needed
             }
           }
         })
@@ -1471,6 +1473,17 @@ serve(async (req) => {
     console.log(`Job ${jobId}: Completed! Total lines: ${totalLinesProcessed}, Total records: ${totalRecords}`);
     console.log(`Job ${jobId}: Final seen counts - A100: ${seenCounts.a100}, D100: ${seenCounts.d100}, D101: ${seenCounts.d101}, D105: ${seenCounts.d105}, D500: ${seenCounts.d500}, D501: ${seenCounts.d501}, D505: ${seenCounts.d505}`);
 
+    // Update job status to "refreshing_views" before starting refresh
+    await supabase
+      .from("import_jobs")
+      .update({ 
+        status: "refreshing_views", 
+        progress: 98,
+        total_lines: totalLinesProcessed,
+        counts: { ...counts, seen: seenCounts, estabelecimentos: context.estabelecimentosMap.size }
+      })
+      .eq("id", jobId);
+
     // Refresh materialized views so /mercadorias shows updated data immediately
     console.log(`Job ${jobId}: Refreshing materialized views (async version with 5min timeout)...`);
     const { error: refreshError } = await supabase.rpc('refresh_materialized_views_async');
@@ -1482,14 +1495,14 @@ serve(async (req) => {
       console.log(`Job ${jobId}: Materialized views refreshed successfully`);
     }
 
-    // Update job as completed (include seenCounts and refresh_success for diagnostics)
+    // Update job as completed (include seenCounts, estabelecimentos, and refresh_success for diagnostics)
     await supabase
       .from("import_jobs")
       .update({ 
         status: "completed", 
         progress: 100,
         total_lines: totalLinesProcessed,
-        counts: { ...counts, seen: seenCounts, refresh_success: refreshSuccess },
+        counts: { ...counts, seen: seenCounts, estabelecimentos: context.estabelecimentosMap.size, refresh_success: refreshSuccess },
         completed_at: new Date().toISOString() 
       })
       .eq("id", jobId);
