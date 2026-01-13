@@ -241,7 +241,7 @@ export default function Mercadorias() {
       }
 
       if (aggregatedResult) {
-        setAggregatedData(aggregatedResult.map((item: any) => ({
+        const mappedData = aggregatedResult.map((item: any) => ({
           filial_id: item.filial_id,
           filial_nome: item.filial_nome || 'Filial',
           filial_cod_est: item.filial_cod_est || null,
@@ -252,7 +252,14 @@ export default function Mercadorias() {
           cofins: Number(item.cofins) || 0,
           icms: Number(item.icms) || 0,
           tipo: item.tipo,
-        })));
+        }));
+        
+        // DEBUG: Verificar dados da RPC
+        console.log('[DEBUG Mercadorias] Primeiro item RPC:', mappedData[0]);
+        console.log('[DEBUG Mercadorias] filial_cod_est:', mappedData[0]?.filial_cod_est);
+        console.log('[DEBUG Mercadorias] filial_cnpj:', mappedData[0]?.filial_cnpj);
+        
+        setAggregatedData(mappedData);
       }
     } catch (error) {
       console.error('Error fetching data:', error);
