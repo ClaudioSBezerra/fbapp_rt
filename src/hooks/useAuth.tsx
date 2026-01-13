@@ -13,7 +13,13 @@ interface AuthContextType {
   updatePassword: (newPassword: string) => Promise<{ error: Error | null }>;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const globalForAuth = globalThis as unknown as {
+  __APP_AUTH_CONTEXT__?: React.Context<AuthContextType | undefined>;
+};
+
+const AuthContext =
+  globalForAuth.__APP_AUTH_CONTEXT__ ??
+  (globalForAuth.__APP_AUTH_CONTEXT__ = createContext<AuthContextType | undefined>(undefined));
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
