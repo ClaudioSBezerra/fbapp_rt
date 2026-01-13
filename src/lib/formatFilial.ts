@@ -80,10 +80,19 @@ export function formatFilialFromRow(row: {
   filial_cnpj?: string | null;
   filial_nome?: string | null;
 }): string {
+  // DEBUG: Verificar inputs
+  console.log('[DEBUG formatFilialFromRow] Input:', {
+    cod_est: row.filial_cod_est,
+    cnpj: row.filial_cnpj,
+    nome: row.filial_nome
+  });
+  
   // Se temos cod_est e cnpj válido, usa diretamente
   const cleanedCnpj = row.filial_cnpj?.replace(/\D/g, '') || '';
   if (cleanedCnpj.length === 14) {
-    return formatFilialDisplayFormatted(row.filial_cod_est, row.filial_cnpj);
+    const result = formatFilialDisplayFormatted(row.filial_cod_est, row.filial_cnpj);
+    console.log('[DEBUG formatFilialFromRow] Output:', result);
+    return result;
   }
   
   // Fallback: tenta extrair do filial_nome
