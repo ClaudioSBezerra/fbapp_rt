@@ -7,7 +7,11 @@ export function formatCNPJMasked(cnpj: string | null | undefined): string {
   if (!cnpj) return '';
   const cleaned = cnpj.replace(/\D/g, '');
   if (cleaned.length !== 14) return cnpj;
-  return cleaned.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+  
+  // Máscara de privacidade: **********/{filial}-{dv}
+  const filial = cleaned.substring(8, 12);
+  const dv = cleaned.substring(12, 14);
+  return `**********/${filial}-${dv}`;
 }
 
 /**
