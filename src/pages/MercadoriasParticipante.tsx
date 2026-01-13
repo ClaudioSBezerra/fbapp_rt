@@ -16,7 +16,7 @@ import { Pagination, PaginationContent, PaginationItem, PaginationLink, Paginati
 import { Download, Users, HelpCircle, ChevronsUpDown, Check, ArrowDownRight, ArrowUpRight, RefreshCw } from 'lucide-react';
 import { exportToExcel } from '@/lib/exportToExcel';
 import { cn } from '@/lib/utils';
-import { formatCNPJMasked } from '@/lib/formatFilial';
+import { formatDocumentoMasked } from '@/lib/formatFilial';
 
 interface Aliquota {
   ano: number;
@@ -60,10 +60,10 @@ const formatCurrency = (value: number) => {
   return new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
 };
 
-// Formata CNPJ - usa função centralizada
-const formatCNPJ = (cnpj: string | null) => {
-  if (!cnpj) return '-';
-  return formatCNPJMasked(cnpj);
+// Formata documento (CPF ou CNPJ) - usa função centralizada
+const formatDocumento = (doc: string | null) => {
+  if (!doc) return '-';
+  return formatDocumentoMasked(doc);
 };
 
 // Parse manual para evitar bug de timezone
@@ -211,7 +211,7 @@ function ParticipanteTable({ data, tipo, aliquotas, selectedYear, isLoading }: P
                         </p>
                         {row.participante_cnpj && row.cod_part !== '9999999999' && row.cod_part !== '8888888888' && (
                           <p className="text-xs text-muted-foreground">
-                            CNPJ: {formatCNPJ(row.participante_cnpj)}
+                            CPF/CNPJ: {formatDocumento(row.participante_cnpj)}
                           </p>
                         )}
                         {row.cod_part === '9999999999' && (
@@ -467,7 +467,7 @@ export default function MercadoriasParticipante() {
 
       return {
         'Participante': row.participante_nome,
-        'CNPJ': formatCNPJ(row.participante_cnpj),
+        'CPF/CNPJ': formatDocumento(row.participante_cnpj),
         'Tipo': row.tipo === 'entrada' ? 'Entrada' : 'Saída',
         'Mês/Ano': formatMesAno(row.mes_ano),
         'Valor': row.valor,
@@ -593,7 +593,7 @@ export default function MercadoriasParticipante() {
                             <span className="truncate flex-1">{participante.nome}</span>
                             {participante.cnpj && (
                               <span className="ml-2 text-xs text-muted-foreground shrink-0">
-                                {formatCNPJ(participante.cnpj)}
+                                {formatDocumento(participante.cnpj)}
                               </span>
                             )}
                           </CommandItem>

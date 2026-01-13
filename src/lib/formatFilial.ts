@@ -1,6 +1,21 @@
 /**
+ * Formata CPF com máscara de privacidade
+ * Entrada: "12345678901" → Saída: "***.***.***-01"
+ * Retorna string original se não for CPF válido de 11 dígitos
+ */
+export function formatCPFMasked(cpf: string | null | undefined): string {
+  if (!cpf) return '';
+  const cleaned = cpf.replace(/\D/g, '');
+  if (cleaned.length !== 11) return cpf;
+  
+  // Máscara de privacidade: ***.***.***-{dv}
+  const dv = cleaned.substring(9, 11);
+  return `***.***.***-${dv}`;
+}
+
+/**
  * Formata CNPJ com máscara completa
- * Entrada: "10230480000189" → Saída: "10.230.480/0001-89"
+ * Entrada: "10230480000189" → Saída: "**********\0001-89"
  * Retorna string original se não for CNPJ válido de 14 dígitos
  */
 export function formatCNPJMasked(cnpj: string | null | undefined): string {
@@ -12,6 +27,24 @@ export function formatCNPJMasked(cnpj: string | null | undefined): string {
   const filial = cleaned.substring(8, 12);
   const dv = cleaned.substring(12, 14);
   return `**********/${filial}-${dv}`;
+}
+
+/**
+ * Formata CPF ou CNPJ com máscara de privacidade
+ * Detecta automaticamente pelo tamanho: 11 dígitos = CPF, 14 dígitos = CNPJ
+ */
+export function formatDocumentoMasked(doc: string | null | undefined): string {
+  if (!doc) return '';
+  const cleaned = doc.replace(/\D/g, '');
+  
+  if (cleaned.length === 11) {
+    return formatCPFMasked(doc);
+  }
+  if (cleaned.length === 14) {
+    return formatCNPJMasked(doc);
+  }
+  
+  return doc;
 }
 
 /**
