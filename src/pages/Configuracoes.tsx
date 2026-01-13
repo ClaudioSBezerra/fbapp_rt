@@ -3,11 +3,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { useAuth } from '@/hooks/useAuth';
 import { useRole } from '@/hooks/useRole';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Settings, User, Shield, Building2, Users, Save, Loader2 } from 'lucide-react';
+import { Settings, User, Shield, Building2, Users, Save, Loader2, Lock, Eye, EyeOff } from 'lucide-react';
 
 interface UserEmpresa {
   user_id: string;
@@ -28,7 +30,7 @@ interface Empresa {
 }
 
 export default function Configuracoes() {
-  const { user } = useAuth();
+  const { user, updatePassword } = useAuth();
   const { isAdmin } = useRole();
   
   // Admin management state
@@ -37,6 +39,41 @@ export default function Configuracoes() {
   const [userEmpresas, setUserEmpresas] = useState<UserEmpresa[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
+
+  // Password change state
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (newPassword.length < 6) {
+      toast.error('A nova senha deve ter pelo menos 6 caracteres');
+      return;
+    }
+    
+    if (newPassword !== confirmPassword) {
+      toast.error('As senhas não coincidem');
+      return;
+    }
+    
+    setIsChangingPassword(true);
+    const { error } = await updatePassword(newPassword);
+    
+    if (error) {
+      toast.error('Erro ao alterar senha: ' + error.message);
+    } else {
+      toast.success('Senha alterada com sucesso!');
+      setShowPasswordForm(false);
+      setNewPassword('');
+      setConfirmPassword('');
+    }
+    setIsChangingPassword(false);
+  };
 
   // Fetch users, empresas, and links when admin
   useEffect(() => {
@@ -252,6 +289,87 @@ export default function Configuracoes() {
                   ? new Date(user.last_sign_in_at).toLocaleString('pt-BR')
                   : 'Primeiro acesso'}
               </p>
+            </div>
+
+            <div className="border-t border-border/50 pt-4">
+              {!showPasswordForm ? (
+                <Button
+                  variant="outline"
+                  onClick={() => setShowPasswordForm(true)}
+                  className="w-full sm:w-auto"
+                >
+                  <Lock className="h-4 w-4 mr-2" />
+                  Alterar senha
+                </Button>
+              ) : (
+                <form onSubmit={handleChangePassword} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="newPassword">Nova senha</Label>
+                    <div className="relative">
+                      <Input
+                        id="newPassword"
+                        type={showNewPassword ? 'text' : 'password'}
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        placeholder="Mínimo 6 caracteres"
+                        className="pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPassword(!showNewPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="confirmPassword">Confirmar nova senha</Label>
+                    <div className="relative">
+                      <Input
+                        id="confirmPassword"
+                        type={showConfirmPassword ? 'text' : 'password'}
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        placeholder="Repita a nova senha"
+                        className="pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setShowPasswordForm(false);
+                        setNewPassword('');
+                        setConfirmPassword('');
+                      }}
+                    >
+                      Cancelar
+                    </Button>
+                    <Button type="submit" disabled={isChangingPassword}>
+                      {isChangingPassword ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Salvando...
+                        </>
+                      ) : (
+                        'Salvar nova senha'
+                      )}
+                    </Button>
+                  </div>
+                </form>
+              )}
             </div>
           </CardContent>
         </Card>
