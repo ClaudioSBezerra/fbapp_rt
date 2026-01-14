@@ -100,6 +100,7 @@ interface InsertCounts {
   fretes: number;
   servicos: number;
   participantes: number;
+  estabelecimentos: number;
 }
 
 interface SeenCounts {
@@ -984,13 +985,14 @@ serve(async (req) => {
     };
     
     // Initialize counts with existing values (for resumption)
-    const existingCounts = job.counts as any || { mercadorias: 0, energia_agua: 0, fretes: 0, servicos: 0, participantes: 0 };
+    const existingCounts = job.counts as any || { mercadorias: 0, energia_agua: 0, fretes: 0, servicos: 0, participantes: 0, estabelecimentos: 0 };
     const counts: InsertCounts = {
       mercadorias: existingCounts.mercadorias || 0,
       energia_agua: existingCounts.energia_agua || 0,
       fretes: existingCounts.fretes || 0,
       servicos: existingCounts.servicos || 0,
       participantes: existingCounts.participantes || 0,
+      estabelecimentos: existingCounts.estabelecimentos || 0,
     };
     
     // Track seen record counts (for diagnostics)
@@ -1285,6 +1287,7 @@ serve(async (req) => {
               context.filialMap.set(cnpj, newFilial.id);
               context.currentFilialId = newFilial.id;
               context.currentCNPJ = cnpj;
+              counts.estabelecimentos++;
               console.log(`Job ${jobId}: 0140 - Created new filial ${cnpj} -> ${newFilial.id} with cod_est: ${codEst}, nome: ${nome}`);
               
               // Create generic participants for this new filial
@@ -1360,6 +1363,7 @@ serve(async (req) => {
             if (newFilial) {
               context.filialMap.set(cnpj, newFilial.id);
               context.currentFilialId = newFilial.id;
+              counts.estabelecimentos++;
               console.log(`Job ${jobId}: C/D/A010 - Created fallback filial ${cnpj} -> ${newFilial.id}`);
               
               // Also create generic participants for fallback filial
@@ -1588,7 +1592,7 @@ serve(async (req) => {
           counts: { 
             ...counts, 
             seen: seenCounts,
-            estabelecimentos: context.estabelecimentosMap.size,
+            // estabelecimentos is already in counts (cumulative)
             context: {
               currentPeriod: context.currentPeriod,
               currentCNPJ: context.currentCNPJ,
@@ -1644,7 +1648,7 @@ serve(async (req) => {
         status: "refreshing_views", 
         progress: 98,
         total_lines: totalLinesProcessed,
-        counts: { ...counts, seen: seenCounts, estabelecimentos: context.estabelecimentosMap.size }
+        counts: { ...counts, seen: seenCounts }
       })
       .eq("id", jobId);
 
@@ -1666,7 +1670,7 @@ serve(async (req) => {
         status: "completed", 
         progress: 100,
         total_lines: totalLinesProcessed,
-        counts: { ...counts, seen: seenCounts, estabelecimentos: context.estabelecimentosMap.size, refresh_success: refreshSuccess },
+        counts: { ...counts, seen: seenCounts, refresh_success: refreshSuccess },
         completed_at: new Date().toISOString() 
       })
       .eq("id", jobId);
