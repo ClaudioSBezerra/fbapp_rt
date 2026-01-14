@@ -1,11 +1,12 @@
 import { useEffect, useState, useMemo } from "react";
+import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from "recharts";
-import { Loader2, TrendingDown, TrendingUp, AlertCircle, RefreshCw } from "lucide-react";
+import { Loader2, TrendingDown, TrendingUp, AlertCircle, RefreshCw, DollarSign, Settings } from "lucide-react";
 import { formatFilialDisplayFormatted } from "@/lib/formatFilial";
 
 
@@ -339,13 +340,98 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Cards de métricas */}
+      {/* Alerta de alíquotas não configuradas */}
+      {aliquotas.length === 0 && !loading && (
+        <Alert variant="default" className="border-amber-500 bg-amber-50 dark:bg-amber-950/20">
+          <Settings className="h-4 w-4 text-amber-600" />
+          <AlertTitle className="text-amber-800 dark:text-amber-200">Alíquotas de transição não configuradas</AlertTitle>
+          <AlertDescription className="text-amber-700 dark:text-amber-300">
+            As projeções para 2027–2033 não podem ser calculadas. Configure as alíquotas na página{" "}
+            <Link to="/aliquotas" className="underline font-medium hover:text-amber-900 dark:hover:text-amber-100">
+              Alíquotas
+            </Link>.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Cards de base do período (dados reais) */}
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+        <Card className="border-muted bg-muted/30">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+              <DollarSign className="h-4 w-4 text-slate-500" />
+              Valor Base (Saídas)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-foreground">
+              {formatCurrency(totais.valor)}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Período atual
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-muted bg-muted/30">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+              <DollarSign className="h-4 w-4 text-blue-500" />
+              ICMS Base
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-foreground">
+              {formatCurrency(totais.icms)}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Período atual
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-muted bg-muted/30">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+              <DollarSign className="h-4 w-4 text-purple-500" />
+              PIS Base
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-foreground">
+              {formatCurrency(totais.pis)}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Período atual
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-muted bg-muted/30">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+              <DollarSign className="h-4 w-4 text-purple-500" />
+              COFINS Base
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-foreground">
+              {formatCurrency(totais.cofins)}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Período atual
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Cards de projeção */}
       <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
               <TrendingDown className="h-4 w-4 text-blue-500" />
-              ICMS Projetado
+              ICMS Projetado {anoProjecao}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -362,7 +448,7 @@ export default function Dashboard() {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
               <TrendingDown className="h-4 w-4 text-purple-500" />
-              PIS/COFINS Projetado
+              PIS/COFINS Projetado {anoProjecao}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -379,7 +465,7 @@ export default function Dashboard() {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
               <TrendingUp className="h-4 w-4 text-green-500" />
-              IBS Projetado
+              IBS Projetado {anoProjecao}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -396,7 +482,7 @@ export default function Dashboard() {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
               <TrendingUp className="h-4 w-4 text-orange-500" />
-              CBS Projetado
+              CBS Projetado {anoProjecao}
             </CardTitle>
           </CardHeader>
           <CardContent>
