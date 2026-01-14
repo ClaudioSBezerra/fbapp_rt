@@ -57,6 +57,9 @@ interface ImportJob {
   started_at: string | null;
   completed_at: string | null;
   created_at: string;
+  updated_at: string;
+  bytes_processed: number | null;
+  chunk_number: number | null;
 }
 
 interface Empresa {
@@ -80,6 +83,29 @@ function formatDate(dateStr: string): string {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function formatTime(dateStr: string): string {
+  return new Date(dateStr).toLocaleString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
+
+function getTimeSinceUpdate(dateStr: string): { text: string; isStale: boolean } {
+  const now = new Date();
+  const updated = new Date(dateStr);
+  const diffMs = now.getTime() - updated.getTime();
+  const diffSeconds = Math.floor(diffMs / 1000);
+  const diffMinutes = Math.floor(diffSeconds / 60);
+  
+  if (diffMinutes > 2) {
+    return { text: `${diffMinutes} min atrás`, isStale: true };
+  } else if (diffSeconds > 30) {
+    return { text: `${diffSeconds}s atrás`, isStale: false };
+  }
+  return { text: 'agora', isStale: false };
 }
 
 function getStatusInfo(status: ImportJob['status']) {
@@ -240,26 +266,29 @@ export default function ImportarEFD() {
     }
   }, [userEmpresas, sessionLoading]);
 
+  // Load existing jobs function (extracted for reuse)
+  const loadJobs = useCallback(async () => {
+    if (!session?.user?.id) return;
+    
+    const { data } = await supabase
+      .from('import_jobs')
+      .select('*')
+      .eq('user_id', session.user.id)
+      .order('created_at', { ascending: false })
+      .limit(10);
+    
+    if (data) {
+      setJobs(data.map(job => ({
+        ...job,
+        counts: (job.counts as unknown) as ImportCounts,
+        status: job.status as ImportJob['status'],
+      })));
+    }
+  }, [session?.user?.id]);
+
   // Load existing jobs and subscribe to realtime updates
   useEffect(() => {
     if (!session?.user?.id) return;
-
-    const loadJobs = async () => {
-      const { data } = await supabase
-        .from('import_jobs')
-        .select('*')
-        .eq('user_id', session.user.id)
-        .order('created_at', { ascending: false })
-        .limit(10);
-      
-      if (data) {
-        setJobs(data.map(job => ({
-          ...job,
-          counts: (job.counts as unknown) as ImportCounts,
-          status: job.status as ImportJob['status'],
-        })));
-      }
-    };
 
     loadJobs();
 
@@ -330,7 +359,42 @@ export default function ImportarEFD() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [session?.user?.id]);
+  }, [session?.user?.id, loadJobs]);
+
+  // Polling fallback: refresh jobs every 15s when there are active jobs
+  useEffect(() => {
+    const hasActiveJobs = jobs.some(j => 
+      j.status === 'pending' || j.status === 'processing' || j.status === 'refreshing_views' || j.status === 'generating'
+    );
+    
+    if (!hasActiveJobs || !session?.user?.id) return;
+    
+    console.log('Starting polling fallback for active jobs');
+    const pollInterval = setInterval(() => {
+      console.log('Polling jobs (fallback)...');
+      loadJobs();
+    }, 15000); // Every 15 seconds
+    
+    return () => {
+      clearInterval(pollInterval);
+    };
+  }, [jobs, session?.user?.id, loadJobs]);
+
+  // Re-sync on tab visibility change
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && session?.user?.id) {
+        console.log('Tab became visible, refreshing jobs...');
+        loadJobs();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [session?.user?.id, loadJobs]);
 
   // Trigger parse-efd after upload completes
   const triggerParseEfd = useCallback(async (filePath: string) => {
@@ -896,16 +960,29 @@ export default function ImportarEFD() {
       {/* Active Jobs */}
       {activeJobs.length > 0 && (
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0">
             <CardTitle className="flex items-center gap-2 text-lg">
               <Loader2 className="h-5 w-5 animate-spin" />
               Importações em Andamento
             </CardTitle>
+            <Button 
+              variant="ghost" 
+              size="sm"
+              onClick={() => loadJobs()}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <RefreshCw className="h-4 w-4 mr-1" />
+              Atualizar Status
+            </Button>
           </CardHeader>
           <CardContent className="space-y-4">
             {activeJobs.map((job) => {
               const statusInfo = getStatusInfo(job.status);
               const StatusIcon = statusInfo.icon;
+              const updateInfo = job.updated_at ? getTimeSinceUpdate(job.updated_at) : null;
+              const bytesProgress = job.bytes_processed && job.file_size 
+                ? `${formatFileSize(job.bytes_processed)} / ${formatFileSize(job.file_size)}`
+                : null;
               
               return (
                 <div key={job.id} className="border rounded-lg p-4 space-y-3">
@@ -928,12 +1005,36 @@ export default function ImportarEFD() {
                       <span>{job.progress}%</span>
                     </div>
                     <Progress value={job.progress} className="h-2" />
-                    {job.total_lines > 0 && (
-                      <p className="text-xs text-muted-foreground text-right">
-                        {job.total_lines.toLocaleString('pt-BR')} linhas
-                      </p>
-                    )}
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>
+                        {bytesProgress && <span className="mr-2">{bytesProgress}</span>}
+                        {job.chunk_number !== null && job.chunk_number > 0 && (
+                          <span className="text-muted-foreground/70">Bloco {job.chunk_number}</span>
+                        )}
+                      </span>
+                      {job.total_lines > 0 && (
+                        <span>{job.total_lines.toLocaleString('pt-BR')} linhas</span>
+                      )}
+                    </div>
                   </div>
+
+                  {/* Last Updated indicator */}
+                  {updateInfo && (
+                    <div className={`flex items-center gap-2 text-xs ${updateInfo.isStale ? 'text-warning' : 'text-muted-foreground'}`}>
+                      <Clock className="h-3 w-3" />
+                      <span>Última atualização: {formatTime(job.updated_at)} ({updateInfo.text})</span>
+                      {updateInfo.isStale && (
+                        <Button 
+                          variant="link" 
+                          size="sm" 
+                          className="h-auto p-0 text-xs text-warning hover:text-warning/80"
+                          onClick={() => loadJobs()}
+                        >
+                          Reconectar
+                        </Button>
+                      )}
+                    </div>
+                  )}
 
                   {(job.status === 'processing' || job.status === 'refreshing_views') && (
                     <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
