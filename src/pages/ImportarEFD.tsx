@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,6 +13,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useRole } from '@/hooks/useRole';
 import { useSessionInfo } from '@/hooks/useSessionInfo';
+import { useResumableUpload } from '@/hooks/useResumableUpload';
+import { UploadProgressDisplay } from '@/components/UploadProgress';
 import { toast } from 'sonner';
 import { formatCNPJMasked } from '@/lib/formatFilial';
 
@@ -102,8 +104,7 @@ function getStatusInfo(status: ImportJob['status']) {
 export default function ImportarEFD() {
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [selectedEmpresa, setSelectedEmpresa] = useState<string>('');
-  const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<string>('');
+  const [processingImport, setProcessingImport] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [jobs, setJobs] = useState<ImportJob[]>([]);
@@ -121,11 +122,39 @@ export default function ImportarEFD() {
   const [statusMessage, setStatusMessage] = useState('');
   const [refreshingViews, setRefreshingViews] = useState(false);
   const [viewsStatus, setViewsStatus] = useState<'loading' | 'empty' | 'ok'>('loading');
+  const [currentUploadPath, setCurrentUploadPath] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { session } = useAuth();
   const { isAdmin } = useRole();
   const { empresas: userEmpresas, isLoading: sessionLoading } = useSessionInfo();
   const navigate = useNavigate();
+
+  // Resumable upload hook
+  const {
+    progress: uploadProgress,
+    startUpload,
+    pauseUpload,
+    resumeUpload,
+    cancelUpload,
+    resetUpload,
+    isUploading,
+    isPaused,
+    isCompleted: uploadCompleted,
+    hasError: uploadHasError,
+  } = useResumableUpload({
+    bucketName: 'efd-files',
+    onComplete: async (filePath) => {
+      console.log('Upload completed, starting parse-efd:', filePath);
+      await triggerParseEfd(filePath);
+    },
+    onError: (error) => {
+      console.error('Upload failed:', error);
+      toast.error(`Erro no upload: ${error.message}`);
+    },
+  });
+
+  // Track if upload is in progress (uploading or paused)
+  const uploading = isUploading || isPaused || processingImport;
 
   // Check views status when jobs change
   useEffect(() => {
@@ -303,32 +332,15 @@ export default function ImportarEFD() {
     };
   }, [session?.user?.id]);
 
-  const handleStartImport = async () => {
+  // Trigger parse-efd after upload completes
+  const triggerParseEfd = useCallback(async (filePath: string) => {
     if (!selectedFile || !selectedEmpresa || !session) return;
-
-    setUploading(true);
-    setUploadProgress('Enviando arquivo para o storage...');
+    
+    setProcessingImport(true);
     
     try {
-      // Step 1: Upload file directly to Storage
-      const timestamp = Date.now();
-      const filePath = `${session.user.id}/${timestamp}_${selectedFile.name}`;
+      console.log('Calling parse-efd for:', filePath);
       
-      const { error: uploadError } = await supabase.storage
-        .from('efd-files')
-        .upload(filePath, selectedFile, {
-          contentType: 'text/plain',
-          upsert: false,
-        });
-
-      if (uploadError) {
-        throw new Error(`Erro ao enviar arquivo: ${uploadError.message}`);
-      }
-
-      console.log('File uploaded to storage:', filePath);
-      setUploadProgress('Iniciando processamento...');
-
-      // Step 2: Call parse-efd with metadata only (no file in body)
       const response = await supabase.functions.invoke('parse-efd', {
         body: {
           empresa_id: selectedEmpresa,
@@ -341,30 +353,71 @@ export default function ImportarEFD() {
       });
 
       if (response.error) {
-        // Clean up uploaded file on error
         await supabase.storage.from('efd-files').remove([filePath]);
         throw new Error(response.error.message || 'Erro ao iniciar importação');
       }
 
       const data = response.data;
       if (data.error) {
-        // Clean up uploaded file on error
         await supabase.storage.from('efd-files').remove([filePath]);
         throw new Error(data.error);
       }
 
       setSelectedFile(null);
+      setCurrentUploadPath('');
+      resetUpload();
       toast.success('Importação iniciada! Acompanhe o progresso abaixo.');
     } catch (error) {
       console.error('Error starting import:', error);
       const errorMessage = error instanceof Error ? error.message : 'Erro ao iniciar importação';
       toast.error(errorMessage);
     } finally {
-      setUploading(false);
-      setUploadProgress('');
+      setProcessingImport(false);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
+    }
+  }, [selectedFile, selectedEmpresa, session, recordLimit, importScope, resetUpload]);
+
+  const handleStartImport = async () => {
+    if (!selectedFile || !selectedEmpresa || !session) return;
+
+    try {
+      const timestamp = Date.now();
+      const filePath = `${session.user.id}/${timestamp}_${selectedFile.name}`;
+      setCurrentUploadPath(filePath);
+      
+      console.log('Starting resumable upload:', filePath, 'Size:', selectedFile.size);
+      await startUpload(selectedFile, filePath);
+    } catch (error) {
+      console.error('Error starting upload:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Erro ao iniciar upload';
+      toast.error(errorMessage);
+    }
+  };
+
+  const handleCancelUpload = () => {
+    cancelUpload();
+    setSelectedFile(null);
+    setCurrentUploadPath('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+    toast.info('Upload cancelado.');
+  };
+
+  const handleRetryUpload = async () => {
+    if (!selectedFile || !session) return;
+    
+    resetUpload();
+    const timestamp = Date.now();
+    const filePath = `${session.user.id}/${timestamp}_${selectedFile.name}`;
+    setCurrentUploadPath(filePath);
+    
+    try {
+      await startUpload(selectedFile, filePath);
+    } catch (error) {
+      console.error('Error retrying upload:', error);
     }
   };
 
@@ -373,9 +426,10 @@ export default function ImportarEFD() {
       toast.error('Por favor, selecione um arquivo .txt');
       return;
     }
-    // Warn for very large files
-    if (file.size > 500 * 1024 * 1024) {
-      toast.warning('Arquivo muito grande (>500MB). O upload pode demorar.');
+    // Warn for very large files (now supports up to 1GB)
+    if (file.size > 1024 * 1024 * 1024) {
+      toast.error('Arquivo muito grande (>1GB). Limite máximo é 1GB.');
+      return;
     }
     
     setSelectedFile(file);
@@ -772,11 +826,23 @@ export default function ImportarEFD() {
             />
             
             <div className="flex flex-col items-center gap-3">
-              {uploading ? (
+              {/* Show upload progress when uploading */}
+              {(isUploading || isPaused || uploadHasError) && selectedFile ? (
+                <div className="w-full">
+                  <UploadProgressDisplay
+                    progress={uploadProgress}
+                    fileName={selectedFile.name}
+                    onPause={pauseUpload}
+                    onResume={resumeUpload}
+                    onCancel={handleCancelUpload}
+                    onRetry={handleRetryUpload}
+                  />
+                </div>
+              ) : processingImport ? (
                 <>
                   <Loader2 className="h-10 w-10 text-primary animate-spin" />
                   <div className="space-y-1 text-center">
-                    <p className="text-sm font-medium text-foreground">{uploadProgress || 'Enviando...'}</p>
+                    <p className="text-sm font-medium text-foreground">Iniciando processamento...</p>
                     <p className="text-xs text-muted-foreground">O processamento continuará em background</p>
                   </div>
                 </>
@@ -807,7 +873,7 @@ export default function ImportarEFD() {
                       Arraste o arquivo ou clique para selecionar
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Aceita arquivos .txt (EFD Contribuições) - até 500MB
+                      Aceita arquivos .txt (EFD Contribuições) - até 1GB
                     </p>
                   </div>
                 </>
