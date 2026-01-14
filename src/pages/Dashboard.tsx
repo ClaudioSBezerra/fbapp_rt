@@ -62,10 +62,15 @@ export default function Dashboard() {
         }
         
         const periodosSet = new Set<string>();
-        statsData?.forEach((s: { mes_ano: string }) => {
-          // Parse diretamente da string para evitar bugs de timezone
-          const [year, month] = s.mes_ano.split('-').map(Number);
-          periodosSet.add(`${year}-${String(month).padStart(2, "0")}`);
+        statsData?.forEach((s: { mes_ano: string | Date }) => {
+          // Handle mes_ano as Date object or ISO string from database
+          const mesAnoStr = typeof s.mes_ano === 'string' 
+            ? s.mes_ano 
+            : new Date(s.mes_ano).toISOString().slice(0, 10);
+          const [year, month] = mesAnoStr.split('-').map(Number);
+          if (year && month) {
+            periodosSet.add(`${year}-${String(month).padStart(2, "0")}`);
+          }
         });
 
         const periodos = Array.from(periodosSet).sort().reverse();
