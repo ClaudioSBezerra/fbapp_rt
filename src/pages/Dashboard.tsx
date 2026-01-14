@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from "recharts";
-import { Loader2, TrendingDown, TrendingUp, AlertCircle, RefreshCw, DollarSign, Settings } from "lucide-react";
+import { Loader2, TrendingDown, TrendingUp, AlertCircle, RefreshCw, Settings } from "lucide-react";
 import { formatFilialDisplayFormatted } from "@/lib/formatFilial";
 
 
@@ -354,77 +354,6 @@ export default function Dashboard() {
         </Alert>
       )}
 
-      {/* Cards de base do período (dados reais) */}
-      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-        <Card className="border-muted bg-muted/30">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <DollarSign className="h-4 w-4 text-slate-500" />
-              Valor Base (Saídas)
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-foreground">
-              {formatCurrency(totais.valor)}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Período atual
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-muted bg-muted/30">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <DollarSign className="h-4 w-4 text-blue-500" />
-              ICMS Base
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-foreground">
-              {formatCurrency(totais.icms)}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Período atual
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-muted bg-muted/30">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <DollarSign className="h-4 w-4 text-purple-500" />
-              PIS Base
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-foreground">
-              {formatCurrency(totais.pis)}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Período atual
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-muted bg-muted/30">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <DollarSign className="h-4 w-4 text-purple-500" />
-              COFINS Base
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-foreground">
-              {formatCurrency(totais.cofins)}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Período atual
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
       {/* Cards de projeção */}
       <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
@@ -447,12 +376,12 @@ export default function Dashboard() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <TrendingDown className="h-4 w-4 text-purple-500" />
+              <TrendingDown className="h-4 w-4 text-green-500" />
               PIS/COFINS Projetado {anoProjecao}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-purple-600">
+            <div className="text-2xl font-bold text-green-600">
               {formatCurrency(projecaoAno.pisCofinsProjetado)}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
@@ -464,12 +393,12 @@ export default function Dashboard() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-green-500" />
+              <TrendingUp className="h-4 w-4 text-purple-500" />
               IBS Projetado {anoProjecao}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">
+            <div className="text-2xl font-bold text-purple-600">
               {formatCurrency(projecaoAno.ibsProjetado)}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
@@ -537,7 +466,7 @@ export default function Dashboard() {
                   type="monotone"
                   dataKey="ibsProjetado"
                   name="IBS"
-                  stroke="hsl(142, 71%, 35%)"
+                  stroke="hsl(280, 65%, 50%)"
                   strokeWidth={3}
                   dot={{ r: 4 }}
                   activeDot={{ r: 6 }}
