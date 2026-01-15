@@ -152,7 +152,10 @@ export default function UsoConsumoImobilizado() {
   // Calcular projeções para uma linha
   const calcularProjecao = (row: DetailedRow) => {
     if (!aliquotaSelecionada) {
-      return { icmsProj: 0, pisCofinsProj: 0, ibsProj: 0, cbsProj: 0, diferenca: 0 };
+      return { 
+        icmsProj: 0, pisCofinsProj: 0, baseIbsCbs: 0, ibsProj: 0, cbsProj: 0, 
+        totalImpostosAtuais: 0, totalReforma: 0, totalImpostoReforma: 0, diferenca: 0 
+      };
     }
 
     const pisCofins = row.pis + row.cofins;
@@ -162,14 +165,20 @@ export default function UsoConsumoImobilizado() {
 
     const icmsProj = row.icms * (1 - reducIcms);
     const pisCofinsProj = pisCofins * (1 - reducPisCofins);
-    const ibsProj = (row.valor * ibsTotal) / 100;
-    const cbsProj = (row.valor * aliquotaSelecionada.cbs) / 100;
+    
+    // Novos cálculos iguais ao Mercadorias
+    const totalImpostosAtuais = row.icms + pisCofins;
+    const baseIbsCbs = row.valor - row.icms - pisCofins;
+    const ibsProj = (baseIbsCbs * ibsTotal) / 100;
+    const cbsProj = (baseIbsCbs * aliquotaSelecionada.cbs) / 100;
+    const totalReforma = ibsProj + cbsProj;
+    const totalImpostoReforma = icmsProj + pisCofinsProj + ibsProj + cbsProj;
+    const diferenca = totalImpostoReforma - totalImpostosAtuais;
 
-    const atualTotal = row.icms + pisCofins;
-    const futuroTotal = icmsProj + pisCofinsProj + ibsProj + cbsProj;
-    const diferenca = futuroTotal - atualTotal;
-
-    return { icmsProj, pisCofinsProj, ibsProj, cbsProj, diferenca };
+    return { 
+      icmsProj, pisCofinsProj, baseIbsCbs, ibsProj, cbsProj, 
+      totalImpostosAtuais, totalReforma, totalImpostoReforma, diferenca 
+    };
   };
 
   // Totais
@@ -210,13 +219,16 @@ export default function UsoConsumoImobilizado() {
         'Qtd. Docs': row.quantidade_docs,
         'Valor': row.valor,
         'ICMS': row.icms,
-        'PIS': row.pis,
-        'COFINS': row.cofins,
-        [`ICMS Proj. ${anoProjecao}`]: proj.icmsProj,
-        [`PIS+COFINS Proj. ${anoProjecao}`]: proj.pisCofinsProj,
-        [`IBS Proj. ${anoProjecao}`]: proj.ibsProj,
-        [`CBS Proj. ${anoProjecao}`]: proj.cbsProj,
-        'Diferença': proj.diferenca,
+        [`ICMS Proj. (-${aliquotaSelecionada?.reduc_icms || 0}%)`]: proj.icmsProj,
+        'PIS+COFINS': row.pis + row.cofins,
+        [`PIS+COFINS Proj. (-${aliquotaSelecionada?.reduc_piscofins || 0}%)`]: proj.pisCofinsProj,
+        'Tot. Imp. Atuais': proj.totalImpostosAtuais,
+        'Base IBS/CBS': proj.baseIbsCbs,
+        [`IBS Proj. (${((aliquotaSelecionada?.ibs_estadual || 0) + (aliquotaSelecionada?.ibs_municipal || 0)).toFixed(1)}%)`]: proj.ibsProj,
+        [`CBS Proj. (${(aliquotaSelecionada?.cbs || 0).toFixed(1)}%)`]: proj.cbsProj,
+        'Total Reforma': proj.totalReforma,
+        'Tot.Imposto Reforma': proj.totalImpostoReforma,
+        'Dif. deb/cred.': proj.diferenca,
       };
     });
 
@@ -230,72 +242,50 @@ export default function UsoConsumoImobilizado() {
       <Table>
         <TableHeader>
           <TableRow className="text-xs">
-            <TableHead className="min-w-[180px] text-xs">Filial</TableHead>
-            <TableHead className="min-w-[160px] text-xs">Participante</TableHead>
-            <TableHead className="text-xs">CFOP</TableHead>
-            <TableHead className="text-xs">Mês/Ano</TableHead>
-            <TableHead className="text-right text-xs">Docs</TableHead>
+            <TableHead className="min-w-[140px] text-xs">Filial</TableHead>
+            <TableHead className="min-w-[120px] text-xs">Participante</TableHead>
+            <TableHead className="text-xs whitespace-nowrap">Mês/Ano</TableHead>
             <TableHead className="text-right text-xs">Valor</TableHead>
             <TableHead className="text-right text-xs">ICMS</TableHead>
-            <TableHead className="text-right text-xs">PIS+COF</TableHead>
-            <TableHead className="text-right text-xs">
+            <TableHead className="text-right text-xs whitespace-nowrap">
+              ICMS Proj. {aliquotaSelecionada && <span className="text-muted-foreground font-normal">(-{aliquotaSelecionada.reduc_icms}%)</span>}
+            </TableHead>
+            <TableHead className="text-right text-xs text-pis-cofins">PIS+COFINS</TableHead>
+            <TableHead className="text-right text-xs text-pis-cofins whitespace-nowrap">
+              PIS+COFINS Proj. {aliquotaSelecionada && <span className="text-muted-foreground font-normal">(-{aliquotaSelecionada.reduc_piscofins}%)</span>}
+            </TableHead>
+            <TableHead className="text-right text-xs font-semibold bg-muted/30 whitespace-nowrap">Tot. Imp. Atuais</TableHead>
+            <TableHead className="text-right text-xs whitespace-nowrap">Base IBS/CBS</TableHead>
+            <TableHead className="text-right text-xs text-ibs-cbs whitespace-nowrap">
+              IBS Proj. {aliquotaSelecionada && <span className="text-muted-foreground font-normal">({(aliquotaSelecionada.ibs_estadual + aliquotaSelecionada.ibs_municipal).toFixed(1)}%)</span>}
+            </TableHead>
+            <TableHead className="text-right text-xs text-ibs-cbs whitespace-nowrap">
+              CBS Proj. {aliquotaSelecionada && <span className="text-muted-foreground font-normal">({aliquotaSelecionada.cbs.toFixed(1)}%)</span>}
+            </TableHead>
+            <TableHead className="text-right text-xs font-semibold text-ibs-cbs bg-muted/30 whitespace-nowrap">Total Reforma</TableHead>
+            <TableHead className="text-right text-xs font-semibold bg-muted/30">
               <Tooltip>
-                <TooltipTrigger className="cursor-help underline decoration-dotted inline-flex items-center gap-1">
-                  ICMS Proj.
+                <TooltipTrigger className="cursor-help underline decoration-dotted decoration-muted-foreground inline-flex items-center gap-1 whitespace-nowrap">
+                  Tot.Imposto Reforma
                   <HelpCircle className="h-3 w-3 text-muted-foreground" />
                 </TooltipTrigger>
                 <TooltipContent side="top" className="max-w-xs">
-                  <p className="font-semibold mb-1">ICMS Projetado</p>
-                  <p className="font-mono text-xs">ICMS × (1 - Redução ICMS%)</p>
-                  <p className="text-muted-foreground text-xs mt-1">
-                    Valor do ICMS com a redução prevista na transição para {anoProjecao}
-                  </p>
+                  <p className="font-semibold mb-1">Fórmula:</p>
+                  <p className="font-mono text-xs">ICMS Proj. + PIS/COFINS Proj. + IBS + CBS</p>
+                  <p className="text-muted-foreground text-xs mt-1">Total de impostos a pagar com a Reforma Tributária (impostos em transição + novos tributos)</p>
                 </TooltipContent>
               </Tooltip>
             </TableHead>
             <TableHead className="text-right text-xs">
               <Tooltip>
-                <TooltipTrigger className="cursor-help underline decoration-dotted inline-flex items-center gap-1">
-                  IBS Proj.
+                <TooltipTrigger className="cursor-help underline decoration-dotted decoration-muted-foreground inline-flex items-center gap-1 whitespace-nowrap">
+                  Dif. deb/cred.
                   <HelpCircle className="h-3 w-3 text-muted-foreground" />
                 </TooltipTrigger>
                 <TooltipContent side="top" className="max-w-xs">
-                  <p className="font-semibold mb-1">IBS Projetado</p>
-                  <p className="font-mono text-xs">Valor × (IBS Estadual + IBS Municipal)%</p>
-                  <p className="text-muted-foreground text-xs mt-1">
-                    Imposto sobre Bens e Serviços (estadual + municipal) projetado para {anoProjecao}
-                  </p>
-                </TooltipContent>
-              </Tooltip>
-            </TableHead>
-            <TableHead className="text-right text-xs">
-              <Tooltip>
-                <TooltipTrigger className="cursor-help underline decoration-dotted inline-flex items-center gap-1">
-                  CBS Proj.
-                  <HelpCircle className="h-3 w-3 text-muted-foreground" />
-                </TooltipTrigger>
-                <TooltipContent side="top" className="max-w-xs">
-                  <p className="font-semibold mb-1">CBS Projetado</p>
-                  <p className="font-mono text-xs">Valor × CBS%</p>
-                  <p className="text-muted-foreground text-xs mt-1">
-                    Contribuição sobre Bens e Serviços (federal) projetada para {anoProjecao}
-                  </p>
-                </TooltipContent>
-              </Tooltip>
-            </TableHead>
-            <TableHead className="text-right text-xs">
-              <Tooltip>
-                <TooltipTrigger className="cursor-help underline decoration-dotted inline-flex items-center gap-1">
-                  Diferença
-                  <HelpCircle className="h-3 w-3 text-muted-foreground" />
-                </TooltipTrigger>
-                <TooltipContent side="top" className="max-w-xs">
-                  <p className="font-semibold mb-1">Diferença de Impostos</p>
-                  <p className="font-mono text-xs">(ICMS Proj. + PIS/COF Proj. + IBS + CBS) − (ICMS + PIS + COFINS)</p>
-                  <p className="text-muted-foreground text-xs mt-1">
-                    Valores positivos (vermelho) indicam aumento de carga tributária. 
-                    Valores negativos (verde) indicam redução.
-                  </p>
+                  <p className="font-semibold mb-1">Fórmula:</p>
+                  <p className="font-mono text-xs">(ICMS Proj. + PIS/COFINS Proj. + IBS + CBS) − (ICMS + PIS + COFINS)</p>
+                  <p className="text-muted-foreground text-xs mt-1">Compara impostos atuais com TODOS os impostos projetados (transição + novos). Vermelho = aumento, Verde = redução.</p>
                 </TooltipContent>
               </Tooltip>
             </TableHead>
@@ -304,7 +294,7 @@ export default function UsoConsumoImobilizado() {
         <TableBody>
           {rows.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={12} className="text-center py-8 text-muted-foreground text-xs">
+              <TableCell colSpan={16} className="text-center py-8 text-muted-foreground text-xs">
                 Nenhum dado encontrado para os filtros selecionados
               </TableCell>
             </TableRow>
@@ -313,12 +303,12 @@ export default function UsoConsumoImobilizado() {
               const proj = calcularProjecao(row);
               return (
                 <TableRow key={row.row_id} className="text-xs">
-                  <TableCell className="font-medium text-xs">
+                  <TableCell className="font-medium text-xs whitespace-nowrap py-1 px-2">
                     {formatFilialDisplayFormatted(row.filial_cod_est, row.filial_cnpj)}
                   </TableCell>
-                  <TableCell className="text-xs">
+                  <TableCell className="text-xs py-1 px-2">
                     <div className="flex flex-col">
-                      <span className="font-medium truncate max-w-[160px]" title={row.participante_nome || undefined}>
+                      <span className="font-medium truncate max-w-[120px]" title={row.participante_nome || undefined}>
                         {row.participante_nome || '-'}
                       </span>
                       {row.participante_doc && (
@@ -326,19 +316,25 @@ export default function UsoConsumoImobilizado() {
                       )}
                     </div>
                   </TableCell>
-                  <TableCell className="text-xs">
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0">{row.cfop}</Badge>
-                  </TableCell>
-                  <TableCell className="text-xs">{formatDate(row.mes_ano)}</TableCell>
-                  <TableCell className="text-right text-xs text-muted-foreground">{row.quantidade_docs}</TableCell>
-                  <TableCell className="text-right text-xs">{formatNumber(row.valor)}</TableCell>
-                  <TableCell className="text-right text-xs">{formatNumber(row.icms)}</TableCell>
-                  <TableCell className="text-right text-xs">{formatNumber(row.pis + row.cofins)}</TableCell>
-                  <TableCell className="text-right text-xs text-blue-600">{formatNumber(proj.icmsProj)}</TableCell>
-                  <TableCell className="text-right text-xs text-purple-600">{formatNumber(proj.ibsProj)}</TableCell>
-                  <TableCell className="text-right text-xs text-orange-600">{formatNumber(proj.cbsProj)}</TableCell>
-                  <TableCell className={`text-right text-xs font-medium ${proj.diferenca > 0 ? 'text-destructive' : 'text-positive'}`}>
-                    {proj.diferenca > 0 ? '+' : ''}{formatNumber(proj.diferenca)}
+                  <TableCell className="text-xs whitespace-nowrap">{formatDate(row.mes_ano)}</TableCell>
+                  <TableCell className="text-right font-mono text-xs">{formatNumber(row.valor)}</TableCell>
+                  <TableCell className="text-right font-mono text-xs">{formatNumber(row.icms)}</TableCell>
+                  <TableCell className="text-right font-mono text-xs">{formatNumber(proj.icmsProj)}</TableCell>
+                  <TableCell className="text-right font-mono text-xs text-pis-cofins">{formatNumber(row.pis + row.cofins)}</TableCell>
+                  <TableCell className="text-right font-mono text-xs text-pis-cofins">{formatNumber(proj.pisCofinsProj)}</TableCell>
+                  <TableCell className="text-right font-mono text-xs font-semibold bg-muted/30">{formatNumber(proj.totalImpostosAtuais)}</TableCell>
+                  <TableCell className="text-right font-mono text-xs">{formatNumber(proj.baseIbsCbs)}</TableCell>
+                  <TableCell className="text-right font-mono text-xs text-ibs-cbs">{formatNumber(proj.ibsProj)}</TableCell>
+                  <TableCell className="text-right font-mono text-xs text-ibs-cbs">{formatNumber(proj.cbsProj)}</TableCell>
+                  <TableCell className="text-right font-mono text-xs font-semibold text-ibs-cbs bg-muted/30">{formatNumber(proj.totalReforma)}</TableCell>
+                  <TableCell className="text-right font-mono text-xs font-semibold bg-muted/30">{formatNumber(proj.totalImpostoReforma)}</TableCell>
+                  <TableCell className="text-right">
+                    <Badge
+                      variant={proj.diferenca > 0 ? 'destructive' : 'default'}
+                      className={`text-xs ${proj.diferenca <= 0 ? 'bg-positive text-positive-foreground' : ''}`}
+                    >
+                      {proj.diferenca >= 0 ? '+' : ''}{formatNumber(proj.diferenca)}
+                    </Badge>
                   </TableCell>
                 </TableRow>
               );
