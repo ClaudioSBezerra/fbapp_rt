@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Loader2, Download, Package, Wrench, AlertCircle } from 'lucide-react';
+import { Loader2, Download, Package, Wrench, AlertCircle, HelpCircle } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { formatFilialDisplayFormatted, formatDocumento } from '@/lib/formatFilial';
 import { exportToExcel } from '@/lib/exportToExcel';
@@ -237,10 +238,67 @@ export default function UsoConsumoImobilizado() {
             <TableHead className="text-right text-xs">Valor</TableHead>
             <TableHead className="text-right text-xs">ICMS</TableHead>
             <TableHead className="text-right text-xs">PIS+COF</TableHead>
-            <TableHead className="text-right text-xs">ICMS Proj.</TableHead>
-            <TableHead className="text-right text-xs">IBS Proj.</TableHead>
-            <TableHead className="text-right text-xs">CBS Proj.</TableHead>
-            <TableHead className="text-right text-xs">Diferença</TableHead>
+            <TableHead className="text-right text-xs">
+              <Tooltip>
+                <TooltipTrigger className="cursor-help underline decoration-dotted inline-flex items-center gap-1">
+                  ICMS Proj.
+                  <HelpCircle className="h-3 w-3 text-muted-foreground" />
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-xs">
+                  <p className="font-semibold mb-1">ICMS Projetado</p>
+                  <p className="font-mono text-xs">ICMS × (1 - Redução ICMS%)</p>
+                  <p className="text-muted-foreground text-xs mt-1">
+                    Valor do ICMS com a redução prevista na transição para {anoProjecao}
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </TableHead>
+            <TableHead className="text-right text-xs">
+              <Tooltip>
+                <TooltipTrigger className="cursor-help underline decoration-dotted inline-flex items-center gap-1">
+                  IBS Proj.
+                  <HelpCircle className="h-3 w-3 text-muted-foreground" />
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-xs">
+                  <p className="font-semibold mb-1">IBS Projetado</p>
+                  <p className="font-mono text-xs">Valor × (IBS Estadual + IBS Municipal)%</p>
+                  <p className="text-muted-foreground text-xs mt-1">
+                    Imposto sobre Bens e Serviços (estadual + municipal) projetado para {anoProjecao}
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </TableHead>
+            <TableHead className="text-right text-xs">
+              <Tooltip>
+                <TooltipTrigger className="cursor-help underline decoration-dotted inline-flex items-center gap-1">
+                  CBS Proj.
+                  <HelpCircle className="h-3 w-3 text-muted-foreground" />
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-xs">
+                  <p className="font-semibold mb-1">CBS Projetado</p>
+                  <p className="font-mono text-xs">Valor × CBS%</p>
+                  <p className="text-muted-foreground text-xs mt-1">
+                    Contribuição sobre Bens e Serviços (federal) projetada para {anoProjecao}
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </TableHead>
+            <TableHead className="text-right text-xs">
+              <Tooltip>
+                <TooltipTrigger className="cursor-help underline decoration-dotted inline-flex items-center gap-1">
+                  Diferença
+                  <HelpCircle className="h-3 w-3 text-muted-foreground" />
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-xs">
+                  <p className="font-semibold mb-1">Diferença de Impostos</p>
+                  <p className="font-mono text-xs">(ICMS Proj. + PIS/COF Proj. + IBS + CBS) − (ICMS + PIS + COFINS)</p>
+                  <p className="text-muted-foreground text-xs mt-1">
+                    Valores positivos (vermelho) indicam aumento de carga tributária. 
+                    Valores negativos (verde) indicam redução.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
