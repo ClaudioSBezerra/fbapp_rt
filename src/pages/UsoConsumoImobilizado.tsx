@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Loader2, Download, Package, Wrench, AlertCircle } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { formatFilialDisplayFormatted } from '@/lib/formatFilial';
+import { formatFilialDisplayFormatted, formatDocumento } from '@/lib/formatFilial';
 import { exportToExcel } from '@/lib/exportToExcel';
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
@@ -52,8 +52,8 @@ const ANOS_PROJECAO = [2027, 2028, 2029, 2030, 2031, 2032, 2033];
 const CFOPS_IMOBILIZADO = ['1551', '2551'];
 const CFOPS_USO_CONSUMO = ['1556', '2556'];
 
-const formatCurrency = (value: number) =>
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+const formatNumber = (value: number) =>
+  new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
 
 const formatDate = (dateStr: string) => {
   const [year, month] = dateStr.substring(0, 7).split('-');
@@ -228,25 +228,25 @@ export default function UsoConsumoImobilizado() {
     <div className="rounded-md border overflow-x-auto">
       <Table>
         <TableHeader>
-          <TableRow>
-            <TableHead className="min-w-[200px]">Filial</TableHead>
-            <TableHead className="min-w-[180px]">Participante</TableHead>
-            <TableHead>CFOP</TableHead>
-            <TableHead>Mês/Ano</TableHead>
-            <TableHead className="text-right">Docs</TableHead>
-            <TableHead className="text-right">Valor</TableHead>
-            <TableHead className="text-right">ICMS</TableHead>
-            <TableHead className="text-right">PIS+COFINS</TableHead>
-            <TableHead className="text-right">ICMS Proj.</TableHead>
-            <TableHead className="text-right">IBS Proj.</TableHead>
-            <TableHead className="text-right">CBS Proj.</TableHead>
-            <TableHead className="text-right">Diferença</TableHead>
+          <TableRow className="text-xs">
+            <TableHead className="min-w-[180px] text-xs">Filial</TableHead>
+            <TableHead className="min-w-[160px] text-xs">Participante</TableHead>
+            <TableHead className="text-xs">CFOP</TableHead>
+            <TableHead className="text-xs">Mês/Ano</TableHead>
+            <TableHead className="text-right text-xs">Docs</TableHead>
+            <TableHead className="text-right text-xs">Valor</TableHead>
+            <TableHead className="text-right text-xs">ICMS</TableHead>
+            <TableHead className="text-right text-xs">PIS+COF</TableHead>
+            <TableHead className="text-right text-xs">ICMS Proj.</TableHead>
+            <TableHead className="text-right text-xs">IBS Proj.</TableHead>
+            <TableHead className="text-right text-xs">CBS Proj.</TableHead>
+            <TableHead className="text-right text-xs">Diferença</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {rows.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={12} className="text-center py-8 text-muted-foreground">
+              <TableCell colSpan={12} className="text-center py-8 text-muted-foreground text-xs">
                 Nenhum dado encontrado para os filtros selecionados
               </TableCell>
             </TableRow>
@@ -254,33 +254,33 @@ export default function UsoConsumoImobilizado() {
             rows.map((row) => {
               const proj = calcularProjecao(row);
               return (
-                <TableRow key={row.row_id}>
-                  <TableCell className="font-medium">
+                <TableRow key={row.row_id} className="text-xs">
+                  <TableCell className="font-medium text-xs">
                     {formatFilialDisplayFormatted(row.filial_cod_est, row.filial_cnpj)}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="text-xs">
                     <div className="flex flex-col">
-                      <span className="font-medium truncate max-w-[180px]" title={row.participante_nome || undefined}>
+                      <span className="font-medium truncate max-w-[160px]" title={row.participante_nome || undefined}>
                         {row.participante_nome || '-'}
                       </span>
                       {row.participante_doc && (
-                        <span className="text-xs text-muted-foreground">{row.participante_doc}</span>
+                        <span className="text-[10px] text-muted-foreground">{formatDocumento(row.participante_doc)}</span>
                       )}
                     </div>
                   </TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{row.cfop}</Badge>
+                  <TableCell className="text-xs">
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0">{row.cfop}</Badge>
                   </TableCell>
-                  <TableCell>{formatDate(row.mes_ano)}</TableCell>
-                  <TableCell className="text-right text-muted-foreground">{row.quantidade_docs}</TableCell>
-                  <TableCell className="text-right">{formatCurrency(row.valor)}</TableCell>
-                  <TableCell className="text-right">{formatCurrency(row.icms)}</TableCell>
-                  <TableCell className="text-right">{formatCurrency(row.pis + row.cofins)}</TableCell>
-                  <TableCell className="text-right text-blue-600">{formatCurrency(proj.icmsProj)}</TableCell>
-                  <TableCell className="text-right text-purple-600">{formatCurrency(proj.ibsProj)}</TableCell>
-                  <TableCell className="text-right text-orange-600">{formatCurrency(proj.cbsProj)}</TableCell>
-                  <TableCell className={`text-right font-medium ${proj.diferenca > 0 ? 'text-destructive' : 'text-positive'}`}>
-                    {proj.diferenca > 0 ? '+' : ''}{formatCurrency(proj.diferenca)}
+                  <TableCell className="text-xs">{formatDate(row.mes_ano)}</TableCell>
+                  <TableCell className="text-right text-xs text-muted-foreground">{row.quantidade_docs}</TableCell>
+                  <TableCell className="text-right text-xs">{formatNumber(row.valor)}</TableCell>
+                  <TableCell className="text-right text-xs">{formatNumber(row.icms)}</TableCell>
+                  <TableCell className="text-right text-xs">{formatNumber(row.pis + row.cofins)}</TableCell>
+                  <TableCell className="text-right text-xs text-blue-600">{formatNumber(proj.icmsProj)}</TableCell>
+                  <TableCell className="text-right text-xs text-purple-600">{formatNumber(proj.ibsProj)}</TableCell>
+                  <TableCell className="text-right text-xs text-orange-600">{formatNumber(proj.cbsProj)}</TableCell>
+                  <TableCell className={`text-right text-xs font-medium ${proj.diferenca > 0 ? 'text-destructive' : 'text-positive'}`}>
+                    {proj.diferenca > 0 ? '+' : ''}{formatNumber(proj.diferenca)}
                   </TableCell>
                 </TableRow>
               );
@@ -393,10 +393,10 @@ export default function UsoConsumoImobilizado() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-blue-600">
-              {formatCurrency(totais.imobilizado.valor)}
+              {formatNumber(totais.imobilizado.valor)}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              ICMS: {formatCurrency(totais.imobilizado.icms)}
+              ICMS: {formatNumber(totais.imobilizado.icms)}
             </p>
           </CardContent>
         </Card>
@@ -410,10 +410,10 @@ export default function UsoConsumoImobilizado() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-600">
-              {formatCurrency(totais.usoConsumo.valor)}
+              {formatNumber(totais.usoConsumo.valor)}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              ICMS: {formatCurrency(totais.usoConsumo.icms)}
+              ICMS: {formatNumber(totais.usoConsumo.icms)}
             </p>
           </CardContent>
         </Card>
@@ -426,7 +426,7 @@ export default function UsoConsumoImobilizado() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {formatCurrency(totais.imobilizado.pis + totais.imobilizado.cofins + totais.usoConsumo.pis + totais.usoConsumo.cofins)}
+              {formatNumber(totais.imobilizado.pis + totais.imobilizado.cofins + totais.usoConsumo.pis + totais.usoConsumo.cofins)}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               Imob + Uso/Consumo
@@ -442,7 +442,7 @@ export default function UsoConsumoImobilizado() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {formatCurrency(totais.imobilizado.valor + totais.usoConsumo.valor)}
+              {formatNumber(totais.imobilizado.valor + totais.usoConsumo.valor)}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               {dadosFiltrados.length} participantes
