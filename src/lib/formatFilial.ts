@@ -1,4 +1,37 @@
 /**
+ * Formata CPF completo com pontuação
+ * Entrada: "12345678901" → Saída: "123.456.789-01"
+ */
+export function formatCPF(cpf: string | null | undefined): string {
+  if (!cpf) return '';
+  const cleaned = cpf.replace(/\D/g, '');
+  if (cleaned.length !== 11) return cpf;
+  return cleaned.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
+}
+
+/**
+ * Formata CNPJ completo com pontuação
+ * Entrada: "12345678000190" → Saída: "12.345.678/0001-90"
+ */
+export function formatCNPJ(cnpj: string | null | undefined): string {
+  if (!cnpj) return '';
+  const cleaned = cnpj.replace(/\D/g, '');
+  if (cleaned.length !== 14) return cnpj;
+  return cleaned.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+}
+
+/**
+ * Formata CPF ou CNPJ completo com pontuação (detecta automaticamente)
+ */
+export function formatDocumento(doc: string | null | undefined): string {
+  if (!doc) return '';
+  const cleaned = doc.replace(/\D/g, '');
+  if (cleaned.length === 11) return formatCPF(doc);
+  if (cleaned.length === 14) return formatCNPJ(doc);
+  return doc;
+}
+
+/**
  * Formata CPF com máscara de privacidade
  * Entrada: "12345678901" → Saída: "***.***.***-01"
  * Retorna string original se não for CPF válido de 11 dígitos
