@@ -704,45 +704,18 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      delete_energia_agua_batch:
-        | {
-            Args: { _batch_size?: number; _filial_ids: string[] }
-            Returns: number
-          }
-        | {
-            Args: {
-              _batch_size?: number
-              _filial_ids: string[]
-              _user_id: string
-            }
-            Returns: number
-          }
-      delete_fretes_batch:
-        | {
-            Args: { _batch_size?: number; _filial_ids: string[] }
-            Returns: number
-          }
-        | {
-            Args: {
-              _batch_size?: number
-              _filial_ids: string[]
-              _user_id: string
-            }
-            Returns: number
-          }
-      delete_mercadorias_batch:
-        | {
-            Args: { _batch_size?: number; _filial_ids: string[] }
-            Returns: number
-          }
-        | {
-            Args: {
-              _batch_size?: number
-              _filial_ids: string[]
-              _user_id: string
-            }
-            Returns: number
-          }
+      delete_energia_agua_batch: {
+        Args: { _batch_size?: number; _filial_ids: string[]; _user_id: string }
+        Returns: number
+      }
+      delete_fretes_batch: {
+        Args: { _batch_size?: number; _filial_ids: string[]; _user_id: string }
+        Returns: number
+      }
+      delete_mercadorias_batch: {
+        Args: { _batch_size?: number; _filial_ids: string[]; _user_id: string }
+        Returns: number
+      }
       delete_servicos_batch: {
         Args: { _batch_size?: number; _filial_ids: string[]; _user_id: string }
         Returns: number
@@ -750,19 +723,6 @@ export type Database = {
       delete_uso_consumo_batch: {
         Args: { _batch_size?: number; _filial_ids: string[]; _user_id: string }
         Returns: number
-      }
-      get_mercadorias_aggregated: {
-        Args: never
-        Returns: {
-          cofins: number
-          filial_id: string
-          filial_nome: string
-          icms: number
-          mes_ano: string
-          pis: number
-          tipo: string
-          valor: number
-        }[]
       }
       get_mercadorias_participante_lista: {
         Args: never
@@ -874,23 +834,6 @@ export type Database = {
           valor: number
         }[]
       }
-      get_mv_mercadorias_participante: {
-        Args: never
-        Returns: {
-          cod_part: string
-          cofins: number
-          filial_cnpj: string
-          filial_cod_est: string
-          filial_id: string
-          icms: number
-          mes_ano: string
-          participante_cnpj: string
-          participante_nome: string
-          pis: number
-          tipo: string
-          valor: number
-        }[]
-      }
       get_mv_servicos_aggregated: {
         Args: never
         Returns: {
@@ -944,7 +887,6 @@ export type Database = {
           valor: number
         }[]
       }
-      get_tenant_name: { Args: { _tenant_id: string }; Returns: string }
       has_empresa_access: {
         Args: { _empresa_id: string; _user_id: string }
         Returns: boolean
@@ -966,7 +908,6 @@ export type Database = {
       }
       refresh_materialized_views: { Args: never; Returns: undefined }
       refresh_materialized_views_async: { Args: never; Returns: undefined }
-      validate_tenant_exists: { Args: { _tenant_id: string }; Returns: boolean }
     }
     Enums: {
       app_role: "admin" | "user" | "viewer"
