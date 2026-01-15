@@ -643,6 +643,62 @@ export type Database = {
           },
         ]
       }
+      uso_consumo_imobilizado: {
+        Row: {
+          cfop: string
+          cod_part: string | null
+          created_at: string
+          filial_id: string
+          id: string
+          mes_ano: string
+          num_doc: string | null
+          tenant_id: string
+          tipo_operacao: string
+          valor: number
+          valor_cofins: number
+          valor_icms: number
+          valor_pis: number
+        }
+        Insert: {
+          cfop: string
+          cod_part?: string | null
+          created_at?: string
+          filial_id: string
+          id?: string
+          mes_ano: string
+          num_doc?: string | null
+          tenant_id: string
+          tipo_operacao: string
+          valor?: number
+          valor_cofins?: number
+          valor_icms?: number
+          valor_pis?: number
+        }
+        Update: {
+          cfop?: string
+          cod_part?: string | null
+          created_at?: string
+          filial_id?: string
+          id?: string
+          mes_ano?: string
+          num_doc?: string | null
+          tenant_id?: string
+          tipo_operacao?: string
+          valor?: number
+          valor_cofins?: number
+          valor_icms?: number
+          valor_pis?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "uso_consumo_imobilizado_filial_id_fkey"
+            columns: ["filial_id"]
+            isOneToOne: false
+            referencedRelation: "filiais"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -688,6 +744,10 @@ export type Database = {
             Returns: number
           }
       delete_servicos_batch: {
+        Args: { _batch_size?: number; _filial_ids: string[]; _user_id: string }
+        Returns: number
+      }
+      delete_uso_consumo_batch: {
         Args: { _batch_size?: number; _filial_ids: string[]; _user_id: string }
         Returns: number
       }
@@ -843,6 +903,23 @@ export type Database = {
           mes_ano: string
           pis: number
           tipo: string
+          valor: number
+        }[]
+      }
+      get_mv_uso_consumo_aggregated: {
+        Args: never
+        Returns: {
+          cfop: string
+          cofins: number
+          filial_cnpj: string
+          filial_cod_est: string
+          filial_id: string
+          filial_nome: string
+          icms: number
+          mes_ano: string
+          pis: number
+          quantidade_itens: number
+          tipo_operacao: string
           valor: number
         }[]
       }
