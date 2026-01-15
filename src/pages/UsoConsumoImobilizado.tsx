@@ -421,15 +421,18 @@ export default function UsoConsumoImobilizado() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Total PIS+COFINS
+              Total de Impostos
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {formatNumber(totais.imobilizado.pis + totais.imobilizado.cofins + totais.usoConsumo.pis + totais.usoConsumo.cofins)}
+              {formatNumber(
+                totais.imobilizado.icms + totais.imobilizado.pis + totais.imobilizado.cofins +
+                totais.usoConsumo.icms + totais.usoConsumo.pis + totais.usoConsumo.cofins
+              )}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              Imob + Uso/Consumo
+              ICMS + PIS + COFINS
             </p>
           </CardContent>
         </Card>
