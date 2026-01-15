@@ -252,6 +252,24 @@ serve(async (req) => {
       estabelecimentos: existingCounts.estabelecimentos || 0,
     };
 
+    // Fetch tenant_id via empresa -> grupo_empresas
+    const { data: empresaData } = await supabase
+      .from("empresas")
+      .select("grupo_id")
+      .eq("id", job.empresa_id)
+      .single();
+    
+    const { data: grupoData } = await supabase
+      .from("grupos_empresas")
+      .select("tenant_id")
+      .eq("id", empresaData?.grupo_id)
+      .single();
+    
+    const tenantId = grupoData?.tenant_id;
+    if (!tenantId) {
+      throw new Error("Could not determine tenant_id for empresa");
+    }
+
     // Pre-load filiais
     const { data: existingFiliais } = await supabase
       .from("filiais")
@@ -285,7 +303,7 @@ serve(async (req) => {
       if (batches[table].length === 0) return null;
 
       const onConflictMap: Record<keyof BatchBuffers, string> = {
-        uso_consumo_imobilizado: 'filial_id,mes_ano,tipo_operacao,cfop,descricao,valor',
+        uso_consumo_imobilizado: 'filial_id,mes_ano,num_doc,cfop,cod_part',
         participantes: 'filial_id,cod_part',
       };
       
@@ -344,7 +362,7 @@ serve(async (req) => {
       
       if (done) {
         if (buffer.trim()) {
-          await processLine(buffer.trim(), context, batches, job.empresa_id, supabase, counts);
+          await processLine(buffer.trim(), context, batches, job.empresa_id, tenantId, supabase, counts);
           linesProcessedInChunk++;
           totalLinesProcessed++;
         }
@@ -367,7 +385,7 @@ serve(async (req) => {
         const trimmedLine = line.trim();
         if (!trimmedLine) continue;
 
-        await processLine(trimmedLine, context, batches, job.empresa_id, supabase, counts);
+        await processLine(trimmedLine, context, batches, job.empresa_id, tenantId, supabase, counts);
         linesProcessedInChunk++;
         totalLinesProcessed++;
 
@@ -553,6 +571,7 @@ async function processLine(
   context: ProcessingContext,
   batches: BatchBuffers,
   empresaId: string,
+  tenantId: string,
   supabase: any,
   counts: InsertCounts
 ): Promise<void> {
@@ -710,16 +729,17 @@ async function processLine(
         }
         
         batches.uso_consumo_imobilizado.push({
+          tenant_id: tenantId,
           filial_id: context.currentFilialId,
           mes_ano: mesAno,
           tipo_operacao: tipoOperacao,
           cfop,
           cod_part: context.currentC100.codPart,
-          descricao,
+          num_doc: context.currentC100.numDoc,
           valor,
-          icms,
-          pis,
-          cofins,
+          valor_icms: icms,
+          valor_pis: pis,
+          valor_cofins: cofins,
         });
       }
       break;
