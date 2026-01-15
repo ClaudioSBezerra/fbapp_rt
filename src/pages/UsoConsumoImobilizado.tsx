@@ -85,10 +85,10 @@ export default function UsoConsumoImobilizado() {
           setData(formattedData);
           
           // Extrair períodos únicos
-          const periodos = [...new Set(formattedData.map((r: AggregatedRow) => r.mes_ano.substring(0, 7)))].sort().reverse();
+          const periodos = [...new Set(formattedData.map((r: AggregatedRow) => r.mes_ano.substring(0, 7)))].sort().reverse() as string[];
           setPeriodosDisponiveis(periodos);
           if (periodos.length > 0 && mesAnoSelecionado === 'todos') {
-            setMesAnoSelecionado(periodos[0]);
+            setMesAnoSelecionado(periodos[0] as string);
           }
         }
 
