@@ -29,17 +29,23 @@ interface Filial {
   cod_est: string | null;
 }
 
-interface AggregatedRow {
+interface DetailedRow {
+  row_id: string;
   filial_id: string;
   filial_nome: string;
+  filial_cod_est: string | null;
+  filial_cnpj: string;
   cfop: string;
   tipo_operacao: string;
   mes_ano: string;
+  cod_part: string | null;
+  participante_nome: string | null;
+  participante_doc: string | null;
   valor: number;
   icms: number;
   pis: number;
   cofins: number;
-  qtd_registros: number;
+  quantidade_docs: number;
 }
 
 const ANOS_PROJECAO = [2027, 2028, 2029, 2030, 2031, 2032, 2033];
@@ -56,7 +62,7 @@ const formatDate = (dateStr: string) => {
 
 export default function UsoConsumoImobilizado() {
   const [loading, setLoading] = useState(true);
-  const [data, setData] = useState<AggregatedRow[]>([]);
+  const [data, setData] = useState<DetailedRow[]>([]);
   const [aliquotas, setAliquotas] = useState<Aliquota[]>([]);
   const [filiais, setFiliais] = useState<Filial[]>([]);
   const [filialSelecionada, setFilialSelecionada] = useState<string>('todas');
@@ -71,21 +77,21 @@ export default function UsoConsumoImobilizado() {
       setLoading(true);
       
       try {
-        // Carregar dados agregados
-        const { data: aggregatedData, error: aggError } = await supabase.rpc('get_mv_uso_consumo_aggregated' as any);
+        // Carregar dados detalhados agregados por participante
+        const { data: detailedData, error: detailError } = await supabase.rpc('get_mv_uso_consumo_detailed' as any);
         
-        if (aggError) {
-          console.error('Error fetching aggregated data:', aggError);
+        if (detailError) {
+          console.error('Error fetching detailed data:', detailError);
           setData([]);
         } else {
-          const formattedData = (aggregatedData || []).map((row: any) => ({
+          const formattedData = (detailedData || []).map((row: any) => ({
             ...row,
             mes_ano: typeof row.mes_ano === 'string' ? row.mes_ano : new Date(row.mes_ano).toISOString().slice(0, 10),
           }));
           setData(formattedData);
           
           // Extrair períodos únicos
-          const periodos = [...new Set(formattedData.map((r: AggregatedRow) => r.mes_ano.substring(0, 7)))].sort().reverse() as string[];
+          const periodos = [...new Set(formattedData.map((r: DetailedRow) => r.mes_ano.substring(0, 7)))].sort().reverse() as string[];
           setPeriodosDisponiveis(periodos);
           if (periodos.length > 0 && mesAnoSelecionado === 'todos') {
             setMesAnoSelecionado(periodos[0] as string);
@@ -143,7 +149,7 @@ export default function UsoConsumoImobilizado() {
   );
 
   // Calcular projeções para uma linha
-  const calcularProjecao = (row: AggregatedRow) => {
+  const calcularProjecao = (row: DetailedRow) => {
     if (!aliquotaSelecionada) {
       return { icmsProj: 0, pisCofinsProj: 0, ibsProj: 0, cbsProj: 0, diferenca: 0 };
     }
@@ -194,10 +200,13 @@ export default function UsoConsumoImobilizado() {
     const exportData = dadosFiltrados.map(row => {
       const proj = calcularProjecao(row);
       return {
-        'Filial': row.filial_nome,
+        'Filial': formatFilialDisplayFormatted(row.filial_cod_est, row.filial_cnpj),
+        'Participante': row.participante_nome || '-',
+        'Doc. Participante': row.participante_doc || '-',
         'CFOP': row.cfop,
         'Tipo': row.tipo_operacao === 'imobilizado' ? 'Ativo Imobilizado' : 'Uso e Consumo',
         'Mês/Ano': formatDate(row.mes_ano),
+        'Qtd. Docs': row.quantidade_docs,
         'Valor': row.valor,
         'ICMS': row.icms,
         'PIS': row.pis,
@@ -215,14 +224,16 @@ export default function UsoConsumoImobilizado() {
   };
 
   // Componente de Tabela
-  const DataTable = ({ rows, title }: { rows: AggregatedRow[]; title: string }) => (
-    <div className="rounded-md border">
+  const DataTable = ({ rows, title }: { rows: DetailedRow[]; title: string }) => (
+    <div className="rounded-md border overflow-x-auto">
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Filial</TableHead>
+            <TableHead className="min-w-[200px]">Filial</TableHead>
+            <TableHead className="min-w-[180px]">Participante</TableHead>
             <TableHead>CFOP</TableHead>
             <TableHead>Mês/Ano</TableHead>
+            <TableHead className="text-right">Docs</TableHead>
             <TableHead className="text-right">Valor</TableHead>
             <TableHead className="text-right">ICMS</TableHead>
             <TableHead className="text-right">PIS+COFINS</TableHead>
@@ -235,20 +246,33 @@ export default function UsoConsumoImobilizado() {
         <TableBody>
           {rows.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+              <TableCell colSpan={12} className="text-center py-8 text-muted-foreground">
                 Nenhum dado encontrado para os filtros selecionados
               </TableCell>
             </TableRow>
           ) : (
-            rows.map((row, idx) => {
+            rows.map((row) => {
               const proj = calcularProjecao(row);
               return (
-                <TableRow key={`${row.filial_id}-${row.cfop}-${row.mes_ano}-${idx}`}>
-                  <TableCell className="font-medium">{row.filial_nome}</TableCell>
+                <TableRow key={row.row_id}>
+                  <TableCell className="font-medium">
+                    {formatFilialDisplayFormatted(row.filial_cod_est, row.filial_cnpj)}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-col">
+                      <span className="font-medium truncate max-w-[180px]" title={row.participante_nome || undefined}>
+                        {row.participante_nome || '-'}
+                      </span>
+                      {row.participante_doc && (
+                        <span className="text-xs text-muted-foreground">{row.participante_doc}</span>
+                      )}
+                    </div>
+                  </TableCell>
                   <TableCell>
                     <Badge variant="outline">{row.cfop}</Badge>
                   </TableCell>
                   <TableCell>{formatDate(row.mes_ano)}</TableCell>
+                  <TableCell className="text-right text-muted-foreground">{row.quantidade_docs}</TableCell>
                   <TableCell className="text-right">{formatCurrency(row.valor)}</TableCell>
                   <TableCell className="text-right">{formatCurrency(row.icms)}</TableCell>
                   <TableCell className="text-right">{formatCurrency(row.pis + row.cofins)}</TableCell>
@@ -282,7 +306,7 @@ export default function UsoConsumoImobilizado() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Uso e Consumo / Imobilizado</h1>
           <p className="text-sm text-muted-foreground">
-            Dados importados do EFD ICMS/IPI (CFOPs 1551, 2551, 1556, 2556)
+            Dados importados do EFD ICMS/IPI (CFOPs 1551, 2551, 1556, 2556) - Agregados por participante
           </p>
         </div>
 
@@ -421,7 +445,7 @@ export default function UsoConsumoImobilizado() {
               {formatCurrency(totais.imobilizado.valor + totais.usoConsumo.valor)}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              {dadosFiltrados.length} registros
+              {dadosFiltrados.length} participantes
             </p>
           </CardContent>
         </Card>
@@ -444,7 +468,7 @@ export default function UsoConsumoImobilizado() {
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Ativo Imobilizado</CardTitle>
-              <CardDescription>CFOPs 1551 (Estadual) e 2551 (Interestadual)</CardDescription>
+              <CardDescription>CFOPs 1551 (Estadual) e 2551 (Interestadual) - Agregados por participante</CardDescription>
             </CardHeader>
             <CardContent>
               <DataTable rows={dadosImobilizado} title="Imobilizado" />
@@ -456,7 +480,7 @@ export default function UsoConsumoImobilizado() {
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Uso e Consumo</CardTitle>
-              <CardDescription>CFOPs 1556 (Estadual) e 2556 (Interestadual)</CardDescription>
+              <CardDescription>CFOPs 1556 (Estadual) e 2556 (Interestadual) - Agregados por participante</CardDescription>
             </CardHeader>
             <CardContent>
               <DataTable rows={dadosUsoConsumo} title="Uso e Consumo" />
