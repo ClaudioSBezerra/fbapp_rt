@@ -19,6 +19,9 @@ import Configuracoes from "./pages/Configuracoes";
 import EnergiaAgua from "./pages/EnergiaAgua";
 import Fretes from "./pages/Fretes";
 import ImportarEFD from "./pages/ImportarEFD";
+import ImportarEFDIcms from "./pages/ImportarEFDIcms";
+import UsoConsumoImobilizado from "./pages/UsoConsumoImobilizado";
+import DashboardUsoConsumo from "./pages/DashboardUsoConsumo";
 import NotFound from "./pages/NotFound";
 import AppLayout from "./components/AppLayout";
 
@@ -48,6 +51,9 @@ const App = () => (
               <Route path="/fretes" element={<Fretes />} />
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/importar-efd" element={<ImportarEFD />} />
+              <Route path="/importar-efd-icms" element={<ImportarEFDIcms />} />
+              <Route path="/uso-consumo" element={<UsoConsumoImobilizado />} />
+              <Route path="/dashboard-uso-consumo" element={<DashboardUsoConsumo />} />
             </Route>
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
