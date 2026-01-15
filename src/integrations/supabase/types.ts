@@ -923,6 +923,27 @@ export type Database = {
           valor: number
         }[]
       }
+      get_mv_uso_consumo_detailed: {
+        Args: never
+        Returns: {
+          cfop: string
+          cod_part: string
+          cofins: number
+          filial_cnpj: string
+          filial_cod_est: string
+          filial_id: string
+          filial_nome: string
+          icms: number
+          mes_ano: string
+          participante_doc: string
+          participante_nome: string
+          pis: number
+          quantidade_docs: number
+          row_id: string
+          tipo_operacao: string
+          valor: number
+        }[]
+      }
       get_tenant_name: { Args: { _tenant_id: string }; Returns: string }
       has_empresa_access: {
         Args: { _empresa_id: string; _user_id: string }
