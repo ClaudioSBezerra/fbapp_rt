@@ -8,7 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Loader2, CheckCircle, FileText, ArrowRight, AlertCircle, Upload, Clock, XCircle, RefreshCw, Zap, Trash2, AlertTriangle } from 'lucide-react';
+import { Loader2, CheckCircle, FileText, ArrowRight, AlertCircle, Upload, Clock, XCircle, RefreshCw, Zap, Trash2, AlertTriangle, Shield } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useRole } from '@/hooks/useRole';
@@ -804,6 +805,15 @@ export default function ImportarEFD() {
             Arquivos grandes são processados em background.
           </p>
 
+          <Alert className="border-positive/50 bg-positive/5">
+            <Shield className="h-4 w-4 text-positive" />
+            <AlertTitle className="text-positive">Segurança da Informação</AlertTitle>
+            <AlertDescription className="text-muted-foreground">
+              Por questões de segurança, o arquivo TXT é automaticamente excluído 
+              do servidor após a importação ser concluída com sucesso.
+            </AlertDescription>
+          </Alert>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="empresa">Empresa Destino</Label>
@@ -1136,6 +1146,11 @@ export default function ImportarEFD() {
                             </p>
                           </div>
                         )}
+                        {/* Security indicator */}
+                        <div className="flex items-center justify-center gap-2 text-xs text-positive mt-2 pt-2 border-t border-border">
+                          <Shield className="h-3 w-3" />
+                          <span>Arquivo original excluído por segurança</span>
+                        </div>
                       </div>
                     )}
 
