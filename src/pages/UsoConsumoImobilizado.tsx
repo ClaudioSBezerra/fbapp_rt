@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Loader2, Download, Package, Wrench, AlertCircle, HelpCircle, Building2 } from 'lucide-react';
+import { Loader2, Download, Package, Wrench, AlertCircle, HelpCircle } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Label } from '@/components/ui/label';
@@ -14,8 +14,6 @@ import { formatFilialDisplayFormatted, formatDocumento } from '@/lib/formatFilia
 import { exportToExcel } from '@/lib/exportToExcel';
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
-import { ChartContainer, ChartTooltipContent } from '@/components/ui/chart';
 
 interface Aliquota {
   ano: number;
@@ -71,17 +69,6 @@ const formatDate = (dateStr: string) => {
   return `${month}/${year}`;
 };
 
-const chartConfig = {
-  valor: { label: 'Valor Total', color: 'hsl(220, 70%, 50%)' },
-  impostos: { label: 'Total Impostos', color: 'hsl(142, 76%, 36%)' },
-  simples: { label: 'Simples Nacional', color: 'hsl(142, 76%, 36%)' },
-  normal: { label: 'Regime Normal', color: 'hsl(220, 70%, 50%)' },
-};
-
-const CORES_REGIME = {
-  simples: 'hsl(142, 76%, 36%)',
-  normal: 'hsl(220, 70%, 50%)',
-};
 
 export default function UsoConsumoImobilizado() {
   const [loading, setLoading] = useState(true);
@@ -234,47 +221,6 @@ export default function UsoConsumoImobilizado() {
     return result;
   }, [dadosImobilizado, dadosUsoConsumo]);
 
-  // Dados agrupados por Simples Nacional
-  const dadosPorSimples = useMemo(() => {
-    const simples = { valor: 0, icms: 0, pis: 0, cofins: 0, count: 0 };
-    const naoSimples = { valor: 0, icms: 0, pis: 0, cofins: 0, count: 0 };
-
-    dadosFiltrados.forEach(row => {
-      const target = row.is_simples ? simples : naoSimples;
-      target.valor += row.valor;
-      target.icms += row.icms;
-      target.pis += row.pis;
-      target.cofins += row.cofins;
-      target.count += row.quantidade_docs;
-    });
-
-    return [
-      { 
-        name: 'Simples Nacional', 
-        valor: simples.valor, 
-        impostos: simples.icms + simples.pis + simples.cofins,
-        registros: simples.count 
-      },
-      { 
-        name: 'Regime Normal', 
-        valor: naoSimples.valor, 
-        impostos: naoSimples.icms + naoSimples.pis + naoSimples.cofins,
-        registros: naoSimples.count 
-    },
-  ];
-}, [dadosFiltrados]);
-
-// Dados para gráfico de pizza
-const dadosPizza = useMemo(() => {
-  const totalValor = dadosPorSimples.reduce((acc, item) => acc + item.valor, 0);
-  
-  return dadosPorSimples.map((item, index) => ({
-    name: item.name,
-    value: item.valor,
-    percent: totalValor > 0 ? (item.valor / totalValor) * 100 : 0,
-    fill: index === 0 ? CORES_REGIME.simples : CORES_REGIME.normal,
-  }));
-}, [dadosPorSimples]);
 
   // Exportar para Excel
   const handleExport = () => {
@@ -609,120 +555,6 @@ const dadosPizza = useMemo(() => {
             <p className="text-xs text-muted-foreground mt-1">
               {dadosFiltrados.length} participantes
             </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Gráficos por Regime Tributário */}
-      <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
-        {/* Gráfico de Barras */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base font-semibold flex items-center gap-2">
-              <Building2 className="h-5 w-5" />
-              Comparativo por Regime Tributário
-            </CardTitle>
-            <CardDescription>
-              Valores e impostos absolutos
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ChartContainer config={chartConfig} className="h-[280px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={dadosPorSimples} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis 
-                    dataKey="name" 
-                    className="text-xs"
-                    tick={{ fontSize: 12 }}
-                  />
-                  <YAxis 
-                    tickFormatter={formatCompact} 
-                    className="text-xs"
-                    tick={{ fontSize: 11 }}
-                  />
-                  <RechartsTooltip 
-                    content={<ChartTooltipContent formatter={(value) => formatCurrency(Number(value))} />}
-                  />
-                  <Legend />
-                  <Bar 
-                    dataKey="valor" 
-                    name="Valor Total" 
-                    fill="hsl(220, 70%, 50%)" 
-                    radius={[4, 4, 0, 0]} 
-                  />
-                  <Bar 
-                    dataKey="impostos" 
-                    name="Total Impostos" 
-                    fill="hsl(142, 76%, 36%)" 
-                    radius={[4, 4, 0, 0]} 
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            </ChartContainer>
-            <div className="flex justify-center gap-6 mt-4 text-xs text-muted-foreground">
-              {dadosPorSimples.map((item) => (
-                <div key={item.name} className="text-center">
-                  <span className="font-medium">{item.name}:</span>{' '}
-                  <span>{item.registros} documentos</span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Gráfico de Pizza */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base font-semibold flex items-center gap-2">
-              <Building2 className="h-5 w-5" />
-              Proporção por Regime Tributário
-            </CardTitle>
-            <CardDescription>
-              Distribuição percentual do valor total
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ChartContainer config={chartConfig} className="h-[280px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={dadosPizza}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={100}
-                    paddingAngle={2}
-                    dataKey="value"
-                    label={({ name, percent }) => `${percent.toFixed(1)}%`}
-                    labelLine={false}
-                  >
-                    {dadosPizza.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.fill} />
-                    ))}
-                  </Pie>
-                  <RechartsTooltip 
-                    content={<ChartTooltipContent formatter={(value) => formatCurrency(Number(value))} />}
-                  />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
-            </ChartContainer>
-            <div className="flex justify-center gap-6 mt-4">
-              {dadosPizza.map((item) => (
-                <div key={item.name} className="text-center">
-                  <div 
-                    className="w-3 h-3 rounded-full mx-auto mb-1" 
-                    style={{ backgroundColor: item.fill }}
-                  />
-                  <span className="text-xs font-medium">{item.name}</span>
-                  <div className="text-lg font-bold">{item.percent.toFixed(1)}%</div>
-                  <span className="text-xs text-muted-foreground">
-                    {formatCurrency(item.value)}
-                  </span>
-                </div>
-              ))}
-            </div>
           </CardContent>
         </Card>
       </div>
