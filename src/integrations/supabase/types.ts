@@ -759,6 +759,7 @@ export type Database = {
         Args: { _batch_size?: number; _filial_ids: string[]; _user_id: string }
         Returns: number
       }
+      exec_sql: { Args: { sql: string }; Returns: undefined }
       get_mercadorias_participante_lista: {
         Args: never
         Returns: {
