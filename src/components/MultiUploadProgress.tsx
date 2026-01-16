@@ -12,7 +12,8 @@ import {
   AlertCircle,
   FileText,
   Upload,
-  Trash2
+  Trash2,
+  AlertTriangle
 } from 'lucide-react';
 import { QueuedFile, OverallProgress, formatBytes, formatSpeed, formatTime } from '@/hooks/useUploadQueue';
 
@@ -43,6 +44,8 @@ function getStatusIcon(status: QueuedFile['status']) {
       return <XCircle className="h-4 w-4 text-destructive" />;
     case 'cancelled':
       return <XCircle className="h-4 w-4 text-warning" />;
+    case 'duplicate':
+      return <AlertTriangle className="h-4 w-4 text-warning" />;
   }
 }
 
@@ -60,6 +63,8 @@ function getStatusLabel(status: QueuedFile['status'], progress: QueuedFile['prog
       return 'Erro';
     case 'cancelled':
       return 'Cancelado';
+    case 'duplicate':
+      return 'Período já importado';
   }
 }
 
@@ -78,10 +83,12 @@ export function MultiUploadProgress({
   if (queue.length === 0) return null;
 
   const hasErrors = queue.some(f => f.status === 'error' || f.status === 'cancelled');
-  const allDone = queue.every(f => f.status === 'completed' || f.status === 'error' || f.status === 'cancelled');
+  const hasDuplicates = queue.some(f => f.status === 'duplicate');
+  const allDone = queue.every(f => f.status === 'completed' || f.status === 'error' || f.status === 'cancelled' || f.status === 'duplicate');
   const hasCompletedFiles = queue.some(f => f.status === 'completed');
   const pendingCount = queue.filter(f => f.status === 'pending').length;
   const uploadingCount = queue.filter(f => f.status === 'uploading' || f.status === 'processing').length;
+  const duplicateCount = queue.filter(f => f.status === 'duplicate').length;
 
   return (
     <div className="border rounded-lg bg-card">
@@ -128,7 +135,8 @@ export function MultiUploadProgress({
               key={file.id} 
               className={`px-4 py-3 flex items-center gap-3 ${
                 file.status === 'error' ? 'bg-destructive/5' : 
-                file.status === 'completed' ? 'bg-positive/5' : ''
+                file.status === 'completed' ? 'bg-positive/5' :
+                file.status === 'duplicate' ? 'bg-warning/10' : ''
               }`}
             >
               {getStatusIcon(file.status)}
@@ -151,6 +159,7 @@ export function MultiUploadProgress({
                   <span className={`text-xs ${
                     file.status === 'error' ? 'text-destructive' :
                     file.status === 'completed' ? 'text-positive' :
+                    file.status === 'duplicate' ? 'text-warning' :
                     'text-muted-foreground'
                   }`}>
                     {file.error || getStatusLabel(file.status, file.progress)}
@@ -164,7 +173,7 @@ export function MultiUploadProgress({
                 </div>
               </div>
 
-              {(file.status === 'pending' || file.status === 'error' || file.status === 'cancelled') && !isProcessing && (
+              {(file.status === 'pending' || file.status === 'error' || file.status === 'cancelled' || file.status === 'duplicate') && !isProcessing && (
                 <Button
                   variant="ghost"
                   size="icon"
@@ -232,6 +241,12 @@ export function MultiUploadProgress({
                 <span className="text-destructive ml-2">
                   <XCircle className="h-3 w-3 inline mr-1" />
                   {queue.filter(f => f.status === 'error' || f.status === 'cancelled').length} com erro
+                </span>
+              )}
+              {hasDuplicates && (
+                <span className="text-warning ml-2">
+                  <AlertTriangle className="h-3 w-3 inline mr-1" />
+                  {duplicateCount} já importado{duplicateCount !== 1 ? 's' : ''}
                 </span>
               )}
             </div>

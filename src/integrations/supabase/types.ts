@@ -302,6 +302,7 @@ export type Database = {
           filial_id: string | null
           id: string
           import_scope: string
+          mes_ano: string | null
           progress: number
           record_limit: number | null
           started_at: string | null
@@ -324,6 +325,7 @@ export type Database = {
           filial_id?: string | null
           id?: string
           import_scope?: string
+          mes_ano?: string | null
           progress?: number
           record_limit?: number | null
           started_at?: string | null
@@ -346,6 +348,7 @@ export type Database = {
           filial_id?: string | null
           id?: string
           import_scope?: string
+          mes_ano?: string | null
           progress?: number
           record_limit?: number | null
           started_at?: string | null
