@@ -317,14 +317,32 @@ serve(async (req) => {
       console.error("Error recording audit log:", auditError);
     }
 
-    // Atualizar Materialized Views
+    // Atualizar Materialized Views individualmente para evitar timeout
     console.log("Refreshing materialized views...");
-    try {
-      await supabaseAdmin.rpc('refresh_materialized_views');
-      console.log("Materialized views refreshed successfully");
-    } catch (mvError) {
-      console.error("Error refreshing materialized views:", mvError);
+    const views = [
+      'extensions.mv_mercadorias_aggregated',
+      'extensions.mv_fretes_aggregated',
+      'extensions.mv_energia_agua_aggregated',
+      'extensions.mv_servicos_aggregated',
+      'extensions.mv_mercadorias_participante',
+      'extensions.mv_dashboard_stats',
+      'extensions.mv_uso_consumo_aggregated',
+      'extensions.mv_uso_consumo_detailed',
+      'extensions.mv_fretes_detailed',
+      'extensions.mv_energia_agua_detailed',
+    ];
+
+    for (const view of views) {
+      try {
+        await supabaseAdmin.rpc('exec_sql', {
+          sql: `REFRESH MATERIALIZED VIEW ${view}`
+        });
+        console.log(`Refreshed ${view}`);
+      } catch (err) {
+        console.error(`Failed to refresh ${view}:`, err);
+      }
     }
+    console.log("Materialized views refresh completed");
 
     const message = `Deletados: ${totalDeleted.mercadorias.toLocaleString('pt-BR')} mercadorias, ${totalDeleted.energia_agua.toLocaleString('pt-BR')} energia/água, ${totalDeleted.fretes.toLocaleString('pt-BR')} fretes, ${totalDeleted.filiais.toLocaleString('pt-BR')} filiais`;
     console.log(`Cleanup completed: ${message}`);

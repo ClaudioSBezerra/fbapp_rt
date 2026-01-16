@@ -138,7 +138,7 @@ export default function ImportarEFD() {
   const [isClearing, setIsClearing] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [clearProgress, setClearProgress] = useState<{
-    status: 'counting' | 'deleting' | 'done';
+    status: 'counting' | 'deleting' | 'refreshing_views' | 'done';
     currentTable: string;
     estimated: number;
     deleted: number;
@@ -507,7 +507,7 @@ export default function ImportarEFD() {
 
   // Animated progress effect for database clearing
   useEffect(() => {
-    if (!clearProgress || clearProgress.status === 'done') return;
+    if (!clearProgress || clearProgress.status === 'done' || clearProgress.status === 'refreshing_views') return;
     
     const messages = [
       'Contando registros...',
@@ -569,6 +569,19 @@ export default function ImportarEFD() {
                           (data?.deleted?.energia_agua || 0) + 
                           (data?.deleted?.fretes || 0);
       
+      // Mostrar status de atualização de views
+      setProgressAnimation(95);
+      setClearProgress({
+        status: 'refreshing_views',
+        currentTable: 'Atualizando painéis...',
+        estimated: totalDeleted,
+        deleted: totalDeleted
+      });
+      setStatusMessage('Atualizando painéis...');
+
+      // Aguardar um momento para mostrar o status antes de concluir
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
       setProgressAnimation(100);
       setClearProgress({
         status: 'done',
@@ -576,6 +589,7 @@ export default function ImportarEFD() {
         estimated: totalDeleted,
         deleted: totalDeleted
       });
+      setViewsStatus('empty'); // Views foram limpas
 
       setTimeout(() => {
         setJobs([]);

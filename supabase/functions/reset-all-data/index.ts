@@ -93,6 +93,32 @@ Deno.serve(async (req) => {
 
     results.auth_users = deletedUsersCount;
 
+    // Refresh materialized views
+    console.log("Refreshing materialized views...");
+    const views = [
+      'extensions.mv_mercadorias_aggregated',
+      'extensions.mv_fretes_aggregated',
+      'extensions.mv_energia_agua_aggregated',
+      'extensions.mv_servicos_aggregated',
+      'extensions.mv_mercadorias_participante',
+      'extensions.mv_dashboard_stats',
+      'extensions.mv_uso_consumo_aggregated',
+      'extensions.mv_uso_consumo_detailed',
+      'extensions.mv_fretes_detailed',
+      'extensions.mv_energia_agua_detailed',
+    ];
+
+    for (const view of views) {
+      try {
+        await supabaseAdmin.rpc('exec_sql', {
+          sql: `REFRESH MATERIALIZED VIEW ${view}`
+        });
+        console.log(`Refreshed ${view}`);
+      } catch (err) {
+        console.error(`Failed to refresh ${view}:`, err);
+      }
+    }
+
     console.log("Limpeza completa realizada:", results);
 
     return new Response(
