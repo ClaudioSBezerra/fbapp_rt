@@ -47,6 +47,7 @@ interface DetailedRow {
   pis: number;
   cofins: number;
   quantidade_docs: number;
+  is_simples?: boolean;
 }
 
 const ANOS_PROJECAO = [2027, 2028, 2029, 2030, 2031, 2032, 2033];
@@ -69,6 +70,7 @@ export default function UsoConsumoImobilizado() {
   const [filialSelecionada, setFilialSelecionada] = useState<string>('todas');
   const [mesAnoSelecionado, setMesAnoSelecionado] = useState<string>('todos');
   const [cfopSelecionado, setCfopSelecionado] = useState<string>('todos');
+  const [filterSimples, setFilterSimples] = useState<string>('all');
   const [anoProjecao, setAnoProjecao] = useState<number>(2027);
   const [periodosDisponiveis, setPeriodosDisponiveis] = useState<string[]>([]);
 
@@ -78,8 +80,13 @@ export default function UsoConsumoImobilizado() {
       setLoading(true);
       
       try {
+        // Parâmetro de filtro simples nacional
+        const simplesParam = filterSimples === 'all' ? null : filterSimples === 'sim';
+        
         // Carregar dados detalhados agregados por participante
-        const { data: detailedData, error: detailError } = await supabase.rpc('get_mv_uso_consumo_detailed' as any);
+        const { data: detailedData, error: detailError } = await supabase.rpc('get_mv_uso_consumo_detailed', {
+          p_is_simples: simplesParam
+        });
         
         if (detailError) {
           console.error('Error fetching detailed data:', detailError);
@@ -88,6 +95,7 @@ export default function UsoConsumoImobilizado() {
           const formattedData = (detailedData || []).map((row: any) => ({
             ...row,
             mes_ano: typeof row.mes_ano === 'string' ? row.mes_ano : new Date(row.mes_ano).toISOString().slice(0, 10),
+            is_simples: row.is_simples || false
           }));
           setData(formattedData);
           
@@ -120,7 +128,7 @@ export default function UsoConsumoImobilizado() {
     };
 
     fetchData();
-  }, []);
+  }, [filterSimples]);
 
   // Filtrar dados
   const dadosFiltrados = useMemo(() => {
@@ -244,6 +252,7 @@ export default function UsoConsumoImobilizado() {
           <TableRow className="text-xs">
             <TableHead className="min-w-[140px] text-xs">Filial</TableHead>
             <TableHead className="min-w-[120px] text-xs">Participante</TableHead>
+            <TableHead className="text-xs text-center w-[40px]">SN</TableHead>
             <TableHead className="text-xs whitespace-nowrap">Mês/Ano</TableHead>
             <TableHead className="text-right text-xs">Valor</TableHead>
             <TableHead className="text-right text-xs">ICMS</TableHead>
@@ -294,7 +303,7 @@ export default function UsoConsumoImobilizado() {
         <TableBody>
           {rows.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={16} className="text-center py-8 text-muted-foreground text-xs">
+              <TableCell colSpan={17} className="text-center py-8 text-muted-foreground text-xs">
                 Nenhum dado encontrado para os filtros selecionados
               </TableCell>
             </TableRow>
@@ -315,6 +324,13 @@ export default function UsoConsumoImobilizado() {
                         <span className="text-[10px] text-muted-foreground">{formatDocumento(row.participante_doc)}</span>
                       )}
                     </div>
+                  </TableCell>
+                  <TableCell className="text-center py-1 px-1">
+                    {row.is_simples ? (
+                      <Badge variant="default" className="text-[8px] px-1 py-0 bg-green-600 hover:bg-green-600">SN</Badge>
+                    ) : (
+                      <span className="text-muted-foreground text-[10px]">-</span>
+                    )}
                   </TableCell>
                   <TableCell className="text-xs whitespace-nowrap">{formatDate(row.mes_ano)}</TableCell>
                   <TableCell className="text-right font-mono text-xs">{formatNumber(row.valor)}</TableCell>
@@ -403,6 +419,17 @@ export default function UsoConsumoImobilizado() {
               <SelectItem value="2551">2551</SelectItem>
               <SelectItem value="1556">1556</SelectItem>
               <SelectItem value="2556">2556</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select value={filterSimples} onValueChange={setFilterSimples}>
+            <SelectTrigger className="w-[130px]">
+              <SelectValue placeholder="Simples Nac." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos</SelectItem>
+              <SelectItem value="sim">Sim (SN)</SelectItem>
+              <SelectItem value="nao">Não</SelectItem>
             </SelectContent>
           </Select>
 
