@@ -13,10 +13,15 @@ export interface QueuedFileProgress {
 export interface QueuedFile {
   id: string;
   file: File;
-  status: 'pending' | 'uploading' | 'processing' | 'completed' | 'error' | 'cancelled';
+  status: 'pending' | 'uploading' | 'processing' | 'completed' | 'error' | 'cancelled' | 'duplicate';
   progress: QueuedFileProgress;
   filePath?: string;
   error?: string;
+  duplicateInfo?: {
+    period: string;
+    cnpj: string;
+    existingImportId: string;
+  };
 }
 
 export interface OverallProgress {
@@ -31,10 +36,11 @@ interface UseUploadQueueOptions {
   onFileComplete?: (file: QueuedFile, filePath: string) => Promise<void>;
   onAllComplete?: () => void;
   onError?: (file: QueuedFile, error: Error) => void;
+  onDuplicate?: (file: QueuedFile, duplicateInfo: { period: string; cnpj: string; existingImportId: string }) => void;
 }
 
 export function useUploadQueue(options: UseUploadQueueOptions) {
-  const { bucketName, onFileComplete, onAllComplete, onError } = options;
+  const { bucketName, onFileComplete, onAllComplete, onError, onDuplicate } = options;
   
   const [queue, setQueue] = useState<QueuedFile[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -205,13 +211,35 @@ export function useUploadQueue(options: UseUploadQueueOptions) {
           try {
             await onFileComplete(queuedFile, filePath);
             updateFileInQueue(queuedFile.id, { status: 'completed' });
-          } catch (callbackError) {
+          } catch (callbackError: any) {
             console.error('Error in onFileComplete callback:', callbackError);
-            updateFileInQueue(queuedFile.id, {
-              status: 'error',
-              error: callbackError instanceof Error ? callbackError.message : 'Erro ao processar arquivo',
-            });
-            onError?.(queuedFile, callbackError instanceof Error ? callbackError : new Error('Erro ao processar arquivo'));
+            
+            // Check if it's a duplicate error (409)
+            const errorMessage = callbackError?.message || '';
+            const isDuplicate = errorMessage.includes('duplicate') || 
+                               callbackError?.duplicate === true ||
+                               (callbackError?.context?.json?.duplicate === true);
+            
+            if (isDuplicate || callbackError?.context?.json?.duplicate) {
+              const duplicateData = callbackError?.context?.json || {};
+              const duplicateInfo = {
+                period: duplicateData.period || '',
+                cnpj: duplicateData.cnpj || '',
+                existingImportId: duplicateData.existing_import_id || '',
+              };
+              updateFileInQueue(queuedFile.id, {
+                status: 'duplicate',
+                error: duplicateData.error || errorMessage,
+                duplicateInfo,
+              });
+              onDuplicate?.(queuedFile, duplicateInfo);
+            } else {
+              updateFileInQueue(queuedFile.id, {
+                status: 'error',
+                error: callbackError instanceof Error ? callbackError.message : 'Erro ao processar arquivo',
+              });
+              onError?.(queuedFile, callbackError instanceof Error ? callbackError : new Error('Erro ao processar arquivo'));
+            }
           }
         } else {
           updateFileInQueue(queuedFile.id, { status: 'completed' });
@@ -229,14 +257,14 @@ export function useUploadQueue(options: UseUploadQueueOptions) {
     // Check if all files are done
     setQueue(prev => {
       const allDone = prev.every(f => 
-        f.status === 'completed' || f.status === 'error' || f.status === 'cancelled'
+        f.status === 'completed' || f.status === 'error' || f.status === 'cancelled' || f.status === 'duplicate'
       );
       if (allDone && prev.length > 0) {
         onAllComplete?.();
       }
       return prev;
     });
-  }, [queue, uploadSingleFile, onFileComplete, onAllComplete, onError, updateFileInQueue]);
+  }, [queue, uploadSingleFile, onFileComplete, onAllComplete, onError, onDuplicate, updateFileInQueue]);
 
   const addFiles = useCallback((files: File[]) => {
     const validFiles = files.filter(file => {

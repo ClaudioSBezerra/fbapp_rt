@@ -212,6 +212,11 @@ export default function ImportarEFD() {
       console.error(`Error uploading ${file.file.name}:`, error);
       toast.error(`Erro no upload de ${file.file.name}: ${error.message}`);
     },
+    onDuplicate: (file, duplicateInfo) => {
+      toast.warning(`${file.file.name}: Período ${duplicateInfo.period} já foi importado para esta filial.`, {
+        duration: 6000,
+      });
+    },
   });
 
   // Track if upload is in progress

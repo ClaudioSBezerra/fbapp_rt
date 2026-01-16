@@ -34,6 +34,30 @@ function formatCNPJ(cnpj: string): string {
   return cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
 }
 
+function formatPeriod(dtIni: string): { mesAno: string; displayPeriod: string } {
+  // DT_INI format: DDMMAAAA (EFD Contribuições)
+  if (dtIni && dtIni.length === 8) {
+    const month = dtIni.substring(2, 4);
+    const year = dtIni.substring(4, 8);
+    return {
+      mesAno: `${year}-${month}-01`,
+      displayPeriod: `${month}/${year}`,
+    };
+  }
+  return { mesAno: "", displayPeriod: "" };
+}
+
+function formatDateTime(isoDate: string): string {
+  const date = new Date(isoDate);
+  return date.toLocaleString('pt-BR', { 
+    day: '2-digit', 
+    month: '2-digit', 
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -178,6 +202,10 @@ serve(async (req) => {
 
     console.log(`Header extracted: CNPJ=${header.cnpj}, Nome=${header.razaoSocial}`);
 
+    // Extract period from header
+    const { mesAno, displayPeriod } = formatPeriod(header.periodoInicio);
+    console.log(`Period extracted: mesAno=${mesAno}, displayPeriod=${displayPeriod}`);
+
     // Get or create filial
     let filialId: string;
     let filialCreated = false;
@@ -218,7 +246,35 @@ serve(async (req) => {
       console.log(`Created new filial: ${filialId}`);
     }
 
-    // Create import job
+    // VALIDATION: Check for duplicate import (same filial, period, and scope)
+    if (mesAno) {
+      const { data: existingImport } = await supabase
+        .from("import_jobs")
+        .select("id, completed_at, file_name")
+        .eq("filial_id", filialId)
+        .eq("mes_ano", mesAno)
+        .eq("import_scope", importScope)
+        .eq("status", "completed")
+        .maybeSingle();
+
+      if (existingImport) {
+        console.log(`Duplicate import detected: existing job ${existingImport.id}`);
+        await supabase.storage.from("efd-files").remove([filePath]);
+        const completedDate = existingImport.completed_at ? formatDateTime(existingImport.completed_at) : 'data desconhecida';
+        return new Response(
+          JSON.stringify({ 
+            error: `Já existe uma importação de EFD Contribuições para o período ${displayPeriod || mesAno} nesta filial (${formatCNPJ(header.cnpj)}). Arquivo: ${existingImport.file_name}. Importado em: ${completedDate}.`,
+            duplicate: true,
+            existing_import_id: existingImport.id,
+            period: displayPeriod || mesAno,
+            cnpj: header.cnpj,
+          }),
+          { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
+    // Create import job with mes_ano
     const { data: job, error: jobError } = await supabase
       .from("import_jobs")
       .insert({
@@ -234,6 +290,7 @@ serve(async (req) => {
         counts: { mercadorias: 0, energia_agua: 0, fretes: 0 },
         record_limit: recordLimit || 0,
         import_scope: importScope,
+        mes_ano: mesAno || null,
       })
       .select()
       .single();
