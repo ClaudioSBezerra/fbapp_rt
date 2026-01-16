@@ -41,7 +41,7 @@ interface MenuItem {
 }
 
 const allMenuItems: MenuItem[] = [
-  { title: 'Configurações', url: '/configuracoes', icon: Settings, adminOnly: true },
+  { title: 'Configurações e Parâmetros Gerais', url: '/configuracoes', icon: Settings, adminOnly: true },
   { title: 'Empresas', url: '/empresas', icon: Building2, adminOnly: true },
   { title: 'Alíquotas', url: '/aliquotas', icon: Calculator },
   { title: 'Mercadorias', url: '/mercadorias', icon: Package },
