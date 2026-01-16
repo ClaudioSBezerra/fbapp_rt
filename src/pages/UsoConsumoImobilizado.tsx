@@ -113,17 +113,21 @@ export default function UsoConsumoImobilizado() {
           if (periodos.length > 0 && mesAnoSelecionado === 'todos') {
             setMesAnoSelecionado(periodos[0] as string);
           }
+          
+          // Derivar filiais a partir dos dados carregados (somente filiais com dados)
+          const filiaisFromData = formattedData.reduce((acc: Filial[], row: DetailedRow) => {
+            if (!acc.some(f => f.id === row.filial_id)) {
+              acc.push({
+                id: row.filial_id,
+                nome: row.filial_nome,
+                cnpj: row.filial_cnpj,
+                cod_est: row.filial_cod_est,
+              });
+            }
+            return acc;
+          }, []);
+          setFiliais(filiaisFromData);
         }
-
-        // Carregar filiais
-        const { data: filiaisData } = await supabase.from('filiais').select('id, nome_fantasia, razao_social, cnpj, cod_est');
-        const filialsList = filiaisData?.map(f => ({
-          id: f.id,
-          nome: f.nome_fantasia || f.razao_social || 'Sem nome',
-          cnpj: f.cnpj || '',
-          cod_est: f.cod_est || null,
-        })) || [];
-        setFiliais(filialsList);
 
         // Carregar alíquotas
         const { data: aliquotasData } = await supabase.from('aliquotas').select('*').eq('is_active', true).order('ano');
