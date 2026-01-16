@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Loader2, Download, Package, Wrench, AlertCircle, HelpCircle } from 'lucide-react';
+import { Loader2, Download, Package, Wrench, AlertCircle, HelpCircle, Building2 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Label } from '@/components/ui/label';
@@ -14,6 +14,8 @@ import { formatFilialDisplayFormatted, formatDocumento } from '@/lib/formatFilia
 import { exportToExcel } from '@/lib/exportToExcel';
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
+import { ChartContainer, ChartTooltipContent } from '@/components/ui/chart';
 
 interface Aliquota {
   ano: number;
@@ -58,9 +60,20 @@ const CFOPS_USO_CONSUMO = ['1556', '2556'];
 const formatNumber = (value: number) =>
   new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
 
+const formatCurrency = (value: number) =>
+  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+
+const formatCompact = (value: number) =>
+  new Intl.NumberFormat('pt-BR', { notation: 'compact', compactDisplay: 'short' }).format(value);
+
 const formatDate = (dateStr: string) => {
   const [year, month] = dateStr.substring(0, 7).split('-');
   return `${month}/${year}`;
+};
+
+const chartConfig = {
+  valor: { label: 'Valor Total', color: 'hsl(220, 70%, 50%)' },
+  impostos: { label: 'Total Impostos', color: 'hsl(142, 76%, 36%)' },
 };
 
 export default function UsoConsumoImobilizado() {
@@ -213,6 +226,36 @@ export default function UsoConsumoImobilizado() {
 
     return result;
   }, [dadosImobilizado, dadosUsoConsumo]);
+
+  // Dados agrupados por Simples Nacional
+  const dadosPorSimples = useMemo(() => {
+    const simples = { valor: 0, icms: 0, pis: 0, cofins: 0, count: 0 };
+    const naoSimples = { valor: 0, icms: 0, pis: 0, cofins: 0, count: 0 };
+
+    dadosFiltrados.forEach(row => {
+      const target = row.is_simples ? simples : naoSimples;
+      target.valor += row.valor;
+      target.icms += row.icms;
+      target.pis += row.pis;
+      target.cofins += row.cofins;
+      target.count += row.quantidade_docs;
+    });
+
+    return [
+      { 
+        name: 'Simples Nacional', 
+        valor: simples.valor, 
+        impostos: simples.icms + simples.pis + simples.cofins,
+        registros: simples.count 
+      },
+      { 
+        name: 'Regime Normal', 
+        valor: naoSimples.valor, 
+        impostos: naoSimples.icms + naoSimples.pis + naoSimples.cofins,
+        registros: naoSimples.count 
+      },
+    ];
+  }, [dadosFiltrados]);
 
   // Exportar para Excel
   const handleExport = () => {
@@ -550,6 +593,62 @@ export default function UsoConsumoImobilizado() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Gráfico por Simples Nacional */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base font-semibold flex items-center gap-2">
+            <Building2 className="h-5 w-5" />
+            Comparativo por Regime Tributário
+          </CardTitle>
+          <CardDescription>
+            Valores e impostos - Simples Nacional vs Regime Normal
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ChartContainer config={chartConfig} className="h-[280px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={dadosPorSimples} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                <XAxis 
+                  dataKey="name" 
+                  className="text-xs"
+                  tick={{ fontSize: 12 }}
+                />
+                <YAxis 
+                  tickFormatter={formatCompact} 
+                  className="text-xs"
+                  tick={{ fontSize: 11 }}
+                />
+                <RechartsTooltip 
+                  content={<ChartTooltipContent formatter={(value) => formatCurrency(Number(value))} />}
+                />
+                <Legend />
+                <Bar 
+                  dataKey="valor" 
+                  name="Valor Total" 
+                  fill="hsl(220, 70%, 50%)" 
+                  radius={[4, 4, 0, 0]} 
+                />
+                <Bar 
+                  dataKey="impostos" 
+                  name="Total Impostos" 
+                  fill="hsl(142, 76%, 36%)" 
+                  radius={[4, 4, 0, 0]} 
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          </ChartContainer>
+          <div className="flex justify-center gap-6 mt-4 text-xs text-muted-foreground">
+            {dadosPorSimples.map((item, index) => (
+              <div key={item.name} className="text-center">
+                <span className="font-medium">{item.name}:</span>{' '}
+                <span>{item.registros} documentos</span>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Tabs com tabelas */}
       <Tabs defaultValue="imobilizado" className="space-y-4">
