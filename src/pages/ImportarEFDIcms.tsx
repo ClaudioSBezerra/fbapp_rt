@@ -148,25 +148,38 @@ export default function ImportarEFDIcms() {
       throw new Error('Empresa não selecionada');
     }
     
-    const response = await supabase.functions.invoke('parse-efd-icms', {
-      body: {
-        empresa_id: selectedEmpresa,
-        file_path: filePath,
-        file_name: queuedFile.file.name,
-        file_size: queuedFile.file.size,
-        import_scope: 'icms_uso_consumo',
-      },
-    });
+    // Use fetch directly to properly handle 409 status code
+    const response = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/parse-efd-icms`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          empresa_id: selectedEmpresa,
+          file_path: filePath,
+          file_name: queuedFile.file.name,
+          file_size: queuedFile.file.size,
+          import_scope: 'icms_uso_consumo',
+        }),
+      }
+    );
 
-    if (response.error) {
-      await supabase.storage.from('efd-files').remove([filePath]);
-      throw new Error(response.error.message || 'Erro ao iniciar importação');
+    const data = await response.json();
+
+    // Check for duplicate (409 Conflict)
+    if (response.status === 409 && data.duplicate) {
+      const duplicateError: any = new Error(data.error || 'Período já importado');
+      duplicateError.duplicate = true;
+      duplicateError.context = { json: data };
+      throw duplicateError;
     }
 
-    const data = response.data;
-    if (data.error) {
+    if (!response.ok || data.error) {
       await supabase.storage.from('efd-files').remove([filePath]);
-      throw new Error(data.error);
+      throw new Error(data.error || 'Erro ao iniciar importação');
     }
   }, [selectedEmpresa, session]);
 
