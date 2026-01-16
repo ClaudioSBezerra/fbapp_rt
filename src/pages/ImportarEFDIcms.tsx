@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Progress } from '@/components/ui/progress';
@@ -16,7 +16,6 @@ import { useSessionInfo } from '@/hooks/useSessionInfo';
 import { useResumableUpload } from '@/hooks/useResumableUpload';
 import { UploadProgressDisplay } from '@/components/UploadProgress';
 import { toast } from 'sonner';
-import { formatCNPJMasked } from '@/lib/formatFilial';
 
 interface ImportCounts {
   uso_consumo_imobilizado: number;
@@ -70,6 +69,29 @@ function formatDate(dateStr: string): string {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function formatTime(dateStr: string): string {
+  return new Date(dateStr).toLocaleString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
+
+function getTimeSinceUpdate(dateStr: string): { text: string; isStale: boolean } {
+  const now = new Date();
+  const updated = new Date(dateStr);
+  const diffMs = now.getTime() - updated.getTime();
+  const diffSeconds = Math.floor(diffMs / 1000);
+  const diffMinutes = Math.floor(diffSeconds / 60);
+  
+  if (diffMinutes > 2) {
+    return { text: `${diffMinutes} min atrás`, isStale: true };
+  } else if (diffSeconds > 30) {
+    return { text: `${diffSeconds}s atrás`, isStale: false };
+  }
+  return { text: 'agora', isStale: false };
 }
 
 function getStatusInfo(status: ImportJob['status']) {
@@ -129,6 +151,8 @@ export default function ImportarEFDIcms() {
   const {
     progress: uploadProgress,
     startUpload,
+    pauseUpload,
+    resumeUpload,
     cancelUpload,
     resetUpload,
     isUploading,
@@ -547,6 +571,21 @@ export default function ImportarEFDIcms() {
     toast.info('Upload cancelado.');
   };
 
+  const handleRetryUpload = async () => {
+    if (!selectedFile || !session) return;
+    
+    resetUpload();
+    const timestamp = Date.now();
+    const filePath = `${session.user.id}/${timestamp}_icms_${selectedFile.name}`;
+    setCurrentUploadPath(filePath);
+    
+    try {
+      await startUpload(selectedFile, filePath);
+    } catch (error) {
+      console.error('Error retrying upload:', error);
+    }
+  };
+
   const handleFileSelect = (file: File) => {
     if (!file.name.endsWith('.txt')) {
       toast.error('Por favor, selecione um arquivo .txt');
@@ -559,25 +598,54 @@ export default function ImportarEFDIcms() {
     setSelectedFile(file);
   };
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(true);
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(false);
-    const file = e.dataTransfer.files[0];
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
     if (file) handleFileSelect(file);
   };
 
+  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsDragOver(false);
+    const file = event.dataTransfer.files?.[0];
+    if (file) handleFileSelect(file);
+  };
+
+  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragOver(false);
+  };
+
+  const handleCancelJob = async (jobId: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('cancel-import-job', {
+        body: { job_id: jobId },
+      });
+
+      if (error) {
+        throw new Error(error.message || 'Erro ao cancelar importação');
+      }
+
+      if (data?.error) {
+        throw new Error(data.error);
+      }
+
+      toast.success('Importação cancelada com sucesso.');
+    } catch (error) {
+      console.error('Error cancelling job:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Erro ao cancelar importação';
+      toast.error(errorMessage);
+    }
+  };
+
+  const activeJobs = jobs.filter(j => j.status === 'pending' || j.status === 'processing' || j.status === 'refreshing_views' || j.status === 'generating');
+  const completedJobs = jobs.filter(j => j.status === 'completed' || j.status === 'failed' || j.status === 'cancelled');
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-4xl mx-auto">
       {/* Clear Database Confirmation Dialog */}
       <AlertDialog open={showClearConfirm} onOpenChange={(open) => {
         if (!isClearing) {
@@ -665,14 +733,6 @@ export default function ImportarEFDIcms() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Importação de EFD ICMS/IPI</h1>
-        <p className="text-sm text-muted-foreground">
-          Importe arquivos EFD ICMS/IPI para extrair dados de Uso e Consumo (CFOP 1556, 2556) e Ativo Imobilizado (CFOP 1551, 2551)
-        </p>
-      </div>
-
       {/* Alerta: Sem EFD Contribuições */}
       {!loadingPeriodos && !hasEfdContribuicoes && (
         <Alert variant="destructive">
@@ -734,15 +794,13 @@ export default function ImportarEFDIcms() {
         </Card>
       )}
 
-      {/* Upload Area */}
+      {/* Upload Card */}
       <Card className={!hasEfdContribuicoes ? 'opacity-50 pointer-events-none' : ''}>
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
-          <div>
-            <CardTitle className="text-lg">Upload de Arquivo</CardTitle>
-            <CardDescription>
-              Selecione um arquivo EFD ICMS/IPI (.txt) para importar os dados de Uso e Consumo e Ativo Imobilizado
-            </CardDescription>
-          </div>
+          <CardTitle className="flex items-center gap-2">
+            <Upload className="h-5 w-5" />
+            Importar EFD ICMS/IPI
+          </CardTitle>
           <div className="flex gap-2">
             <Button 
               variant="outline" 
@@ -765,141 +823,292 @@ export default function ImportarEFDIcms() {
               disabled={uploading || isClearing}
             >
               <Trash2 className="h-4 w-4 mr-2" />
-              Limpar Base ICMS
+              Limpar Base
             </Button>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Empresa Selector */}
+          <p className="text-sm text-muted-foreground">
+            Importe arquivos EFD ICMS/IPI para extrair dados de Uso e Consumo (CFOP 1556, 2556) e Ativo Imobilizado (CFOP 1551, 2551).
+            Arquivos grandes são processados em background.
+          </p>
+
+          <Alert className="border-positive/50 bg-positive/5">
+            <Shield className="h-4 w-4 text-positive" />
+            <AlertTitle className="text-positive">Segurança da Informação</AlertTitle>
+            <AlertDescription className="text-muted-foreground">
+              Por questões de segurança, o arquivo TXT é automaticamente excluído 
+              do servidor após a importação ser concluída com sucesso.
+            </AlertDescription>
+          </Alert>
+
           <div className="space-y-2">
-            <Label>Empresa</Label>
+            <Label htmlFor="empresa">Empresa Destino</Label>
             <Select value={selectedEmpresa} onValueChange={setSelectedEmpresa} disabled={uploading}>
-              <SelectTrigger className="w-full md:w-[300px]">
+              <SelectTrigger>
                 <SelectValue placeholder="Selecione a empresa" />
               </SelectTrigger>
               <SelectContent>
-                {empresas.map((e) => (
-                  <SelectItem key={e.id} value={e.id}>{e.nome}</SelectItem>
+                {empresas.map((empresa) => (
+                  <SelectItem key={empresa.id} value={empresa.id}>
+                    {empresa.nome}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
 
-          {/* Drag & Drop Area */}
           <div
-            className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-              isDragOver
-                ? 'border-primary bg-primary/5'
-                : 'border-muted-foreground/25 hover:border-muted-foreground/50'
-            }`}
+            className={`
+              relative border-2 border-dashed rounded-lg p-8 transition-colors cursor-pointer
+              ${isDragOver ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50 hover:bg-muted/50'}
+              ${uploading ? 'pointer-events-none opacity-60' : ''}
+              ${!selectedEmpresa || !hasEfdContribuicoes ? 'pointer-events-none opacity-40' : ''}
+            `}
+            onClick={() => !selectedFile && fileInputRef.current?.click()}
+            onDrop={handleDrop}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
           >
             <input
+              ref={fileInputRef}
               type="file"
               accept=".txt"
-              onChange={(e) => e.target.files?.[0] && handleFileSelect(e.target.files[0])}
+              onChange={handleFileChange}
               className="hidden"
-              ref={fileInputRef}
-              disabled={uploading}
+              disabled={uploading || !selectedEmpresa || !hasEfdContribuicoes}
             />
-            <Upload className="h-10 w-10 mx-auto mb-4 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground mb-2">
-              Arraste e solte um arquivo EFD ICMS/IPI aqui ou
-            </p>
-            <Button
-              variant="outline"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-            >
-              Selecionar arquivo
-            </Button>
-          </div>
-
-          {/* Selected File Info */}
-          {selectedFile && !uploading && (
-            <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
-              <div className="flex items-center gap-3">
-                <FileText className="h-5 w-5 text-muted-foreground" />
-                <div>
-                  <p className="font-medium text-sm">{selectedFile.name}</p>
-                  <p className="text-xs text-muted-foreground">{formatFileSize(selectedFile.size)}</p>
+            
+            <div className="flex flex-col items-center gap-3">
+              {/* Show upload progress when uploading */}
+              {(isUploading || isPaused || uploadHasError) && selectedFile ? (
+                <div className="w-full">
+                  <UploadProgressDisplay
+                    progress={uploadProgress}
+                    fileName={selectedFile.name}
+                    onPause={pauseUpload}
+                    onResume={resumeUpload}
+                    onCancel={handleCancelUpload}
+                    onRetry={handleRetryUpload}
+                  />
                 </div>
-              </div>
-              <Button onClick={handleStartImport} disabled={!selectedEmpresa}>
-                Iniciar Importação
-              </Button>
-            </div>
-          )}
-
-          {/* Upload Progress */}
-          {(isUploading || isPaused || uploadCompleted || uploadHasError) && (
-            <div className="space-y-3">
-              <UploadProgressDisplay progress={uploadProgress} fileName={selectedFile?.name || ''} />
-              {(isUploading || isPaused) && (
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm" onClick={handleCancelUpload}>
-                    Cancelar
+              ) : processingImport ? (
+                <>
+                  <Loader2 className="h-10 w-10 text-primary animate-spin" />
+                  <div className="space-y-1 text-center">
+                    <p className="text-sm font-medium text-foreground">Iniciando processamento...</p>
+                    <p className="text-xs text-muted-foreground">O processamento continuará em background</p>
+                  </div>
+                </>
+              ) : selectedFile ? (
+                <>
+                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                    <FileText className="h-6 w-6 text-primary" />
+                  </div>
+                  <div className="space-y-1 text-center">
+                    <p className="text-sm font-medium text-foreground">{selectedFile.name}</p>
+                    <p className="text-xs text-muted-foreground">{formatFileSize(selectedFile.size)}</p>
+                  </div>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={(e) => { e.stopPropagation(); setSelectedFile(null); }}
+                  >
+                    Remover
                   </Button>
-                </div>
+                </>
+              ) : (
+                <>
+                  <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
+                    <FileText className="h-6 w-6 text-muted-foreground" />
+                  </div>
+                  <div className="space-y-1 text-center">
+                    <p className="text-sm font-medium text-foreground">
+                      Arraste o arquivo ou clique para selecionar
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Aceita arquivos .txt (EFD ICMS/IPI) - até 1GB
+                    </p>
+                  </div>
+                </>
               )}
             </div>
-          )}
+          </div>
 
-          {/* Processing indicator */}
-          {processingImport && (
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              <span className="text-sm">Iniciando processamento...</span>
-            </div>
+          {selectedFile && !uploading && (
+            <Button 
+              onClick={handleStartImport} 
+              className="w-full"
+              disabled={!selectedEmpresa || !hasEfdContribuicoes}
+            >
+              Iniciar Importação
+            </Button>
           )}
         </CardContent>
       </Card>
 
-      {/* Import Jobs History */}
-      {jobs.length > 0 && (
+      {/* Active Jobs */}
+      {activeJobs.length > 0 && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              Importações em Andamento
+            </CardTitle>
+            <Button 
+              variant="ghost" 
+              size="sm"
+              onClick={() => loadJobs()}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <RefreshCw className="h-4 w-4 mr-1" />
+              Atualizar Status
+            </Button>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {activeJobs.map((job) => {
+              const statusInfo = getStatusInfo(job.status);
+              const StatusIcon = statusInfo.icon;
+              const updateInfo = job.updated_at ? getTimeSinceUpdate(job.updated_at) : null;
+              const bytesProgress = job.bytes_processed && job.file_size 
+                ? `${formatFileSize(job.bytes_processed)} / ${formatFileSize(job.file_size)}`
+                : null;
+              
+              return (
+                <div key={job.id} className="border rounded-lg p-4 space-y-3">
+                  <div className="flex items-start justify-between">
+                    <div className="space-y-1 min-w-0 flex-1">
+                      <p className="font-medium text-foreground truncate max-w-[200px] sm:max-w-xs" title={job.file_name}>{job.file_name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {formatFileSize(job.file_size)} • Iniciado em {formatDate(job.created_at)}
+                      </p>
+                    </div>
+                    <Badge className={statusInfo.color}>
+                      <StatusIcon className={`h-3 w-3 mr-1 ${job.status === 'processing' ? 'animate-spin' : ''}`} />
+                      {statusInfo.label}
+                    </Badge>
+                  </div>
+                  
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>Progresso</span>
+                      <span>{job.progress}%</span>
+                    </div>
+                    <Progress value={job.progress} className="h-2" />
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>
+                        {bytesProgress && <span className="mr-2">{bytesProgress}</span>}
+                        {job.chunk_number !== null && job.chunk_number > 0 && (
+                          <span className="text-muted-foreground/70">Bloco {job.chunk_number}</span>
+                        )}
+                      </span>
+                      {job.total_lines > 0 && (
+                        <span>{job.total_lines.toLocaleString('pt-BR')} linhas</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Last Updated indicator */}
+                  {updateInfo && (
+                    <div className={`flex items-center gap-2 text-xs ${updateInfo.isStale ? 'text-warning' : 'text-muted-foreground'}`}>
+                      <Clock className="h-3 w-3" />
+                      <span>Última atualização: {formatTime(job.updated_at)} ({updateInfo.text})</span>
+                      {updateInfo.isStale && (
+                        <Button 
+                          variant="link" 
+                          size="sm" 
+                          className="h-auto p-0 text-xs text-warning hover:text-warning/80"
+                          onClick={() => loadJobs()}
+                        >
+                          Reconectar
+                        </Button>
+                      )}
+                    </div>
+                  )}
+
+                  {(job.status === 'processing' || job.status === 'refreshing_views') && (
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                      <span>Uso/Consumo/Imobilizado: {job.counts.uso_consumo_imobilizado || 0}</span>
+                      <span>Participantes: {job.counts.participantes || 0}</span>
+                    </div>
+                  )}
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleCancelJob(job.id)}
+                    className="mt-2 text-destructive hover:text-destructive"
+                  >
+                    <XCircle className="h-4 w-4 mr-1" />
+                    Cancelar
+                  </Button>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Completed Jobs */}
+      {completedJobs.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Histórico de Importações</CardTitle>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <CheckCircle className="h-5 w-5 text-positive" />
+              Histórico de Importações
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {jobs.map((job) => {
+              {completedJobs.map((job) => {
                 const statusInfo = getStatusInfo(job.status);
                 const StatusIcon = statusInfo.icon;
-                const isActive = ['pending', 'processing', 'generating', 'refreshing_views'].includes(job.status);
+                const totalRecords = job.counts.uso_consumo_imobilizado || 0;
                 
                 return (
-                  <div key={job.id} className="flex items-center justify-between p-3 border rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <StatusIcon className={`h-5 w-5 ${isActive ? 'animate-spin' : ''}`} />
-                      <div>
-                        <p className="font-medium text-sm">{job.file_name}</p>
+                  <div key={job.id} className="border rounded-lg p-4">
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="space-y-1 min-w-0 flex-1">
+                        <p className="font-medium text-foreground truncate max-w-[200px] sm:max-w-xs" title={job.file_name}>{job.file_name}</p>
                         <p className="text-xs text-muted-foreground">
-                          {formatDate(job.created_at)} • {formatFileSize(job.file_size)}
+                          {formatFileSize(job.file_size)} • {formatDate(job.created_at)}
                         </p>
                       </div>
+                      <Badge className={statusInfo.color}>
+                        <StatusIcon className="h-3 w-3 mr-1" />
+                        {statusInfo.label}
+                      </Badge>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <Badge className={statusInfo.color}>{statusInfo.label}</Badge>
-                      {job.status === 'completed' && job.counts && (
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-muted-foreground">
-                            {job.counts.uso_consumo_imobilizado || 0} registros
-                          </span>
-                          <div className="flex items-center gap-1 text-xs text-positive">
-                            <Shield className="h-3 w-3" />
-                            <span>Arquivo excluído</span>
+
+                    {job.status === 'completed' && (
+                      <div className="bg-muted/50 rounded-lg p-3 mt-3">
+                        <div className="grid grid-cols-2 gap-2 text-center">
+                          <div>
+                            <p className="text-lg font-semibold text-foreground">{job.counts.uso_consumo_imobilizado || 0}</p>
+                            <p className="text-xs text-muted-foreground">Uso/Consumo/Imobilizado</p>
+                          </div>
+                          <div>
+                            <p className="text-lg font-semibold text-foreground">{job.counts.participantes || 0}</p>
+                            <p className="text-xs text-muted-foreground">Participantes</p>
                           </div>
                         </div>
-                      )}
-                      {job.status === 'processing' && (
-                        <span className="text-xs text-muted-foreground">
-                          {job.progress}%
-                        </span>
-                      )}
-                    </div>
+                        <div className="text-center mt-2 pt-2 border-t border-border">
+                          <p className="text-sm font-medium text-foreground">{totalRecords} registros importados</p>
+                        </div>
+                        {/* Security indicator */}
+                        <div className="flex items-center justify-center gap-2 text-xs text-positive mt-2 pt-2 border-t border-border">
+                          <Shield className="h-3 w-3" />
+                          <span>Arquivo original excluído por segurança</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {job.status === 'failed' && job.error_message && (
+                      <div className="bg-destructive/10 rounded-lg p-3 mt-3 flex items-start gap-2">
+                        <AlertCircle className="h-4 w-4 text-destructive mt-0.5 flex-shrink-0" />
+                        <p className="text-sm text-destructive">{job.error_message}</p>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -908,36 +1117,17 @@ export default function ImportarEFDIcms() {
         </Card>
       )}
 
-      {/* Info Card */}
-      <Card className="bg-muted/50">
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <AlertCircle className="h-4 w-4" />
-            Sobre a Importação EFD ICMS/IPI
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="text-sm text-muted-foreground space-y-2">
-          <p>
-            Esta funcionalidade importa dados específicos do <strong>EFD ICMS/IPI</strong> (Escrituração Fiscal Digital - ICMS/IPI):
-          </p>
-          <ul className="list-disc list-inside space-y-1 ml-2">
-            <li><strong>CFOP 1551, 2551</strong> - Aquisições para Ativo Imobilizado</li>
-            <li><strong>CFOP 1556, 2556</strong> - Aquisições para Uso e Consumo</li>
-          </ul>
-          <p className="pt-2">
-            <strong>Pré-requisito:</strong> Você deve importar o arquivo <em>EFD Contribuições</em> do mesmo período primeiro.
-            Os dados do ICMS/IPI serão vinculados à mesma filial e período.
-          </p>
-          <Alert className="border-positive/50 bg-positive/5 mt-4">
-            <Shield className="h-4 w-4 text-positive" />
-            <AlertTitle className="text-positive">Segurança da Informação</AlertTitle>
-            <AlertDescription className="text-muted-foreground">
-              Por questões de segurança, o arquivo TXT é automaticamente excluído 
-              do servidor após a importação ser concluída com sucesso.
-            </AlertDescription>
-          </Alert>
-        </CardContent>
-      </Card>
+      {/* Empty State */}
+      {jobs.length === 0 && (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+            <p className="text-muted-foreground">
+              Nenhuma importação encontrada. Faça upload de um arquivo EFD ICMS/IPI para começar.
+            </p>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
