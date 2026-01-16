@@ -125,7 +125,7 @@ export default function ImportarEFDIcms() {
   const [isClearing, setIsClearing] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [clearProgress, setClearProgress] = useState<{
-    status: 'counting' | 'deleting' | 'done';
+    status: 'counting' | 'deleting' | 'refreshing_views' | 'done';
     currentTable: string;
     estimated: number;
     deleted: number;
@@ -270,8 +270,8 @@ export default function ImportarEFDIcms() {
   };
 
   useEffect(() => {
-    if (!clearProgress || clearProgress.status === 'done') return;
-    const messages = ['Contando registros...', 'Deletando Uso e Consumo...', 'Atualizando views...'];
+    if (!clearProgress || clearProgress.status === 'done' || clearProgress.status === 'refreshing_views') return;
+    const messages = ['Contando registros...', 'Deletando Uso e Consumo...', 'Atualizando índices...'];
     let messageIndex = 0;
     let progress = 0;
     setStatusMessage(messages[0]);
@@ -299,15 +299,24 @@ export default function ImportarEFDIcms() {
       if (error || data?.error) throw new Error(data?.error || error?.message);
       
       const totalDeleted = data?.deleted?.uso_consumo || 0;
+      
+      // Mostrar status de atualização de views
+      setProgressAnimation(95);
+      setClearProgress({ status: 'refreshing_views', currentTable: 'Atualizando painéis...', estimated: totalDeleted, deleted: totalDeleted });
+      setStatusMessage('Atualizando painéis...');
+
+      // Aguardar um momento para mostrar o status antes de concluir
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
       setProgressAnimation(100);
       setClearProgress({ status: 'done', currentTable: 'Concluído!', estimated: totalDeleted, deleted: totalDeleted });
+      setViewsStatus('empty'); // Views foram limpas
 
       setTimeout(() => {
         setJobs([]);
         toast.success(data?.message || 'Base ICMS limpa!');
         setShowClearConfirm(false);
         setClearProgress(null);
-        setViewsStatus('empty');
       }, 1500);
     } catch (error) {
       toast.error('Erro ao limpar base');
