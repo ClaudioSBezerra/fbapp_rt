@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Loader2, Download, Package, Wrench, AlertCircle, HelpCircle } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Label } from '@/components/ui/label';
 import { formatFilialDisplayFormatted, formatDocumento } from '@/lib/formatFilial';
 import { exportToExcel } from '@/lib/exportToExcel';
 import { toast } from 'sonner';
@@ -380,69 +381,84 @@ export default function UsoConsumoImobilizado() {
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-3">
-          <Select value={mesAnoSelecionado} onValueChange={setMesAnoSelecionado}>
-            <SelectTrigger className="w-[140px]">
-              <SelectValue placeholder="Período" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="todos">Todos</SelectItem>
-              {periodosDisponiveis.map(p => (
-                <SelectItem key={p} value={p}>
-                  {p.split('-').reverse().join('/')}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="flex flex-wrap gap-3 items-end">
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Período</Label>
+            <Select value={mesAnoSelecionado} onValueChange={setMesAnoSelecionado}>
+              <SelectTrigger className="w-[140px]">
+                <SelectValue placeholder="Todos" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todos</SelectItem>
+                {periodosDisponiveis.map(p => (
+                  <SelectItem key={p} value={p}>
+                    {p.split('-').reverse().join('/')}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-          <Select value={filialSelecionada} onValueChange={setFilialSelecionada}>
-            <SelectTrigger className="w-[220px]">
-              <SelectValue placeholder="Filial" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="todas">Todas as filiais</SelectItem>
-              {filiais.map(f => (
-                <SelectItem key={f.id} value={f.id}>
-                  {formatFilialDisplayFormatted(f.cod_est, f.cnpj)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Filial</Label>
+            <Select value={filialSelecionada} onValueChange={setFilialSelecionada}>
+              <SelectTrigger className="w-[220px]">
+                <SelectValue placeholder="Todas" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todas">Todas as filiais</SelectItem>
+                {filiais.map(f => (
+                  <SelectItem key={f.id} value={f.id}>
+                    {formatFilialDisplayFormatted(f.cod_est, f.cnpj)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-          <Select value={cfopSelecionado} onValueChange={setCfopSelecionado}>
-            <SelectTrigger className="w-[120px]">
-              <SelectValue placeholder="CFOP" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="todos">Todos</SelectItem>
-              <SelectItem value="1551">1551</SelectItem>
-              <SelectItem value="2551">2551</SelectItem>
-              <SelectItem value="1556">1556</SelectItem>
-              <SelectItem value="2556">2556</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">CFOP</Label>
+            <Select value={cfopSelecionado} onValueChange={setCfopSelecionado}>
+              <SelectTrigger className="w-[120px]">
+                <SelectValue placeholder="Todos" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todos</SelectItem>
+                <SelectItem value="1551">1551</SelectItem>
+                <SelectItem value="2551">2551</SelectItem>
+                <SelectItem value="1556">1556</SelectItem>
+                <SelectItem value="2556">2556</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
-          <Select value={filterSimples} onValueChange={setFilterSimples}>
-            <SelectTrigger className="w-[130px]">
-              <SelectValue placeholder="Simples Nac." />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos</SelectItem>
-              <SelectItem value="sim">Sim (SN)</SelectItem>
-              <SelectItem value="nao">Não</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Simples Nacional</Label>
+            <Select value={filterSimples} onValueChange={setFilterSimples}>
+              <SelectTrigger className="w-[140px]">
+                <SelectValue placeholder="Todos" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                <SelectItem value="sim">Sim (SN)</SelectItem>
+                <SelectItem value="nao">Não</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
-          <Select value={String(anoProjecao)} onValueChange={v => setAnoProjecao(Number(v))}>
-            <SelectTrigger className="w-[100px]">
-              <SelectValue placeholder="Ano" />
-            </SelectTrigger>
-            <SelectContent>
-              {ANOS_PROJECAO.map(ano => (
-                <SelectItem key={ano} value={String(ano)}>{ano}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Ano Projeção</Label>
+            <Select value={String(anoProjecao)} onValueChange={v => setAnoProjecao(Number(v))}>
+              <SelectTrigger className="w-[100px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ANOS_PROJECAO.map(ano => (
+                  <SelectItem key={ano} value={String(ano)}>{ano}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
           <Button variant="outline" onClick={handleExport} disabled={dadosFiltrados.length === 0}>
             <Download className="h-4 w-4 mr-2" />

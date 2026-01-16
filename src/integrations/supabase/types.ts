@@ -865,6 +865,25 @@ export type Database = {
           valor: number
         }[]
       }
+      get_mv_energia_agua_detailed: {
+        Args: { p_is_simples?: boolean }
+        Returns: {
+          cnpj_fornecedor: string
+          cofins: number
+          filial_cnpj: string
+          filial_cod_est: string
+          filial_id: string
+          filial_nome: string
+          icms: number
+          is_simples: boolean
+          mes_ano: string
+          pis: number
+          quantidade_docs: number
+          tipo_operacao: string
+          tipo_servico: string
+          valor: number
+        }[]
+      }
       get_mv_fretes_aggregated: {
         Args: never
         Returns: {
@@ -876,6 +895,24 @@ export type Database = {
           icms: number
           mes_ano: string
           pis: number
+          tipo: string
+          valor: number
+        }[]
+      }
+      get_mv_fretes_detailed: {
+        Args: { p_is_simples?: boolean }
+        Returns: {
+          cnpj_transportadora: string
+          cofins: number
+          filial_cnpj: string
+          filial_cod_est: string
+          filial_id: string
+          filial_nome: string
+          icms: number
+          is_simples: boolean
+          mes_ano: string
+          pis: number
+          quantidade_docs: number
           tipo: string
           valor: number
         }[]
