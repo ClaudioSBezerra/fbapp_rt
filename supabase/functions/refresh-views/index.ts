@@ -8,10 +8,25 @@ const corsHeaders = {
 interface RefreshResult {
   success: boolean;
   views_refreshed: string[];
+  views_failed: string[];
   duration_ms: number;
   error?: string;
   details?: string;
 }
+
+// Lista de todas as views materializadas para atualizar
+const MATERIALIZED_VIEWS = [
+  'extensions.mv_mercadorias_aggregated',
+  'extensions.mv_fretes_aggregated',
+  'extensions.mv_energia_agua_aggregated',
+  'extensions.mv_servicos_aggregated',
+  'extensions.mv_mercadorias_participante',
+  'extensions.mv_dashboard_stats',
+  'extensions.mv_uso_consumo_aggregated',
+  'extensions.mv_uso_consumo_detailed',
+  'extensions.mv_fretes_detailed',
+  'extensions.mv_energia_agua_detailed',
+];
 
 Deno.serve(async (req) => {
   // Handle CORS preflight
@@ -21,6 +36,7 @@ Deno.serve(async (req) => {
 
   const startTime = Date.now();
   const viewsRefreshed: string[] = [];
+  const viewsFailed: string[] = [];
   
   try {
     // Get Supabase client with service role for admin operations
@@ -32,86 +48,49 @@ Deno.serve(async (req) => {
     });
 
     console.log("[refresh-views] Starting materialized views refresh...");
+    console.log(`[refresh-views] Total views to refresh: ${MATERIALIZED_VIEWS.length}`);
 
-    // Try to acquire advisory lock to prevent concurrent refreshes
-    // Lock ID 999888777 is arbitrary but should be unique for this operation
-    const { data: lockAcquired, error: lockError } = await supabase.rpc('pg_try_advisory_lock', {
-      key: 999888777
-    });
-
-    // Note: pg_try_advisory_lock might not be exposed via RPC, so we handle that case
-    if (lockError) {
-      console.log("[refresh-views] Advisory lock not available via RPC, proceeding without lock check:", lockError.message);
-    } else if (!lockAcquired) {
-      console.log("[refresh-views] Another refresh is already in progress");
-      return new Response(
-        JSON.stringify({
-          success: false,
-          views_refreshed: [],
-          duration_ms: Date.now() - startTime,
-          error: "Outra atualização já está em andamento. Aguarde alguns segundos.",
-        } as RefreshResult),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 409 }
-      );
-    }
-
-    // Call the refresh function - this uses non-concurrent refresh which is RPC-compatible
-    console.log("[refresh-views] Calling refresh_materialized_views RPC...");
-    const { error: refreshError } = await supabase.rpc('refresh_materialized_views');
-
-    if (refreshError) {
-      console.error("[refresh-views] Refresh failed:", refreshError);
+    // Refresh each view individually using exec_sql with longer timeout
+    for (const view of MATERIALIZED_VIEWS) {
+      const viewStartTime = Date.now();
+      console.log(`[refresh-views] Refreshing ${view}...`);
       
-      // Release lock if we acquired it
-      if (lockAcquired) {
-        try {
-          await supabase.rpc('pg_advisory_unlock', { key: 999888777 });
-        } catch (_) {
-          // Ignore unlock errors
-        }
-      }
-
-      return new Response(
-        JSON.stringify({
-          success: false,
-          views_refreshed: [],
-          duration_ms: Date.now() - startTime,
-          error: "Falha ao atualizar as views.",
-          details: refreshError.message,
-        } as RefreshResult),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
-      );
-    }
-
-    // All views refreshed successfully
-    viewsRefreshed.push(
-      "mv_mercadorias_aggregated",
-      "mv_fretes_aggregated", 
-      "mv_energia_agua_aggregated",
-      "mv_servicos_aggregated",
-      "mv_mercadorias_participante",
-      "mv_dashboard_stats"
-    );
-
-    // Release lock if we acquired it
-    if (lockAcquired) {
-      try {
-        await supabase.rpc('pg_advisory_unlock', { key: 999888777 });
-      } catch (_) {
-        // Ignore unlock errors
+      const { error } = await supabase.rpc('exec_sql', {
+        sql: `REFRESH MATERIALIZED VIEW ${view}`
+      });
+      
+      const viewDuration = Date.now() - viewStartTime;
+      
+      if (error) {
+        console.error(`[refresh-views] Failed to refresh ${view} (${viewDuration}ms):`, error.message);
+        viewsFailed.push(view.replace('extensions.', ''));
+      } else {
+        console.log(`[refresh-views] Successfully refreshed ${view} (${viewDuration}ms)`);
+        viewsRefreshed.push(view.replace('extensions.', ''));
       }
     }
 
     const duration = Date.now() - startTime;
-    console.log(`[refresh-views] Completed successfully in ${duration}ms`);
+    const success = viewsFailed.length === 0;
+    
+    console.log(`[refresh-views] Completed in ${duration}ms. Success: ${viewsRefreshed.length}/${MATERIALIZED_VIEWS.length}`);
+    
+    if (viewsFailed.length > 0) {
+      console.warn(`[refresh-views] Failed views: ${viewsFailed.join(', ')}`);
+    }
 
     return new Response(
       JSON.stringify({
-        success: true,
+        success,
         views_refreshed: viewsRefreshed,
+        views_failed: viewsFailed,
         duration_ms: duration,
+        error: success ? undefined : `${viewsFailed.length} views falharam ao atualizar`,
       } as RefreshResult),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { 
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: success ? 200 : 207 // 207 Multi-Status for partial success
+      }
     );
 
   } catch (err: any) {
@@ -121,6 +100,7 @@ Deno.serve(async (req) => {
       JSON.stringify({
         success: false,
         views_refreshed: viewsRefreshed,
+        views_failed: viewsFailed,
         duration_ms: Date.now() - startTime,
         error: "Erro inesperado ao atualizar views.",
         details: err.message,
