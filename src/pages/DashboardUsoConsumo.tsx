@@ -1,13 +1,14 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts';
-import { Loader2, TrendingDown, TrendingUp, AlertCircle, RefreshCw, Settings, Package, Wrench } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
+import { Loader2, TrendingDown, TrendingUp, AlertCircle, RefreshCw, Settings, Package, Wrench, Building2 } from 'lucide-react';
 import { formatFilialDisplayFormatted } from '@/lib/formatFilial';
+import { ChartContainer, ChartTooltipContent } from '@/components/ui/chart';
 
 interface Aliquota {
   ano: number;
@@ -45,6 +46,27 @@ const formatCurrency = (value: number) =>
 const formatCompact = (value: number) =>
   new Intl.NumberFormat('pt-BR', { notation: 'compact', compactDisplay: 'short' }).format(value);
 
+const chartConfig = {
+  valor: { label: 'Valor Total', color: 'hsl(220, 70%, 50%)' },
+  impostos: { label: 'Total Impostos', color: 'hsl(142, 76%, 36%)' },
+  simples: { label: 'Simples Nacional', color: 'hsl(142, 76%, 36%)' },
+  normal: { label: 'Regime Normal', color: 'hsl(220, 70%, 50%)' },
+};
+
+const CORES_REGIME = {
+  simples: 'hsl(142, 76%, 36%)',
+  normal: 'hsl(220, 70%, 50%)',
+};
+
+interface SimplesNacionalData {
+  is_simples: boolean;
+  valor: number;
+  icms: number;
+  pis: number;
+  cofins: number;
+  quantidade_docs: number;
+}
+
 export default function DashboardUsoConsumo() {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<AggregatedRow[]>([]);
@@ -55,6 +77,7 @@ export default function DashboardUsoConsumo() {
   const [filialSelecionada, setFilialSelecionada] = useState<string>('todas');
   const [anoProjecao, setAnoProjecao] = useState<number>(2027);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [dadosSimplesNacional, setDadosSimplesNacional] = useState<SimplesNacionalData[]>([]);
 
   // Carregar dados iniciais
   useEffect(() => {
@@ -107,6 +130,21 @@ export default function DashboardUsoConsumo() {
 
     fetchData();
   }, []);
+
+  // Carregar dados por Simples Nacional quando filtros mudam
+  useEffect(() => {
+    const fetchSimplesData = async () => {
+      const { data } = await supabase.rpc('get_mv_uso_consumo_by_simples' as any, {
+        p_filial_id: filialSelecionada === 'todas' ? null : filialSelecionada,
+        p_mes_ano: periodoSelecionado || null,
+      });
+      setDadosSimplesNacional(data || []);
+    };
+    
+    if (periodoSelecionado) {
+      fetchSimplesData();
+    }
+  }, [periodoSelecionado, filialSelecionada]);
 
   // Filtrar dados pelo período e filial
   const dadosFiltrados = useMemo(() => {
@@ -202,6 +240,39 @@ export default function DashboardUsoConsumo() {
       pisCofins: totais.usoConsumo.pis + totais.usoConsumo.cofins,
     },
   ], [totais]);
+
+  // Dados para gráfico por regime tributário (Simples Nacional vs Normal)
+  const dadosPorSimples = useMemo(() => {
+    const simples = dadosSimplesNacional.find(d => d.is_simples === true);
+    const normal = dadosSimplesNacional.find(d => d.is_simples === false);
+    
+    return [
+      { 
+        name: 'Simples Nacional', 
+        valor: simples?.valor || 0, 
+        impostos: (simples?.icms || 0) + (simples?.pis || 0) + (simples?.cofins || 0),
+        registros: simples?.quantidade_docs || 0 
+      },
+      { 
+        name: 'Regime Normal', 
+        valor: normal?.valor || 0, 
+        impostos: (normal?.icms || 0) + (normal?.pis || 0) + (normal?.cofins || 0),
+        registros: normal?.quantidade_docs || 0 
+      },
+    ];
+  }, [dadosSimplesNacional]);
+
+  // Dados para gráfico de pizza
+  const dadosPizza = useMemo(() => {
+    const totalValor = dadosPorSimples.reduce((acc, item) => acc + item.valor, 0);
+    
+    return dadosPorSimples.map((item, index) => ({
+      name: item.name,
+      value: item.valor,
+      percent: totalValor > 0 ? (item.valor / totalValor) * 100 : 0,
+      fill: index === 0 ? CORES_REGIME.simples : CORES_REGIME.normal,
+    }));
+  }, [dadosPorSimples]);
 
   if (loading && !periodoSelecionado) {
     return (
@@ -497,6 +568,96 @@ export default function DashboardUsoConsumo() {
           </ResponsiveContainer>
         </CardContent>
       </Card>
+
+      {/* Gráficos por Regime Tributário */}
+      <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
+        {/* Gráfico de Barras - Regime Tributário */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base font-semibold flex items-center gap-2">
+              <Building2 className="h-5 w-5" />
+              Comparativo por Regime Tributário
+            </CardTitle>
+            <CardDescription>
+              Valores e impostos absolutos
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ChartContainer config={chartConfig} className="h-[280px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={dadosPorSimples} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                  <YAxis tickFormatter={formatCompact} tick={{ fontSize: 11 }} />
+                  <RechartsTooltip 
+                    content={<ChartTooltipContent formatter={(value) => formatCurrency(Number(value))} />}
+                  />
+                  <Legend />
+                  <Bar dataKey="valor" name="Valor Total" fill="hsl(220, 70%, 50%)" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="impostos" name="Total Impostos" fill="hsl(142, 76%, 36%)" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </ChartContainer>
+            <div className="flex justify-center gap-6 mt-4 text-xs text-muted-foreground">
+              {dadosPorSimples.map((item) => (
+                <div key={item.name} className="text-center">
+                  <span className="font-medium">{item.name}:</span> {item.registros} documentos
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Gráfico de Pizza - Proporção por Regime */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base font-semibold flex items-center gap-2">
+              <Building2 className="h-5 w-5" />
+              Proporção por Regime Tributário
+            </CardTitle>
+            <CardDescription>
+              Distribuição percentual do valor total
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ChartContainer config={chartConfig} className="h-[280px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={dadosPizza}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={100}
+                    paddingAngle={2}
+                    dataKey="value"
+                    label={({ percent }) => `${percent.toFixed(1)}%`}
+                    labelLine={false}
+                  >
+                    {dadosPizza.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.fill} />
+                    ))}
+                  </Pie>
+                  <RechartsTooltip 
+                    content={<ChartTooltipContent formatter={(value) => formatCurrency(Number(value))} />}
+                  />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            </ChartContainer>
+            <div className="flex justify-center gap-6 mt-4">
+              {dadosPizza.map((item) => (
+                <div key={item.name} className="text-center">
+                  <div className="w-3 h-3 rounded-full mx-auto mb-1" style={{ backgroundColor: item.fill }} />
+                  <span className="text-xs font-medium">{item.name}</span>
+                  <div className="text-lg font-bold">{item.percent.toFixed(1)}%</div>
+                  <span className="text-xs text-muted-foreground">{formatCurrency(item.value)}</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

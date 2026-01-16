@@ -964,6 +964,17 @@ export type Database = {
           valor: number
         }[]
       }
+      get_mv_uso_consumo_by_simples: {
+        Args: { p_filial_id?: string; p_mes_ano?: string }
+        Returns: {
+          cofins: number
+          icms: number
+          is_simples: boolean
+          pis: number
+          quantidade_docs: number
+          valor: number
+        }[]
+      }
       get_mv_uso_consumo_detailed:
         | {
             Args: never
