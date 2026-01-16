@@ -14,7 +14,7 @@ import { formatFilialDisplayFormatted, formatDocumento } from '@/lib/formatFilia
 import { exportToExcel } from '@/lib/exportToExcel';
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
 import { ChartContainer, ChartTooltipContent } from '@/components/ui/chart';
 
 interface Aliquota {
@@ -74,6 +74,13 @@ const formatDate = (dateStr: string) => {
 const chartConfig = {
   valor: { label: 'Valor Total', color: 'hsl(220, 70%, 50%)' },
   impostos: { label: 'Total Impostos', color: 'hsl(142, 76%, 36%)' },
+  simples: { label: 'Simples Nacional', color: 'hsl(142, 76%, 36%)' },
+  normal: { label: 'Regime Normal', color: 'hsl(220, 70%, 50%)' },
+};
+
+const CORES_REGIME = {
+  simples: 'hsl(142, 76%, 36%)',
+  normal: 'hsl(220, 70%, 50%)',
 };
 
 export default function UsoConsumoImobilizado() {
@@ -253,9 +260,21 @@ export default function UsoConsumoImobilizado() {
         valor: naoSimples.valor, 
         impostos: naoSimples.icms + naoSimples.pis + naoSimples.cofins,
         registros: naoSimples.count 
-      },
-    ];
-  }, [dadosFiltrados]);
+    },
+  ];
+}, [dadosFiltrados]);
+
+// Dados para gráfico de pizza
+const dadosPizza = useMemo(() => {
+  const totalValor = dadosPorSimples.reduce((acc, item) => acc + item.valor, 0);
+  
+  return dadosPorSimples.map((item, index) => ({
+    name: item.name,
+    value: item.valor,
+    percent: totalValor > 0 ? (item.valor / totalValor) * 100 : 0,
+    fill: index === 0 ? CORES_REGIME.simples : CORES_REGIME.normal,
+  }));
+}, [dadosPorSimples]);
 
   // Exportar para Excel
   const handleExport = () => {
@@ -594,61 +613,119 @@ export default function UsoConsumoImobilizado() {
         </Card>
       </div>
 
-      {/* Gráfico por Simples Nacional */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base font-semibold flex items-center gap-2">
-            <Building2 className="h-5 w-5" />
-            Comparativo por Regime Tributário
-          </CardTitle>
-          <CardDescription>
-            Valores e impostos - Simples Nacional vs Regime Normal
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ChartContainer config={chartConfig} className="h-[280px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={dadosPorSimples} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                <XAxis 
-                  dataKey="name" 
-                  className="text-xs"
-                  tick={{ fontSize: 12 }}
-                />
-                <YAxis 
-                  tickFormatter={formatCompact} 
-                  className="text-xs"
-                  tick={{ fontSize: 11 }}
-                />
-                <RechartsTooltip 
-                  content={<ChartTooltipContent formatter={(value) => formatCurrency(Number(value))} />}
-                />
-                <Legend />
-                <Bar 
-                  dataKey="valor" 
-                  name="Valor Total" 
-                  fill="hsl(220, 70%, 50%)" 
-                  radius={[4, 4, 0, 0]} 
-                />
-                <Bar 
-                  dataKey="impostos" 
-                  name="Total Impostos" 
-                  fill="hsl(142, 76%, 36%)" 
-                  radius={[4, 4, 0, 0]} 
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </ChartContainer>
-          <div className="flex justify-center gap-6 mt-4 text-xs text-muted-foreground">
-            {dadosPorSimples.map((item, index) => (
-              <div key={item.name} className="text-center">
-                <span className="font-medium">{item.name}:</span>{' '}
-                <span>{item.registros} documentos</span>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+      {/* Gráficos por Regime Tributário */}
+      <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
+        {/* Gráfico de Barras */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base font-semibold flex items-center gap-2">
+              <Building2 className="h-5 w-5" />
+              Comparativo por Regime Tributário
+            </CardTitle>
+            <CardDescription>
+              Valores e impostos absolutos
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ChartContainer config={chartConfig} className="h-[280px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={dadosPorSimples} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis 
+                    dataKey="name" 
+                    className="text-xs"
+                    tick={{ fontSize: 12 }}
+                  />
+                  <YAxis 
+                    tickFormatter={formatCompact} 
+                    className="text-xs"
+                    tick={{ fontSize: 11 }}
+                  />
+                  <RechartsTooltip 
+                    content={<ChartTooltipContent formatter={(value) => formatCurrency(Number(value))} />}
+                  />
+                  <Legend />
+                  <Bar 
+                    dataKey="valor" 
+                    name="Valor Total" 
+                    fill="hsl(220, 70%, 50%)" 
+                    radius={[4, 4, 0, 0]} 
+                  />
+                  <Bar 
+                    dataKey="impostos" 
+                    name="Total Impostos" 
+                    fill="hsl(142, 76%, 36%)" 
+                    radius={[4, 4, 0, 0]} 
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </ChartContainer>
+            <div className="flex justify-center gap-6 mt-4 text-xs text-muted-foreground">
+              {dadosPorSimples.map((item) => (
+                <div key={item.name} className="text-center">
+                  <span className="font-medium">{item.name}:</span>{' '}
+                  <span>{item.registros} documentos</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Gráfico de Pizza */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base font-semibold flex items-center gap-2">
+              <Building2 className="h-5 w-5" />
+              Proporção por Regime Tributário
+            </CardTitle>
+            <CardDescription>
+              Distribuição percentual do valor total
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ChartContainer config={chartConfig} className="h-[280px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={dadosPizza}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={100}
+                    paddingAngle={2}
+                    dataKey="value"
+                    label={({ name, percent }) => `${percent.toFixed(1)}%`}
+                    labelLine={false}
+                  >
+                    {dadosPizza.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.fill} />
+                    ))}
+                  </Pie>
+                  <RechartsTooltip 
+                    content={<ChartTooltipContent formatter={(value) => formatCurrency(Number(value))} />}
+                  />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            </ChartContainer>
+            <div className="flex justify-center gap-6 mt-4">
+              {dadosPizza.map((item) => (
+                <div key={item.name} className="text-center">
+                  <div 
+                    className="w-3 h-3 rounded-full mx-auto mb-1" 
+                    style={{ backgroundColor: item.fill }}
+                  />
+                  <span className="text-xs font-medium">{item.name}</span>
+                  <div className="text-lg font-bold">{item.percent.toFixed(1)}%</div>
+                  <span className="text-xs text-muted-foreground">
+                    {formatCurrency(item.value)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Tabs com tabelas */}
       <Tabs defaultValue="imobilizado" className="space-y-4">
