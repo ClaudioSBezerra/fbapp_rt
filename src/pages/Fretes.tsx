@@ -5,7 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowDownRight, ArrowUpRight, Truck, Filter, Calendar, HelpCircle, Download } from 'lucide-react';
+import { ArrowDownRight, ArrowUpRight, Truck, HelpCircle, Download } from 'lucide-react';
 import { exportToExcel } from '@/lib/exportToExcel';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { supabase } from '@/integrations/supabase/client';
@@ -398,15 +398,11 @@ export default function Fretes() {
       {/* Filters */}
       <Card className="border-border/50">
         <CardContent className="pt-4">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-4 w-full">
-            <div className="flex items-center gap-2">
-              <Filter className="h-3.5 w-3.5 text-muted-foreground" />
-              <span className="text-xs font-medium">Filtros:</span>
-            </div>
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <Label className="text-xs whitespace-nowrap">Filial:</Label>
+          <div className="flex flex-wrap gap-3 items-end">
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Filial</Label>
               <Select value={filterFilial} onValueChange={setFilterFilial}>
-                <SelectTrigger className="w-full sm:w-[220px]">
+                <SelectTrigger className="w-[220px]">
                   <SelectValue placeholder="Todas" />
                 </SelectTrigger>
                 <SelectContent>
@@ -419,10 +415,11 @@ export default function Fretes() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <Label className="text-xs whitespace-nowrap">Mês/Ano:</Label>
+
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Período</Label>
               <Select value={filterMesAno} onValueChange={setFilterMesAno}>
-                <SelectTrigger className="w-full sm:w-[150px]">
+                <SelectTrigger className="w-[140px]">
                   <SelectValue placeholder="Todos" />
                 </SelectTrigger>
                 <SelectContent>
@@ -435,11 +432,11 @@ export default function Fretes() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <Calendar className="h-3.5 w-3.5 text-muted-foreground hidden sm:block" />
-              <Label className="text-xs whitespace-nowrap">Ano Projeção:</Label>
+
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Ano Projeção</Label>
               <Select value={anoProjecao.toString()} onValueChange={(v) => setAnoProjecao(parseInt(v))}>
-                <SelectTrigger className="w-full sm:w-[120px]">
+                <SelectTrigger className="w-[100px]">
                   <SelectValue placeholder="Ano" />
                 </SelectTrigger>
                 <SelectContent>
