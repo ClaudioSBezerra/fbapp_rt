@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Progress } from '@/components/ui/progress';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Loader2, CheckCircle, FileText, AlertCircle, Upload, Clock, XCircle, RefreshCw, AlertTriangle, FileWarning, Trash2 } from 'lucide-react';
+import { Loader2, CheckCircle, FileText, AlertCircle, Upload, Clock, XCircle, RefreshCw, AlertTriangle, FileWarning, Trash2, Shield } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useRole } from '@/hooks/useRole';
@@ -884,9 +884,15 @@ export default function ImportarEFDIcms() {
                     <div className="flex items-center gap-3">
                       <Badge className={statusInfo.color}>{statusInfo.label}</Badge>
                       {job.status === 'completed' && job.counts && (
-                        <span className="text-xs text-muted-foreground">
-                          {job.counts.uso_consumo_imobilizado || 0} registros
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">
+                            {job.counts.uso_consumo_imobilizado || 0} registros
+                          </span>
+                          <div className="flex items-center gap-1 text-xs text-positive">
+                            <Shield className="h-3 w-3" />
+                            <span>Arquivo excluído</span>
+                          </div>
+                        </div>
                       )}
                       {job.status === 'processing' && (
                         <span className="text-xs text-muted-foreground">
@@ -922,6 +928,14 @@ export default function ImportarEFDIcms() {
             <strong>Pré-requisito:</strong> Você deve importar o arquivo <em>EFD Contribuições</em> do mesmo período primeiro.
             Os dados do ICMS/IPI serão vinculados à mesma filial e período.
           </p>
+          <Alert className="border-positive/50 bg-positive/5 mt-4">
+            <Shield className="h-4 w-4 text-positive" />
+            <AlertTitle className="text-positive">Segurança da Informação</AlertTitle>
+            <AlertDescription className="text-muted-foreground">
+              Por questões de segurança, o arquivo TXT é automaticamente excluído 
+              do servidor após a importação ser concluída com sucesso.
+            </AlertDescription>
+          </Alert>
         </CardContent>
       </Card>
     </div>
