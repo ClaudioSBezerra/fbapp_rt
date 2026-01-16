@@ -240,9 +240,9 @@ export default function Configuracoes() {
   return (
     <div className="space-y-6 animate-fade-in">
       <div>
-        <h1 className="text-2xl font-bold text-foreground">Configurações</h1>
+        <h1 className="text-2xl font-bold text-foreground">Configurações e Parâmetros Gerais</h1>
         <p className="text-muted-foreground">
-          Gerencie suas preferências e dados da conta
+          Gerencie suas preferências, dados da conta e parâmetros do sistema
         </p>
       </div>
 
