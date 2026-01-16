@@ -10,6 +10,7 @@ import { useRole } from '@/hooks/useRole';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Settings, User, Shield, Building2, Users, Save, Loader2, Lock, Eye, EyeOff } from 'lucide-react';
+import { SimplesNacionalImporter } from '@/components/SimplesNacionalImporter';
 
 interface UserEmpresa {
   user_id: string;
@@ -374,6 +375,9 @@ export default function Configuracoes() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Admin: Simples Nacional Importer */}
+      {isAdmin && <SimplesNacionalImporter />}
 
       {/* Admin: User-Empresa Management */}
       {isAdmin && (

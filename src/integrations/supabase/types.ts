@@ -546,6 +546,41 @@ export type Database = {
         }
         Relationships: []
       }
+      simples_nacional: {
+        Row: {
+          cnpj: string
+          created_at: string
+          id: string
+          is_simples: boolean
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          cnpj: string
+          created_at?: string
+          id?: string
+          is_simples?: boolean
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          cnpj?: string
+          created_at?: string
+          id?: string
+          is_simples?: boolean
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "simples_nacional_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tenants: {
         Row: {
           created_at: string
@@ -738,29 +773,55 @@ export type Database = {
           mes_ano: string
         }[]
       }
-      get_mercadorias_participante_page: {
-        Args: {
-          p_limit?: number
-          p_mes_ano?: string
-          p_offset?: number
-          p_participante?: string
-          p_tipo?: string
-        }
-        Returns: {
-          cod_part: string
-          cofins: number
-          filial_cnpj: string
-          filial_cod_est: string
-          filial_id: string
-          icms: number
-          mes_ano: string
-          participante_cnpj: string
-          participante_nome: string
-          pis: number
-          tipo: string
-          valor: number
-        }[]
-      }
+      get_mercadorias_participante_page:
+        | {
+            Args: {
+              p_limit?: number
+              p_mes_ano?: string
+              p_offset?: number
+              p_participante?: string
+              p_tipo?: string
+            }
+            Returns: {
+              cod_part: string
+              cofins: number
+              filial_cnpj: string
+              filial_cod_est: string
+              filial_id: string
+              icms: number
+              mes_ano: string
+              participante_cnpj: string
+              participante_nome: string
+              pis: number
+              tipo: string
+              valor: number
+            }[]
+          }
+        | {
+            Args: {
+              p_is_simples?: boolean
+              p_limit?: number
+              p_mes_ano?: string
+              p_offset?: number
+              p_participante?: string
+              p_tipo?: string
+            }
+            Returns: {
+              cod_part: string
+              cofins: number
+              filial_cnpj: string
+              filial_cod_est: string
+              filial_id: string
+              icms: number
+              is_simples: boolean
+              mes_ano: string
+              participante_cnpj: string
+              participante_nome: string
+              pis: number
+              tipo: string
+              valor: number
+            }[]
+          }
       get_mercadorias_participante_totals: {
         Args: { p_mes_ano?: string; p_participante?: string }
         Returns: {
@@ -866,27 +927,50 @@ export type Database = {
           valor: number
         }[]
       }
-      get_mv_uso_consumo_detailed: {
-        Args: never
-        Returns: {
-          cfop: string
-          cod_part: string
-          cofins: number
-          filial_cnpj: string
-          filial_cod_est: string
-          filial_id: string
-          filial_nome: string
-          icms: number
-          mes_ano: string
-          participante_doc: string
-          participante_nome: string
-          pis: number
-          quantidade_docs: number
-          row_id: string
-          tipo_operacao: string
-          valor: number
-        }[]
-      }
+      get_mv_uso_consumo_detailed:
+        | {
+            Args: never
+            Returns: {
+              cfop: string
+              cod_part: string
+              cofins: number
+              filial_cnpj: string
+              filial_cod_est: string
+              filial_id: string
+              filial_nome: string
+              icms: number
+              mes_ano: string
+              participante_doc: string
+              participante_nome: string
+              pis: number
+              quantidade_docs: number
+              row_id: string
+              tipo_operacao: string
+              valor: number
+            }[]
+          }
+        | {
+            Args: { p_is_simples?: boolean }
+            Returns: {
+              cfop: string
+              cod_part: string
+              cofins: number
+              filial_cnpj: string
+              filial_cod_est: string
+              filial_id: string
+              filial_nome: string
+              icms: number
+              is_simples: boolean
+              mes_ano: string
+              participante_doc: string
+              participante_nome: string
+              pis: number
+              quantidade_docs: number
+              row_id: string
+              tipo_operacao: string
+              valor: number
+            }[]
+          }
       has_empresa_access: {
         Args: { _empresa_id: string; _user_id: string }
         Returns: boolean
