@@ -12,7 +12,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useRole } from '@/hooks/useRole';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Settings, User, Shield, Building2, Users, Save, Loader2, Lock, Eye, EyeOff, Trash2, AlertTriangle } from 'lucide-react';
+import { Settings, User, Shield, Building2, Users, Save, Loader2, Lock, Eye, EyeOff, Trash2, AlertTriangle, UserCog, ArrowUpCircle, ArrowDownCircle } from 'lucide-react';
 import { SimplesNacionalImporter } from '@/components/SimplesNacionalImporter';
 
 interface UserEmpresa {
@@ -65,6 +65,12 @@ export default function Configuracoes() {
   const [clearEmpresaDialogOpen, setClearEmpresaDialogOpen] = useState(false);
   const [clearGrupoDialogOpen, setClearGrupoDialogOpen] = useState(false);
   const [confirmationText, setConfirmationText] = useState('');
+
+  // Role management state
+  const [promoteDialogOpen, setPromoteDialogOpen] = useState(false);
+  const [demoteDialogOpen, setDemoteDialogOpen] = useState(false);
+  const [selectedUserForRole, setSelectedUserForRole] = useState<UserProfile | null>(null);
+  const [isUpdatingRole, setIsUpdatingRole] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
 
   const handleChangePassword = async (e: React.FormEvent) => {
@@ -341,6 +347,64 @@ export default function Configuracoes() {
       setClearGrupoDialogOpen(false);
       setConfirmationText('');
       setSelectedGrupoForClear('');
+  };
+
+  const handlePromoteToAdmin = async () => {
+    if (!selectedUserForRole) return;
+
+    setIsUpdatingRole(true);
+    try {
+      // Upsert will insert if not exists or update if exists
+      const { error } = await supabase
+        .from('user_roles')
+        .upsert(
+          { user_id: selectedUserForRole.id, role: 'admin' as const },
+          { onConflict: 'user_id' }
+        );
+
+      if (error) throw error;
+
+      // Update local state
+      setUsers(prev => prev.map(u => 
+        u.id === selectedUserForRole.id ? { ...u, role: 'admin' } : u
+      ));
+
+      toast.success(`${selectedUserForRole.full_name || selectedUserForRole.email} foi promovido a Administrador`);
+    } catch (error: any) {
+      console.error('Error promoting user:', error);
+      toast.error('Erro ao promover usuário: ' + (error.message || 'Erro desconhecido'));
+    } finally {
+      setIsUpdatingRole(false);
+      setPromoteDialogOpen(false);
+      setSelectedUserForRole(null);
+    }
+  };
+
+  const handleDemoteToUser = async () => {
+    if (!selectedUserForRole) return;
+
+    setIsUpdatingRole(true);
+    try {
+      const { error } = await supabase
+        .from('user_roles')
+        .update({ role: 'user' as const })
+        .eq('user_id', selectedUserForRole.id);
+
+      if (error) throw error;
+
+      // Update local state
+      setUsers(prev => prev.map(u => 
+        u.id === selectedUserForRole.id ? { ...u, role: 'user' } : u
+      ));
+
+      toast.success(`${selectedUserForRole.full_name || selectedUserForRole.email} foi rebaixado para Usuário`);
+    } catch (error: any) {
+      console.error('Error demoting user:', error);
+      toast.error('Erro ao rebaixar usuário: ' + (error.message || 'Erro desconhecido'));
+    } finally {
+      setIsUpdatingRole(false);
+      setDemoteDialogOpen(false);
+      setSelectedUserForRole(null);
     }
   };
 
@@ -697,6 +761,210 @@ export default function Configuracoes() {
           </CardContent>
         </Card>
       )}
+
+      {/* Admin: Role Management */}
+      {isAdmin && (
+        <Card className="border-border/50">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <UserCog className="h-5 w-5 text-muted-foreground" />
+              <div>
+                <CardTitle>Gerenciamento de Administradores</CardTitle>
+                <CardDescription>
+                  Promova ou rebaixe usuários do seu ambiente. Administradores têm acesso completo a todas as funcionalidades.
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <div className="space-y-4">
+                <Skeleton className="h-16 w-full" />
+                <Skeleton className="h-16 w-full" />
+              </div>
+            ) : users.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <Users className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                <p>Nenhum outro usuário no ambiente.</p>
+                <p className="text-sm">Quando outros usuários entrarem, você poderá gerenciar suas permissões aqui.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {users.map((u) => (
+                  <div 
+                    key={u.id} 
+                    className="flex items-center justify-between p-4 border border-border/50 rounded-lg hover:bg-muted/30 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`p-2 rounded-full ${u.role === 'admin' ? 'bg-primary/10' : 'bg-muted'}`}>
+                        <User className={`h-5 w-5 ${u.role === 'admin' ? 'text-primary' : 'text-muted-foreground'}`} />
+                      </div>
+                      <div>
+                        <p className="font-medium">{u.full_name || u.email}</p>
+                        <p className="text-sm text-muted-foreground">{u.email}</p>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-3">
+                      <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
+                        u.role === 'admin' 
+                          ? 'bg-primary/10 text-primary border border-primary/20' 
+                          : 'bg-muted text-muted-foreground'
+                      }`}>
+                        {u.role === 'admin' ? 'Administrador' : u.role === 'viewer' ? 'Visualizador' : 'Usuário'}
+                      </span>
+                      
+                      {u.role === 'admin' ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedUserForRole(u);
+                            setDemoteDialogOpen(true);
+                          }}
+                          className="text-orange-600 hover:text-orange-700 hover:bg-orange-50 border-orange-200"
+                        >
+                          <ArrowDownCircle className="h-4 w-4 mr-1" />
+                          Rebaixar
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedUserForRole(u);
+                            setPromoteDialogOpen(true);
+                          }}
+                          className="text-green-600 hover:text-green-700 hover:bg-green-50 border-green-200"
+                        >
+                          <ArrowUpCircle className="h-4 w-4 mr-1" />
+                          Promover
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            <Alert variant="default" className="mt-4 border-muted bg-muted/50">
+              <AlertDescription className="text-sm">
+                <strong>Administradores</strong> têm acesso total: visualizam todas as empresas, gerenciam usuários, 
+                importam dados e podem executar ações de limpeza.
+              </AlertDescription>
+            </Alert>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Promote Dialog */}
+      <Dialog open={promoteDialogOpen} onOpenChange={setPromoteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ArrowUpCircle className="h-5 w-5 text-green-600" />
+              Promover a Administrador
+            </DialogTitle>
+            <DialogDescription>
+              Você está prestes a promover <strong>{selectedUserForRole?.full_name || selectedUserForRole?.email}</strong> para Administrador.
+              <br /><br />
+              Esta ação dará ao usuário <strong>acesso completo</strong> a todas as empresas e funcionalidades do sistema, incluindo:
+              <ul className="list-disc list-inside mt-2 space-y-1">
+                <li>Visualização de todas as empresas do ambiente</li>
+                <li>Gerenciamento de usuários e permissões</li>
+                <li>Importação e exclusão de dados</li>
+                <li>Configurações administrativas</li>
+              </ul>
+            </DialogDescription>
+          </DialogHeader>
+          
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setPromoteDialogOpen(false);
+                setSelectedUserForRole(null);
+              }}
+              disabled={isUpdatingRole}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handlePromoteToAdmin}
+              disabled={isUpdatingRole}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              {isUpdatingRole ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Promovendo...
+                </>
+              ) : (
+                <>
+                  <ArrowUpCircle className="h-4 w-4 mr-2" />
+                  Confirmar Promoção
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Demote Dialog */}
+      <Dialog open={demoteDialogOpen} onOpenChange={setDemoteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-orange-600">
+              <ArrowDownCircle className="h-5 w-5" />
+              Rebaixar para Usuário
+            </DialogTitle>
+            <DialogDescription>
+              Você está prestes a rebaixar <strong>{selectedUserForRole?.full_name || selectedUserForRole?.email}</strong> para Usuário comum.
+              <br /><br />
+              O usuário <strong>perderá</strong>:
+              <ul className="list-disc list-inside mt-2 space-y-1">
+                <li>Acesso administrativo ao sistema</li>
+                <li>Visualização automática de todas as empresas</li>
+                <li>Capacidade de gerenciar outros usuários</li>
+                <li>Acesso a funcionalidades de importação e limpeza</li>
+              </ul>
+              <br />
+              O usuário precisará ter empresas vinculadas manualmente para continuar acessando dados.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDemoteDialogOpen(false);
+                setSelectedUserForRole(null);
+              }}
+              disabled={isUpdatingRole}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleDemoteToUser}
+              disabled={isUpdatingRole}
+              variant="destructive"
+              className="bg-orange-600 hover:bg-orange-700"
+            >
+              {isUpdatingRole ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Rebaixando...
+                </>
+              ) : (
+                <>
+                  <ArrowDownCircle className="h-4 w-4 mr-2" />
+                  Confirmar Rebaixamento
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Admin: User-Empresa Management */}
       {isAdmin && (
