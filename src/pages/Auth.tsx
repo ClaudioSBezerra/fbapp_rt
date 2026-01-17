@@ -55,8 +55,8 @@ export default function Auth() {
 
     setIsCheckingKeyword(true);
     try {
-      const { data, error } = await supabase.functions.invoke('verify-security-keyword?action=check', {
-        body: { email }
+      const { data, error } = await supabase.functions.invoke('verify-security-keyword', {
+        body: { action: 'check', email }
       });
 
       if (error) {
@@ -138,8 +138,8 @@ export default function Auth() {
 
     setIsLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('verify-security-keyword?action=verify', {
-        body: { email, keyword: combinedKeyword }
+      const { data, error } = await supabase.functions.invoke('verify-security-keyword', {
+        body: { action: 'verify', email, keyword: combinedKeyword }
       });
 
       if (error || data?.error) {
@@ -177,8 +177,8 @@ export default function Auth() {
 
     setIsLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('verify-security-keyword?action=reset', {
-        body: { token: resetToken, newPassword: password }
+      const { data, error } = await supabase.functions.invoke('verify-security-keyword', {
+        body: { action: 'reset', token: resetToken, newPassword: password }
       });
 
       if (error || data?.error) {
@@ -300,8 +300,8 @@ export default function Auth() {
       if (!pendingKeyword) return;
 
       try {
-        const { error } = await supabase.functions.invoke('verify-security-keyword?action=set', {
-          body: { userId: user.id, keyword: pendingKeyword }
+        const { error } = await supabase.functions.invoke('verify-security-keyword', {
+          body: { action: 'set', userId: user.id, keyword: pendingKeyword }
         });
 
         if (!error) {
