@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
-import { TrendingUp, Mail, Lock, User, ArrowLeft, Key, Shield, CheckCircle } from 'lucide-react';
+import { TrendingUp, Mail, Lock, User, ArrowLeft, Key, Shield, CheckCircle, MapPin, Calendar } from 'lucide-react';
 
 type AuthMode = 'login' | 'signup' | 'forgot' | 'forgot-keyword' | 'reset-keyword';
 
@@ -18,6 +18,8 @@ export default function Auth() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [securityKeyword, setSecurityKeyword] = useState('');
+  const [birthCity, setBirthCity] = useState('');
+  const [birthDate, setBirthDate] = useState('');
   const [resetToken, setResetToken] = useState('');
   const [hasKeyword, setHasKeyword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -78,30 +80,80 @@ export default function Auth() {
     }
   };
 
+  // Format date input as DD/MM/YYYY
+  const handleBirthDateChange = (value: string) => {
+    // Remove non-numeric characters
+    const numbers = value.replace(/\D/g, '');
+    
+    // Apply mask DD/MM/YYYY
+    let formatted = '';
+    if (numbers.length > 0) {
+      formatted = numbers.slice(0, 2);
+      if (numbers.length > 2) {
+        formatted += '/' + numbers.slice(2, 4);
+      }
+      if (numbers.length > 4) {
+        formatted += '/' + numbers.slice(4, 8);
+      }
+    }
+    
+    setBirthDate(formatted);
+  };
+
+  // Validate date format DD/MM/YYYY
+  const isValidDate = (dateStr: string): boolean => {
+    if (!/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) return false;
+    
+    const [day, month, year] = dateStr.split('/').map(Number);
+    const date = new Date(year, month - 1, day);
+    
+    return date.getDate() === day && 
+           date.getMonth() === month - 1 && 
+           date.getFullYear() === year &&
+           year >= 1900 && year <= new Date().getFullYear();
+  };
+
+  // Combine city and date into security keyword
+  const getCombinedKeyword = (): string => {
+    return `${birthCity.toLowerCase().trim()}${birthDate}`;
+  };
+
   const handleVerifyKeyword = async () => {
-    if (!securityKeyword) {
-      toast.error('Digite sua palavra-chave de segurança');
+    if (!birthCity || !birthDate) {
+      toast.error('Preencha a cidade e a data de nascimento');
       return;
     }
+
+    if (birthCity.trim().length < 2) {
+      toast.error('Digite o nome da cidade corretamente');
+      return;
+    }
+
+    if (!isValidDate(birthDate)) {
+      toast.error('Digite uma data válida no formato DD/MM/AAAA');
+      return;
+    }
+
+    const combinedKeyword = getCombinedKeyword();
 
     setIsLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke('verify-security-keyword?action=verify', {
-        body: { email, keyword: securityKeyword }
+        body: { email, keyword: combinedKeyword }
       });
 
       if (error || data?.error) {
-        toast.error(data?.error || 'Palavra-chave incorreta');
+        toast.error(data?.error || 'Dados incorretos. Verifique a cidade e data de nascimento.');
         return;
       }
 
       if (data?.success && data?.token) {
         setResetToken(data.token);
         setMode('reset-keyword');
-        toast.success('Palavra-chave verificada! Defina sua nova senha.');
+        toast.success('Dados verificados! Defina sua nova senha.');
       }
     } catch (err: any) {
-      toast.error(err.message || 'Erro ao verificar palavra-chave');
+      toast.error(err.message || 'Erro ao verificar dados');
     } finally {
       setIsLoading(false);
     }
@@ -202,10 +254,18 @@ export default function Auth() {
           return;
         }
 
-        if (securityKeyword && securityKeyword.length < 4) {
-          toast.error('A palavra-chave deve ter pelo menos 4 caracteres');
-          setIsLoading(false);
-          return;
+        // Validate structured security keyword fields
+        if (birthCity || birthDate) {
+          if (!birthCity || birthCity.trim().length < 2) {
+            toast.error('Digite o nome da cidade onde nasceu');
+            setIsLoading(false);
+            return;
+          }
+          if (!birthDate || !isValidDate(birthDate)) {
+            toast.error('Digite uma data de nascimento válida (DD/MM/AAAA)');
+            setIsLoading(false);
+            return;
+          }
         }
 
         const { error } = await signUp(email, password, fullName);
@@ -216,11 +276,10 @@ export default function Auth() {
             toast.error(error.message);
           }
         } else {
-          // If user provided security keyword, save it
-          if (securityKeyword) {
-            // We need to wait for the user to be created and get their ID
-            // This will be handled after login since we can't get the user ID immediately
-            localStorage.setItem('pending_security_keyword', securityKeyword);
+          // If user provided security keyword fields, save combined keyword
+          if (birthCity && birthDate) {
+            const combinedKeyword = getCombinedKeyword();
+            localStorage.setItem('pending_security_keyword', combinedKeyword);
           }
           toast.success('Conta criada com sucesso!');
         }
@@ -302,6 +361,8 @@ export default function Auth() {
   const handleBackToLogin = () => {
     setMode('login');
     setSecurityKeyword('');
+    setBirthCity('');
+    setBirthDate('');
     setResetToken('');
     setPassword('');
     setConfirmPassword('');
@@ -374,22 +435,40 @@ export default function Auth() {
               )}
 
               {mode === 'forgot-keyword' && (
-                <div className="space-y-2">
-                  <Label htmlFor="securityKeywordRecover">Palavra-chave de segurança</Label>
-                  <div className="relative">
-                    <Shield className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="securityKeywordRecover"
-                      type="password"
-                      placeholder="Digite sua palavra-chave"
-                      value={securityKeyword}
-                      onChange={(e) => setSecurityKeyword(e.target.value)}
-                      className="pl-10"
-                      required
-                    />
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="birthCityRecover">Cidade onde nasceu</Label>
+                    <div className="relative">
+                      <MapPin className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="birthCityRecover"
+                        type="text"
+                        placeholder="Ex: São Paulo"
+                        value={birthCity}
+                        onChange={(e) => setBirthCity(e.target.value)}
+                        className="pl-10"
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="birthDateRecover">Data de nascimento</Label>
+                    <div className="relative">
+                      <Calendar className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="birthDateRecover"
+                        type="text"
+                        placeholder="DD/MM/AAAA"
+                        value={birthDate}
+                        onChange={(e) => handleBirthDateChange(e.target.value)}
+                        className="pl-10"
+                        maxLength={10}
+                        required
+                      />
+                    </div>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Esta é a palavra-chave que você definiu ao criar sua conta.
+                    Digite os dados que você informou ao criar sua conta.
                   </p>
                 </div>
               )}
@@ -462,29 +541,44 @@ export default function Auth() {
               )}
 
               {mode === 'signup' && (
-                <div className="space-y-2">
-                  <Label htmlFor="securityKeyword">
-                    <span className="flex items-center gap-2">
-                      <Key className="h-4 w-4" />
-                      Palavra-chave de segurança
-                      <span className="text-xs text-muted-foreground">(opcional)</span>
-                    </span>
-                  </Label>
-                  <div className="relative">
-                    <Shield className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="securityKeyword"
-                      type="password"
-                      placeholder="Ex: nome do seu pet"
-                      value={securityKeyword}
-                      onChange={(e) => setSecurityKeyword(e.target.value)}
-                      className="pl-10"
-                    />
+                <div className="space-y-4 pt-2 border-t border-border/50">
+                  <div className="flex items-center gap-2">
+                    <Shield className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm font-medium">Recuperação de senha</span>
+                    <span className="text-xs text-muted-foreground">(opcional)</span>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Esta palavra será usada para recuperar sua senha caso você a esqueça. 
-                    Escolha algo que você não vá esquecer!
+                  <p className="text-xs text-muted-foreground -mt-2">
+                    Esses dados serão usados para recuperar sua senha caso você a esqueça.
                   </p>
+                  <div className="space-y-2">
+                    <Label htmlFor="birthCity">Cidade onde nasceu</Label>
+                    <div className="relative">
+                      <MapPin className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="birthCity"
+                        type="text"
+                        placeholder="Ex: São Paulo"
+                        value={birthCity}
+                        onChange={(e) => setBirthCity(e.target.value)}
+                        className="pl-10"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="birthDate">Data de nascimento</Label>
+                    <div className="relative">
+                      <Calendar className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="birthDate"
+                        type="text"
+                        placeholder="DD/MM/AAAA"
+                        value={birthDate}
+                        onChange={(e) => handleBirthDateChange(e.target.value)}
+                        className="pl-10"
+                        maxLength={10}
+                      />
+                    </div>
+                  </div>
                 </div>
               )}
             </CardContent>
@@ -521,6 +615,8 @@ export default function Auth() {
                     onClick={() => {
                       setMode(mode === 'login' ? 'signup' : 'login');
                       setSecurityKeyword('');
+                      setBirthCity('');
+                      setBirthDate('');
                     }}
                     className="text-primary hover:underline font-medium"
                   >
