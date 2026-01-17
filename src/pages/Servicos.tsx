@@ -139,7 +139,11 @@ const ServicosTable = ({ data, tipo, aliquotas, selectedYear }: ServicosTablePro
                 </TooltipTrigger>
                 <TooltipContent side="top" className="max-w-xs">
                   <p className="font-semibold mb-1">Fórmula:</p>
-                  <p className="font-mono text-xs">(ISS + PIS/COFINS) − (ISS Proj. + PIS/COFINS Proj. + IBS + CBS)</p>
+                  <p className="font-mono text-xs">(ISS Proj. + PIS/COFINS Proj. + IBS + CBS) − (ISS + PIS/COFINS)</p>
+                  <p className="text-muted-foreground text-xs mt-1">
+                    Diferença entre impostos projetados e atuais.<br/>
+                    <span className="text-green-600 dark:text-green-400">Negativo = Economia</span> | <span className="text-red-600 dark:text-red-400">Positivo = Aumento</span>
+                  </p>
                 </TooltipContent>
               </Tooltip>
             </TableHead>
@@ -195,8 +199,8 @@ const ServicosTable = ({ data, tipo, aliquotas, selectedYear }: ServicosTablePro
                 <TableCell className="text-right font-mono text-xs font-semibold bg-muted/30 py-1 px-2">{formatCurrency(totalImpostosPagar)}</TableCell>
                 <TableCell className="text-right py-1 px-2">
                   <Badge 
-                    variant={diferencaReal < 0 ? 'destructive' : 'default'}
-                    className={`text-xs ${diferencaReal >= 0 ? 'bg-positive text-positive-foreground' : ''}`}
+                    variant={diferencaReal > 0 ? 'destructive' : 'default'}
+                    className={`text-xs ${diferencaReal <= 0 ? 'bg-positive text-positive-foreground' : ''}`}
                   >
                     {diferencaReal >= 0 ? '+' : ''}{formatCurrency(diferencaReal)}
                   </Badge>
