@@ -6,10 +6,21 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Normalize keyword to avoid accent/spacing mismatches (e.g. "Goiânia" vs "Goiania")
+function normalizeKeyword(keyword: string): string {
+  return keyword
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/\s+/g, '')
+    .toLowerCase()
+    .trim();
+}
+
 // Simple hash function for keyword (using Web Crypto API)
 async function hashKeyword(keyword: string): Promise<string> {
   const encoder = new TextEncoder();
-  const data = encoder.encode(keyword.toLowerCase().trim());
+  const normalized = normalizeKeyword(keyword);
+  const data = encoder.encode(normalized);
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
@@ -42,7 +53,7 @@ serve(async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
     const action = url.searchParams.get("action") || body.action || "verify";
 
-    console.log("Action:", action, "Body:", JSON.stringify(body));
+    
 
     if (action === "set") {
       // Set security keyword for user
@@ -63,7 +74,7 @@ serve(async (req: Request): Promise<Response> => {
       }
 
       const keywordHash = await hashKeyword(keyword);
-      console.log("Setting keyword hash for user:", userId);
+      
 
       // Try to update first, if no rows affected, insert
       const { data: existingProfile } = await supabaseAdmin
@@ -171,7 +182,7 @@ serve(async (req: Request): Promise<Response> => {
         .single();
 
       if (profileError || !profile) {
-        console.log("Profile not found for email:", email);
+        
         return new Response(
           JSON.stringify({ error: "Email ou palavra-chave incorretos" }),
           { status: 401, headers: { "Content-Type": "application/json", ...corsHeaders } }
@@ -187,12 +198,9 @@ serve(async (req: Request): Promise<Response> => {
 
       // Verify keyword
       const providedHash = await hashKeyword(keyword);
-      console.log("Provided keyword:", keyword);
-      console.log("Provided hash:", providedHash);
-      console.log("Stored hash:", profile.security_keyword_hash);
       
       if (providedHash !== profile.security_keyword_hash) {
-        console.log("Keyword mismatch for user:", profile.id);
+        
         return new Response(
           JSON.stringify({ error: "Email ou palavra-chave incorretos" }),
           { status: 401, headers: { "Content-Type": "application/json", ...corsHeaders } }

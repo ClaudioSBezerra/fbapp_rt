@@ -113,9 +113,19 @@ export default function Auth() {
            year >= 1900 && year <= new Date().getFullYear();
   };
 
+  // Normalize keyword parts (remove accents + spaces) to avoid mismatch like "Goiânia" vs "Goiania"
+  const normalizeKeywordPart = (value: string): string => {
+    return value
+      .normalize('NFD')
+      .replace(/\p{Diacritic}/gu, '')
+      .replace(/\s+/g, '')
+      .toLowerCase()
+      .trim();
+  };
+
   // Combine city and date into security keyword
   const getCombinedKeyword = (): string => {
-    return `${birthCity.toLowerCase().trim()}${birthDate}`;
+    return `${normalizeKeywordPart(birthCity)}${birthDate.trim()}`;
   };
 
   const handleVerifyKeyword = async () => {
