@@ -53,17 +53,17 @@ export default function Auth() {
 
     setIsCheckingKeyword(true);
     try {
-      const { data, error } = await supabase.functions.invoke('verify-security-keyword', {
-        body: { email },
-        headers: { 'Content-Type': 'application/json' }
-      });
-
-      // Try with action parameter
-      const response = await supabase.functions.invoke('verify-security-keyword?action=check', {
+      const { data, error } = await supabase.functions.invoke('verify-security-keyword?action=check', {
         body: { email }
       });
 
-      if (response.data?.hasKeyword) {
+      if (error) {
+        console.error('Error checking keyword:', error);
+        setMode('forgot');
+        return;
+      }
+
+      if (data?.hasKeyword) {
         setHasKeyword(true);
         setMode('forgot-keyword');
       } else {
