@@ -480,12 +480,41 @@ export type Database = {
           },
         ]
       }
+      password_reset_tokens: {
+        Row: {
+          created_at: string
+          expires_at: string
+          id: string
+          token: string
+          used: boolean | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at: string
+          id?: string
+          token: string
+          used?: boolean | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          id?: string
+          token?: string
+          used?: boolean | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string
           email: string
           full_name: string | null
           id: string
+          phone_number: string | null
+          security_keyword_hash: string | null
           updated_at: string
         }
         Insert: {
@@ -493,6 +522,8 @@ export type Database = {
           email: string
           full_name?: string | null
           id: string
+          phone_number?: string | null
+          security_keyword_hash?: string | null
           updated_at?: string
         }
         Update: {
@@ -500,6 +531,8 @@ export type Database = {
           email?: string
           full_name?: string | null
           id?: string
+          phone_number?: string | null
+          security_keyword_hash?: string | null
           updated_at?: string
         }
         Relationships: []

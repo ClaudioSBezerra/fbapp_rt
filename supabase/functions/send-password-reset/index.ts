@@ -11,8 +11,8 @@ const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-// Domínio da aplicação
-const APP_URL = Deno.env.get("APP_URL") || "https://id-preview--bcf834fc-87e9-406a-a604-0175a90e2b80.lovable.app";
+// Domínio da aplicação - usar variável de ambiente ou fallback para preview
+const APP_URL = Deno.env.get("APP_URL") || "https://id-preview--3525ecda-3b58-4d38-9831-7d74a5209fe5.lovable.app";
 
 interface PasswordResetRequest {
   email: string;

@@ -77,11 +77,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const resetPassword = async (email: string) => {
-    const redirectUrl = `${window.location.origin}/reset-password`;
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: redirectUrl,
-    });
-    return { error: error as Error | null };
+    try {
+      const { data, error } = await supabase.functions.invoke('send-password-reset', {
+        body: { email }
+      });
+      
+      if (error) {
+        return { error: new Error(error.message || 'Erro ao enviar email de recuperação') };
+      }
+      
+      if (data?.error) {
+        return { error: new Error(data.error) };
+      }
+      
+      return { error: null };
+    } catch (err: any) {
+      return { error: new Error(err.message || 'Erro de conexão') };
+    }
   };
 
   const updatePassword = async (newPassword: string) => {
