@@ -6,16 +6,6 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-interface VerifyKeywordRequest {
-  email: string;
-  keyword: string;
-}
-
-interface SetKeywordRequest {
-  userId: string;
-  keyword: string;
-}
-
 // Simple hash function for keyword (using Web Crypto API)
 async function hashKeyword(keyword: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -45,12 +35,18 @@ serve(async (req: Request): Promise<Response> => {
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
+    // Parse body once
+    const body = await req.json();
+    
+    // Get action from URL query params OR from body
     const url = new URL(req.url);
-    const action = url.searchParams.get("action") || "verify";
+    const action = url.searchParams.get("action") || body.action || "verify";
+
+    console.log("Action:", action, "Body:", JSON.stringify(body));
 
     if (action === "set") {
       // Set security keyword for user
-      const { userId, keyword }: SetKeywordRequest = await req.json();
+      const { userId, keyword } = body;
 
       if (!userId || !keyword) {
         return new Response(
@@ -67,20 +63,60 @@ serve(async (req: Request): Promise<Response> => {
       }
 
       const keywordHash = await hashKeyword(keyword);
+      console.log("Setting keyword hash for user:", userId);
 
-      const { error: updateError } = await supabaseAdmin
+      // Try to update first, if no rows affected, insert
+      const { data: existingProfile } = await supabaseAdmin
         .from("profiles")
-        .update({ security_keyword_hash: keywordHash })
-        .eq("id", userId);
+        .select("id")
+        .eq("id", userId)
+        .single();
 
-      if (updateError) {
-        console.error("Error updating profile:", updateError);
-        return new Response(
-          JSON.stringify({ error: "Erro ao salvar palavra-chave" }),
-          { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
-        );
+      if (existingProfile) {
+        const { error: updateError } = await supabaseAdmin
+          .from("profiles")
+          .update({ security_keyword_hash: keywordHash })
+          .eq("id", userId);
+
+        if (updateError) {
+          console.error("Error updating profile:", updateError);
+          return new Response(
+            JSON.stringify({ error: "Erro ao salvar palavra-chave" }),
+            { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
+          );
+        }
+      } else {
+        // Profile doesn't exist, need to create it
+        // Get user email from auth.users
+        const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.getUserById(userId);
+        
+        if (authError || !authUser?.user?.email) {
+          console.error("Error fetching auth user:", authError);
+          return new Response(
+            JSON.stringify({ error: "Usuário não encontrado" }),
+            { status: 404, headers: { "Content-Type": "application/json", ...corsHeaders } }
+          );
+        }
+
+        const { error: insertError } = await supabaseAdmin
+          .from("profiles")
+          .insert({ 
+            id: userId, 
+            email: authUser.user.email,
+            security_keyword_hash: keywordHash,
+            full_name: authUser.user.user_metadata?.full_name || null
+          });
+
+        if (insertError) {
+          console.error("Error inserting profile:", insertError);
+          return new Response(
+            JSON.stringify({ error: "Erro ao criar perfil" }),
+            { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
+          );
+        }
       }
 
+      console.log("Keyword saved successfully for user:", userId);
       return new Response(
         JSON.stringify({ success: true }),
         { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
@@ -88,7 +124,7 @@ serve(async (req: Request): Promise<Response> => {
 
     } else if (action === "check") {
       // Check if user has security keyword configured
-      const { email } = await req.json();
+      const { email } = body;
 
       if (!email) {
         return new Response(
@@ -118,7 +154,7 @@ serve(async (req: Request): Promise<Response> => {
 
     } else if (action === "verify") {
       // Verify keyword and generate reset token
-      const { email, keyword }: VerifyKeywordRequest = await req.json();
+      const { email, keyword } = body;
 
       if (!email || !keyword) {
         return new Response(
@@ -151,6 +187,10 @@ serve(async (req: Request): Promise<Response> => {
 
       // Verify keyword
       const providedHash = await hashKeyword(keyword);
+      console.log("Provided keyword:", keyword);
+      console.log("Provided hash:", providedHash);
+      console.log("Stored hash:", profile.security_keyword_hash);
+      
       if (providedHash !== profile.security_keyword_hash) {
         console.log("Keyword mismatch for user:", profile.id);
         return new Response(
@@ -193,7 +233,7 @@ serve(async (req: Request): Promise<Response> => {
 
     } else if (action === "reset") {
       // Reset password using token
-      const { token, newPassword } = await req.json();
+      const { token, newPassword } = body;
 
       if (!token || !newPassword) {
         return new Response(
