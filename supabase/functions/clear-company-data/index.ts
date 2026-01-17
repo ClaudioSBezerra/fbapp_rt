@@ -166,6 +166,16 @@ Deno.serve(async (req) => {
 
     // Delete transactional data in order (respecting dependencies)
     if (filialIds.length > 0) {
+      // 0. Collect CNPJs from participantes BEFORE deleting them (for simples_nacional cleanup)
+      const { data: participantesCnpjs } = await supabaseAdmin
+        .from("participantes")
+        .select("cnpj")
+        .in("filial_id", filialIds)
+        .not("cnpj", "is", null);
+
+      const cnpjsToDelete = [...new Set(participantesCnpjs?.map(p => p.cnpj).filter(Boolean) || [])];
+      console.log(`Found ${cnpjsToDelete.length} unique CNPJs from participantes`);
+
       // 1. Delete mercadorias
       const { count: mercadoriasCount } = await supabaseAdmin
         .from("mercadorias")
@@ -207,16 +217,27 @@ Deno.serve(async (req) => {
         .delete({ count: "exact" })
         .in("filial_id", filialIds);
       counts.participantes = participantesCount || 0;
+
+      // 7. Delete simples_nacional for CNPJs that were in participantes
+      if (cnpjsToDelete.length > 0) {
+        const { count: simplesCount } = await supabaseAdmin
+          .from("simples_nacional")
+          .delete({ count: "exact" })
+          .eq("tenant_id", tenantId)
+          .in("cnpj", cnpjsToDelete);
+        counts.simples_nacional = simplesCount || 0;
+        console.log(`Deleted ${counts.simples_nacional} simples_nacional records`);
+      }
     }
 
-    // 7. Delete import_jobs for these empresas
+    // 8. Delete import_jobs for these empresas
     const { count: importJobsCount } = await supabaseAdmin
       .from("import_jobs")
       .delete({ count: "exact" })
       .in("empresa_id", empresaIds);
     counts.import_jobs = importJobsCount || 0;
 
-    // 8. Delete filiais (only data, structure remains with empresas)
+    // 9. Delete filiais (only data, structure remains with empresas)
     const { count: filiaisCount } = await supabaseAdmin
       .from("filiais")
       .delete({ count: "exact" })
