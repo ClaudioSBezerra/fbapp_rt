@@ -347,6 +347,7 @@ export default function Configuracoes() {
       setClearGrupoDialogOpen(false);
       setConfirmationText('');
       setSelectedGrupoForClear('');
+    }
   };
 
   const handlePromoteToAdmin = async () => {
