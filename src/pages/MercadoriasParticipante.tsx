@@ -164,8 +164,11 @@ function ParticipanteTable({ data, tipo, aliquotas, selectedYear, isLoading }: P
                 </TooltipTrigger>
                 <TooltipContent side="top" className="max-w-xs">
                   <p className="font-semibold mb-1">Fórmula:</p>
-                  <p className="font-mono text-xs">(ICMS + PIS/COFINS) − (ICMS Proj. + PIS/COFINS Proj. + IBS + CBS)</p>
-                  <p className="text-muted-foreground text-xs mt-1">Compara impostos atuais com TODOS os impostos projetados (transição + novos)</p>
+                  <p className="font-mono text-xs">(ICMS Proj. + PIS/COFINS Proj. + IBS + CBS) − (ICMS + PIS/COFINS)</p>
+                  <p className="text-muted-foreground text-xs mt-1">
+                    Diferença entre impostos projetados e atuais.<br/>
+                    <span className="text-green-600 dark:text-green-400">Negativo = Economia</span> | <span className="text-red-600 dark:text-red-400">Positivo = Aumento</span>
+                  </p>
                 </TooltipContent>
               </Tooltip>
             </TableHead>
