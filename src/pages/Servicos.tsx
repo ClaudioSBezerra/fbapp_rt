@@ -199,10 +199,10 @@ const ServicosTable = ({ data, tipo, aliquotas, selectedYear }: ServicosTablePro
                 <TableCell className="text-right font-mono text-xs font-semibold bg-muted/30 py-1 px-2">{formatCurrency(totalImpostosPagar)}</TableCell>
                 <TableCell className="text-right py-1 px-2">
                   <Badge 
-                    variant={diferencaReal > 0 ? 'destructive' : 'default'}
-                    className={`text-xs ${diferencaReal <= 0 ? 'bg-positive text-positive-foreground' : ''}`}
+                    variant={diferencaReal > 0 ? 'destructive' : diferencaReal < 0 ? 'default' : 'secondary'}
+                    className={`text-xs ${diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}`}
                   >
-                    {diferencaReal >= 0 ? '+' : ''}{formatCurrency(diferencaReal)}
+                    {diferencaReal > 0 ? '+' : ''}{formatCurrency(diferencaReal)}
                   </Badge>
                 </TableCell>
               </TableRow>

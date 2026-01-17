@@ -362,10 +362,10 @@ export default function UsoConsumoImobilizado() {
                   <TableCell className="text-right font-mono text-xs font-semibold bg-muted/30">{formatNumber(proj.totalImpostoReforma)}</TableCell>
                   <TableCell className="text-right">
                     <Badge
-                      variant={proj.diferenca > 0 ? 'destructive' : 'default'}
-                      className={`text-xs ${proj.diferenca <= 0 ? 'bg-positive text-positive-foreground' : ''}`}
+                      variant={proj.diferenca > 0 ? 'destructive' : proj.diferenca < 0 ? 'default' : 'secondary'}
+                      className={`text-xs ${proj.diferenca < 0 ? 'bg-positive text-positive-foreground' : ''}`}
                     >
-                      {proj.diferenca >= 0 ? '+' : ''}{formatNumber(proj.diferenca)}
+                      {proj.diferenca > 0 ? '+' : ''}{formatNumber(proj.diferenca)}
                     </Badge>
                   </TableCell>
                 </TableRow>
