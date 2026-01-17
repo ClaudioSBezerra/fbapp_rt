@@ -156,9 +156,21 @@ export default function Auth() {
 
     try {
       if (mode === 'forgot') {
-        const { error } = await resetPassword(email);
+        const { error, data } = await resetPassword(email) as { error: any; data: any };
         if (error) {
-          toast.error('Erro ao enviar link: ' + error.message);
+          // Check for domain not verified error
+          const errorMsg = error.message || '';
+          if (errorMsg.includes('domain_not_verified') || errorMsg.includes('403')) {
+            toast.error('O serviço de email ainda não está totalmente configurado. Por favor, use a recuperação por palavra-chave.', {
+              duration: 6000,
+            });
+          } else {
+            toast.error('Erro ao enviar link: ' + error.message);
+          }
+        } else if (data?.error === 'domain_not_verified') {
+          toast.error('O serviço de email ainda não está configurado. Por favor, use a recuperação por palavra-chave.', {
+            duration: 6000,
+          });
         } else {
           toast.success('Link de recuperação enviado! Verifique seu e-mail.');
           setMode('login');

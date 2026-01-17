@@ -127,7 +127,32 @@ serve(async (req) => {
       `,
     });
 
-    console.log("Email sent successfully:", emailResponse);
+    console.log("Email response:", emailResponse);
+
+    // Check if Resend returned an error
+    if (emailResponse.error) {
+      console.error("Resend error:", emailResponse.error);
+      
+      // Handle domain validation error specifically
+      const errorMessage = String(emailResponse.error.message || emailResponse.error);
+      if (errorMessage.includes("verify a domain") || errorMessage.includes("403")) {
+        return new Response(
+          JSON.stringify({ 
+            error: "domain_not_verified",
+            message: "O serviço de email ainda não está configurado para enviar para destinatários externos. Por favor, use a recuperação por palavra-chave ou entre em contato com o suporte."
+          }),
+          { status: 403, headers: { "Content-Type": "application/json", ...corsHeaders } }
+        );
+      }
+      
+      return new Response(
+        JSON.stringify({ 
+          error: "email_send_failed",
+          message: errorMessage || "Erro ao enviar email de recuperação"
+        }),
+        { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
+    }
 
     return new Response(
       JSON.stringify({ success: true, message: "Email de recuperação enviado com sucesso" }),
