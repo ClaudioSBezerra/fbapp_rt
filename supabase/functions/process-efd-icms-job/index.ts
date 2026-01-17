@@ -501,10 +501,41 @@ serve(async (req) => {
       .update({ status: "refreshing_views", progress: 98 })
       .eq("id", jobId);
 
-    const { error: refreshError } = await supabase.rpc('refresh_materialized_views_async');
-    if (refreshError) {
-      console.warn(`Job ${jobId}: Failed to refresh views:`, refreshError);
+    // Refresh materialized views individually for better reliability
+    console.log(`Job ${jobId}: Refreshing materialized views individually...`);
+    const viewsToRefresh = [
+      'extensions.mv_mercadorias_aggregated',
+      'extensions.mv_fretes_aggregated',
+      'extensions.mv_energia_agua_aggregated',
+      'extensions.mv_servicos_aggregated',
+      'extensions.mv_mercadorias_participante',
+      'extensions.mv_dashboard_stats',
+      'extensions.mv_uso_consumo_aggregated',
+      'extensions.mv_uso_consumo_detailed',
+      'extensions.mv_fretes_detailed',
+      'extensions.mv_energia_agua_detailed',
+    ];
+
+    let refreshError = null;
+    let viewsRefreshed = 0;
+    for (const view of viewsToRefresh) {
+      try {
+        const { error } = await supabase.rpc('exec_sql', {
+          sql: `REFRESH MATERIALIZED VIEW ${view}`
+        });
+        if (error) {
+          console.warn(`Job ${jobId}: Failed to refresh ${view}:`, error.message);
+          refreshError = error;
+        } else {
+          viewsRefreshed++;
+          console.log(`Job ${jobId}: Refreshed ${view}`);
+        }
+      } catch (err) {
+        console.warn(`Job ${jobId}: Exception refreshing ${view}:`, err);
+        refreshError = err;
+      }
     }
+    console.log(`Job ${jobId}: Refreshed ${viewsRefreshed}/${viewsToRefresh.length} views`);
 
     await supabase
       .from("import_jobs")
