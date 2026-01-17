@@ -156,21 +156,29 @@ export default function Auth() {
 
     try {
       if (mode === 'forgot') {
-        const { error, data } = await resetPassword(email) as { error: any; data: any };
-        if (error) {
+        const result = await resetPassword(email);
+        
+        if (result.error) {
           // Check for domain not verified error
-          const errorMsg = error.message || '';
-          if (errorMsg.includes('domain_not_verified') || errorMsg.includes('403')) {
+          const errorMsg = String(result.error.message || '');
+          if (errorMsg.includes('domain_not_verified') || errorMsg.includes('403') || result.data?.error === 'domain_not_verified') {
             toast.error('O serviço de email ainda não está totalmente configurado. Por favor, use a recuperação por palavra-chave.', {
               duration: 6000,
             });
+            // If user has keyword, suggest that method
+            if (hasKeyword) {
+              setMode('forgot-keyword');
+            }
           } else {
-            toast.error('Erro ao enviar link: ' + error.message);
+            toast.error('Erro ao enviar link: ' + errorMsg);
           }
-        } else if (data?.error === 'domain_not_verified') {
+        } else if (result.data?.error === 'domain_not_verified') {
           toast.error('O serviço de email ainda não está configurado. Por favor, use a recuperação por palavra-chave.', {
             duration: 6000,
           });
+          if (hasKeyword) {
+            setMode('forgot-keyword');
+          }
         } else {
           toast.success('Link de recuperação enviado! Verifique seu e-mail.');
           setMode('login');
