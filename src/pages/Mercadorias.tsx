@@ -403,7 +403,7 @@ export default function Mercadorias() {
     <div className="space-y-4 sm:space-y-6 animate-fade-in">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <h1 className="text-lg sm:text-xl font-bold text-foreground">Painel de Mercadorias</h1>
+          <h1 className="text-lg sm:text-xl font-bold text-foreground">Operação Comercial</h1>
           <p className="text-xs sm:text-sm text-muted-foreground">Comparativo PIS+COFINS vs IBS+CBS agregado por Filial e Mês</p>
         </div>
         <div className="flex items-center gap-2">

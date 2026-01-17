@@ -44,7 +44,7 @@ const allMenuItems: MenuItem[] = [
   { title: 'Configurações e Parâmetros Gerais', url: '/configuracoes', icon: Settings, adminOnly: true },
   { title: 'Empresas', url: '/empresas', icon: Building2, adminOnly: true },
   { title: 'Alíquotas', url: '/aliquotas', icon: Calculator },
-  { title: 'Mercadorias', url: '/mercadorias', icon: Package },
+  { title: 'Operação Comercial', url: '/mercadorias', icon: Package },
   { title: 'Por Participante', url: '/mercadorias-participante', icon: Users },
   { title: 'Serviços', url: '/servicos', icon: FileText },
   { title: 'Energia e Água', url: '/energia-agua', icon: Zap },
