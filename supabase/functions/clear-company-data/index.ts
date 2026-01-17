@@ -1,46 +1,53 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-// Helper function to delete in batches to avoid timeout
-async function deleteInBatches(
-  supabase: any,
-  table: string,
-  column: string,
-  values: string[],
-  batchSize: number = 10000
-): Promise<number> {
-  let totalDeleted = 0;
-  let hasMore = true;
-  
-  while (hasMore) {
-    const { count, error } = await supabase
-      .from(table)
-      .delete({ count: "exact" })
-      .in(column, values)
-      .limit(batchSize);
-    
-    if (error) {
-      console.error(`Error deleting from ${table}:`, error);
-      throw error;
-    }
-    
-    const deleted = count || 0;
-    totalDeleted += deleted;
-    
-    if (deleted > 0) {
-      console.log(`Deleted batch of ${deleted} from ${table} (total: ${totalDeleted})`);
-    }
-    
-    // If we deleted less than batch size, we're done
-    hasMore = deleted >= batchSize;
-  }
-  
-  return totalDeleted;
-}
-
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+// Helper function to delete using RPC in batches
+async function deleteWithRpc(
+  supabase: any,
+  rpcName: string,
+  userId: string,
+  filialIds: string[],
+  batchSize: number = 10000,
+  maxIterations: number = 500
+): Promise<number> {
+  let totalDeleted = 0;
+  let iterations = 0;
+  let hasMore = true;
+
+  console.log(`Starting ${rpcName} deletion...`);
+
+  while (hasMore && iterations < maxIterations) {
+    iterations++;
+    
+    const { data: deletedCount, error } = await supabase.rpc(rpcName, {
+      _user_id: userId,
+      _filial_ids: filialIds,
+      _batch_size: batchSize
+    });
+
+    if (error) {
+      console.error(`Error in ${rpcName} batch ${iterations}:`, error);
+      throw error;
+    }
+
+    const deleted = deletedCount || 0;
+    totalDeleted += deleted;
+
+    if (deleted > 0) {
+      console.log(`${rpcName} batch ${iterations}: deleted ${deleted} (total: ${totalDeleted})`);
+    }
+
+    // If we deleted less than batch size, we're done
+    hasMore = deleted >= batchSize;
+  }
+
+  console.log(`Finished ${rpcName}: ${totalDeleted} records deleted in ${iterations} iterations`);
+  return totalDeleted;
+}
 
 Deno.serve(async (req) => {
   // Handle CORS preflight requests
@@ -201,7 +208,7 @@ Deno.serve(async (req) => {
 
     const counts: Record<string, number> = {};
 
-    // Delete transactional data in order (respecting dependencies)
+    // Delete transactional data using RPCs (respecting dependencies)
     if (filialIds.length > 0) {
       // 0. Collect CNPJs from participantes BEFORE deleting them (for simples_nacional cleanup)
       const { data: participantesCnpjs } = await supabaseAdmin
@@ -213,35 +220,53 @@ Deno.serve(async (req) => {
       const cnpjsToDelete = [...new Set(participantesCnpjs?.map(p => p.cnpj).filter(Boolean) || [])];
       console.log(`Found ${cnpjsToDelete.length} unique CNPJs from participantes`);
 
-      // 1. Delete mercadorias (using batch delete to avoid timeout)
-      console.log("Starting mercadorias deletion...");
-      counts.mercadorias = await deleteInBatches(supabaseAdmin, "mercadorias", "filial_id", filialIds);
-      console.log(`Finished deleting ${counts.mercadorias} mercadorias`);
+      // 1. Delete mercadorias using RPC batch
+      counts.mercadorias = await deleteWithRpc(
+        supabaseAdmin,
+        "delete_mercadorias_batch",
+        user.id,
+        filialIds
+      );
 
-      // 2. Delete servicos
-      console.log("Starting servicos deletion...");
-      counts.servicos = await deleteInBatches(supabaseAdmin, "servicos", "filial_id", filialIds);
-      console.log(`Finished deleting ${counts.servicos} servicos`);
+      // 2. Delete servicos using RPC batch
+      counts.servicos = await deleteWithRpc(
+        supabaseAdmin,
+        "delete_servicos_batch",
+        user.id,
+        filialIds
+      );
 
-      // 3. Delete fretes
-      console.log("Starting fretes deletion...");
-      counts.fretes = await deleteInBatches(supabaseAdmin, "fretes", "filial_id", filialIds);
-      console.log(`Finished deleting ${counts.fretes} fretes`);
+      // 3. Delete fretes using RPC batch
+      counts.fretes = await deleteWithRpc(
+        supabaseAdmin,
+        "delete_fretes_batch",
+        user.id,
+        filialIds
+      );
 
-      // 4. Delete energia_agua
-      console.log("Starting energia_agua deletion...");
-      counts.energia_agua = await deleteInBatches(supabaseAdmin, "energia_agua", "filial_id", filialIds);
-      console.log(`Finished deleting ${counts.energia_agua} energia_agua`);
+      // 4. Delete energia_agua using RPC batch
+      counts.energia_agua = await deleteWithRpc(
+        supabaseAdmin,
+        "delete_energia_agua_batch",
+        user.id,
+        filialIds
+      );
 
-      // 5. Delete uso_consumo_imobilizado
-      console.log("Starting uso_consumo_imobilizado deletion...");
-      counts.uso_consumo_imobilizado = await deleteInBatches(supabaseAdmin, "uso_consumo_imobilizado", "filial_id", filialIds);
-      console.log(`Finished deleting ${counts.uso_consumo_imobilizado} uso_consumo_imobilizado`);
+      // 5. Delete uso_consumo_imobilizado using RPC batch
+      counts.uso_consumo_imobilizado = await deleteWithRpc(
+        supabaseAdmin,
+        "delete_uso_consumo_batch",
+        user.id,
+        filialIds
+      );
 
-      // 6. Delete participantes
-      console.log("Starting participantes deletion...");
-      counts.participantes = await deleteInBatches(supabaseAdmin, "participantes", "filial_id", filialIds);
-      console.log(`Finished deleting ${counts.participantes} participantes`);
+      // 6. Delete participantes using RPC batch
+      counts.participantes = await deleteWithRpc(
+        supabaseAdmin,
+        "delete_participantes_batch",
+        user.id,
+        filialIds
+      );
 
       // 7. Delete simples_nacional for CNPJs that were in participantes
       if (cnpjsToDelete.length > 0) {
@@ -287,14 +312,14 @@ Deno.serve(async (req) => {
     console.log("Starting materialized views refresh...");
     const viewsToRefresh = [
       "mv_mercadorias_aggregated",
+      "mv_mercadorias_participante",
       "mv_fretes_aggregated", 
+      "mv_fretes_detailed",
       "mv_energia_agua_aggregated",
+      "mv_energia_agua_detailed",
       "mv_servicos_aggregated",
       "mv_uso_consumo_aggregated",
       "mv_uso_consumo_detailed",
-      "mv_uso_consumo_by_simples",
-      "mv_energia_agua_detailed",
-      "mv_fretes_detailed",
       "mv_dashboard_stats"
     ];
     

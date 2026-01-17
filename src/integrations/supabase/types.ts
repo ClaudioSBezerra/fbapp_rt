@@ -787,6 +787,10 @@ export type Database = {
         Args: { _batch_size?: number; _filial_ids: string[]; _user_id: string }
         Returns: number
       }
+      delete_participantes_batch: {
+        Args: { _batch_size?: number; _filial_ids: string[]; _user_id: string }
+        Returns: number
+      }
       delete_servicos_batch: {
         Args: { _batch_size?: number; _filial_ids: string[]; _user_id: string }
         Returns: number
