@@ -572,27 +572,56 @@ function processLine(
       break;
 
     case "C600":
-      // Layout EFD ICMS/IPI - C600 (Consolidação diária):
-      // 2=COD_MOD, 3=COD_MUN, 7=VL_DOC, 12=VL_ICMS, 15=VL_PIS, 16=VL_COFINS
+      // Consolidação diária - layout diferente para ICMS/IPI e Contribuições
       blockType = "c600";
-      if (fields.length > 16) {
-        const valorDoc = parseNumber(fields[7]);
-        
-        if (valorDoc > 0) {
-          record = {
-            table: "mercadorias",
-            data: {
-              tipo: "saida",
-              mes_ano: context.currentPeriod,
-              ncm: null,
-              descricao: `Consolidação NF ${fields[2] || ""} ${fields[3] || ""}`.trim().substring(0, 200) || "Consolidação diária",
-              valor: valorDoc,
-              pis: parseNumber(fields[15]),
-              cofins: parseNumber(fields[16]),
-              icms: parseNumber(fields[12]),
-              ipi: 0,
-            },
-          };
+      
+      if (context.efdType === 'contribuicoes') {
+        // Layout EFD Contribuições - C600 (Consolidação diária de energia/água/gás/comunicação):
+        // |C600|COD_MOD|COD_MUN|SER|SUB|COD_CONS|QTD_CONS|QTD_CONS_REDUZ|DT_DOC_INI|DT_DOC_FIN|VL_DOC|VL_DESC|
+        // |VL_FORN|VL_SERV_NT|VL_TERC|VL_DA|VL_BC_ICMS|VL_ICMS|VL_BC_ICMS_ST|VL_ICMS_ST|VL_PIS|VL_COFINS|...
+        // Índices corretos: 10=VL_DOC, 18=VL_ICMS, 21=VL_PIS, 22=VL_COFINS
+        if (fields.length > 22) {
+          const valorDoc = parseNumber(fields[10]);
+          
+          if (valorDoc > 0) {
+            record = {
+              table: "mercadorias",
+              data: {
+                tipo: "saida",
+                mes_ano: context.currentPeriod,
+                ncm: null,
+                descricao: `Consolidação NF ${fields[1] || ""} ${fields[2] || ""}`.trim().substring(0, 200) || "Consolidação diária",
+                valor: valorDoc,
+                pis: parseNumber(fields[21]),    // Campo 21 = VL_PIS
+                cofins: parseNumber(fields[22]), // Campo 22 = VL_COFINS
+                icms: parseNumber(fields[18]),   // Campo 18 = VL_ICMS
+                ipi: 0,
+              },
+            };
+          }
+        }
+      } else {
+        // Layout EFD ICMS/IPI - C600 (Consolidação diária):
+        // 2=COD_MOD, 3=COD_MUN, 7=VL_DOC, 12=VL_ICMS, 15=VL_PIS, 16=VL_COFINS
+        if (fields.length > 16) {
+          const valorDoc = parseNumber(fields[7]);
+          
+          if (valorDoc > 0) {
+            record = {
+              table: "mercadorias",
+              data: {
+                tipo: "saida",
+                mes_ano: context.currentPeriod,
+                ncm: null,
+                descricao: `Consolidação NF ${fields[2] || ""} ${fields[3] || ""}`.trim().substring(0, 200) || "Consolidação diária",
+                valor: valorDoc,
+                pis: parseNumber(fields[15]),
+                cofins: parseNumber(fields[16]),
+                icms: parseNumber(fields[12]),
+                ipi: 0,
+              },
+            };
+          }
         }
       }
       break;
