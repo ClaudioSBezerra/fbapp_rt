@@ -74,7 +74,7 @@ serve(async (req) => {
 
     // Enviar email com Resend
     const emailResponse = await resend.emails.send({
-      from: "Simulador IBS/CBS <noreply@resend.dev>",
+      from: "Simulador IBS/CBS <noreply@notificacoes.com>",
       to: [email],
       subject: "Recuperação de Senha - Simulador IBS/CBS",
       html: `
