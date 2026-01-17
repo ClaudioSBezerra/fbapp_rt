@@ -1,5 +1,42 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+// Helper function to delete in batches to avoid timeout
+async function deleteInBatches(
+  supabase: any,
+  table: string,
+  column: string,
+  values: string[],
+  batchSize: number = 10000
+): Promise<number> {
+  let totalDeleted = 0;
+  let hasMore = true;
+  
+  while (hasMore) {
+    const { count, error } = await supabase
+      .from(table)
+      .delete({ count: "exact" })
+      .in(column, values)
+      .limit(batchSize);
+    
+    if (error) {
+      console.error(`Error deleting from ${table}:`, error);
+      throw error;
+    }
+    
+    const deleted = count || 0;
+    totalDeleted += deleted;
+    
+    if (deleted > 0) {
+      console.log(`Deleted batch of ${deleted} from ${table} (total: ${totalDeleted})`);
+    }
+    
+    // If we deleted less than batch size, we're done
+    hasMore = deleted >= batchSize;
+  }
+  
+  return totalDeleted;
+}
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -176,47 +213,35 @@ Deno.serve(async (req) => {
       const cnpjsToDelete = [...new Set(participantesCnpjs?.map(p => p.cnpj).filter(Boolean) || [])];
       console.log(`Found ${cnpjsToDelete.length} unique CNPJs from participantes`);
 
-      // 1. Delete mercadorias
-      const { count: mercadoriasCount } = await supabaseAdmin
-        .from("mercadorias")
-        .delete({ count: "exact" })
-        .in("filial_id", filialIds);
-      counts.mercadorias = mercadoriasCount || 0;
+      // 1. Delete mercadorias (using batch delete to avoid timeout)
+      console.log("Starting mercadorias deletion...");
+      counts.mercadorias = await deleteInBatches(supabaseAdmin, "mercadorias", "filial_id", filialIds);
+      console.log(`Finished deleting ${counts.mercadorias} mercadorias`);
 
       // 2. Delete servicos
-      const { count: servicosCount } = await supabaseAdmin
-        .from("servicos")
-        .delete({ count: "exact" })
-        .in("filial_id", filialIds);
-      counts.servicos = servicosCount || 0;
+      console.log("Starting servicos deletion...");
+      counts.servicos = await deleteInBatches(supabaseAdmin, "servicos", "filial_id", filialIds);
+      console.log(`Finished deleting ${counts.servicos} servicos`);
 
       // 3. Delete fretes
-      const { count: fretesCount } = await supabaseAdmin
-        .from("fretes")
-        .delete({ count: "exact" })
-        .in("filial_id", filialIds);
-      counts.fretes = fretesCount || 0;
+      console.log("Starting fretes deletion...");
+      counts.fretes = await deleteInBatches(supabaseAdmin, "fretes", "filial_id", filialIds);
+      console.log(`Finished deleting ${counts.fretes} fretes`);
 
       // 4. Delete energia_agua
-      const { count: energiaAguaCount } = await supabaseAdmin
-        .from("energia_agua")
-        .delete({ count: "exact" })
-        .in("filial_id", filialIds);
-      counts.energia_agua = energiaAguaCount || 0;
+      console.log("Starting energia_agua deletion...");
+      counts.energia_agua = await deleteInBatches(supabaseAdmin, "energia_agua", "filial_id", filialIds);
+      console.log(`Finished deleting ${counts.energia_agua} energia_agua`);
 
       // 5. Delete uso_consumo_imobilizado
-      const { count: usoConsumoCount } = await supabaseAdmin
-        .from("uso_consumo_imobilizado")
-        .delete({ count: "exact" })
-        .in("filial_id", filialIds);
-      counts.uso_consumo_imobilizado = usoConsumoCount || 0;
+      console.log("Starting uso_consumo_imobilizado deletion...");
+      counts.uso_consumo_imobilizado = await deleteInBatches(supabaseAdmin, "uso_consumo_imobilizado", "filial_id", filialIds);
+      console.log(`Finished deleting ${counts.uso_consumo_imobilizado} uso_consumo_imobilizado`);
 
       // 6. Delete participantes
-      const { count: participantesCount } = await supabaseAdmin
-        .from("participantes")
-        .delete({ count: "exact" })
-        .in("filial_id", filialIds);
-      counts.participantes = participantesCount || 0;
+      console.log("Starting participantes deletion...");
+      counts.participantes = await deleteInBatches(supabaseAdmin, "participantes", "filial_id", filialIds);
+      console.log(`Finished deleting ${counts.participantes} participantes`);
 
       // 7. Delete simples_nacional for CNPJs that were in participantes
       if (cnpjsToDelete.length > 0) {
@@ -258,12 +283,33 @@ Deno.serve(async (req) => {
       record_count: Object.values(counts).reduce((a, b) => a + b, 0)
     });
 
-    // Refresh materialized views
-    try {
-      await supabaseAdmin.rpc("refresh_materialized_views_async");
-    } catch (e) {
-      console.error("Error refreshing views:", e);
+    // Refresh materialized views one by one for better error handling
+    console.log("Starting materialized views refresh...");
+    const viewsToRefresh = [
+      "mv_mercadorias_aggregated",
+      "mv_fretes_aggregated", 
+      "mv_energia_agua_aggregated",
+      "mv_servicos_aggregated",
+      "mv_uso_consumo_aggregated",
+      "mv_uso_consumo_detailed",
+      "mv_uso_consumo_by_simples",
+      "mv_energia_agua_detailed",
+      "mv_fretes_detailed",
+      "mv_dashboard_stats"
+    ];
+    
+    for (const view of viewsToRefresh) {
+      try {
+        console.log(`Refreshing ${view}...`);
+        await supabaseAdmin.rpc("exec_sql", {
+          sql: `REFRESH MATERIALIZED VIEW extensions.${view}`
+        });
+        console.log(`✓ Refreshed ${view}`);
+      } catch (e) {
+        console.error(`✗ Failed to refresh ${view}:`, e);
+      }
     }
+    console.log("Finished refreshing views");
 
     const totalDeleted = Object.values(counts).reduce((a, b) => a + b, 0);
     console.log(`Successfully deleted ${totalDeleted} records`);
