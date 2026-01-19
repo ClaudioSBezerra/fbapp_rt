@@ -1415,8 +1415,63 @@ serve(async (req) => {
       .update({ status: "consolidating", progress: 92 })
       .eq("id", jobId);
 
-    // Call consolidation function
-    console.log(`Job ${jobId}: Calling consolidar_import_job...`);
+    // ======================================================================
+    // INCREMENTAL CONSOLIDATION - Process C100 records in batches
+    // Each batch call stays within PostgreSQL timeout limits (~3-4 seconds)
+    // ======================================================================
+    console.log(`Job ${jobId}: Starting incremental mercadorias consolidation...`);
+    let mercadoriasTotal = 0;
+    let batchNumber = 0;
+    let hasMore = true;
+    let initialRemaining = 0;
+
+    // First batch to get initial count
+    while (hasMore) {
+      batchNumber++;
+      const batchStartTime = Date.now();
+      
+      const { data: batchResult, error: batchError } = await supabase
+        .rpc('consolidar_mercadorias_single_batch', { p_job_id: jobId, p_batch_size: 50000 });
+      
+      if (batchError) {
+        console.error(`Job ${jobId}: Batch ${batchNumber} error:`, batchError);
+        await supabase
+          .from("import_jobs")
+          .update({ 
+            status: "failed", 
+            error_message: `Consolidation batch ${batchNumber} error: ${batchError.message}`,
+            completed_at: new Date().toISOString() 
+          })
+          .eq("id", jobId);
+        throw new Error(`Consolidation batch error: ${batchError.message}`);
+      }
+      
+      // Track initial count for progress calculation
+      if (batchNumber === 1 && batchResult.remaining > 0) {
+        initialRemaining = batchResult.remaining + (batchResult.batch_size || 50000);
+      }
+      
+      mercadoriasTotal += batchResult.processed || 0;
+      hasMore = batchResult.has_more === true;
+      
+      const batchDuration = Date.now() - batchStartTime;
+      console.log(`Job ${jobId}: Batch ${batchNumber} completed in ${batchDuration}ms - processed: ${batchResult.processed}, remaining: ${batchResult.remaining}`);
+      
+      // Update progress (92-94% range for mercadorias consolidation)
+      if (initialRemaining > 0) {
+        const consolidationProgress = 1 - (batchResult.remaining / initialRemaining);
+        const progress = Math.min(92 + Math.floor(consolidationProgress * 2), 94);
+        await supabase.from("import_jobs").update({ progress }).eq("id", jobId);
+      }
+    }
+    
+    console.log(`Job ${jobId}: Mercadorias consolidation completed - ${batchNumber} batches, ${mercadoriasTotal} records upserted`);
+
+    // ======================================================================
+    // CONSOLIDATE OTHER RECORD TYPES (energia, fretes, serviços)
+    // These are typically much smaller and can be done in single calls
+    // ======================================================================
+    console.log(`Job ${jobId}: Consolidating other record types...`);
     const { data: consolidationResult, error: consolidationError } = await supabase
       .rpc('consolidar_import_job', { p_job_id: jobId });
     
@@ -1433,7 +1488,11 @@ serve(async (req) => {
       throw new Error(`Consolidation error: ${consolidationError.message}`);
     }
     
-    console.log(`Job ${jobId}: Consolidation result:`, consolidationResult);
+    console.log(`Job ${jobId}: Consolidation result:`, { 
+      mercadorias_batches: batchNumber, 
+      mercadorias_upserted: mercadoriasTotal,
+      other_types: consolidationResult 
+    });
 
     // Update status for view refresh
     await supabase
