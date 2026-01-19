@@ -14,18 +14,18 @@ interface RefreshResult {
   details?: string;
 }
 
-// Lista de todas as views materializadas para atualizar
-const MATERIALIZED_VIEWS = [
-  'extensions.mv_mercadorias_aggregated',
-  'extensions.mv_fretes_aggregated',
-  'extensions.mv_energia_agua_aggregated',
-  'extensions.mv_servicos_aggregated',
-  'extensions.mv_mercadorias_participante',
-  'extensions.mv_dashboard_stats',
-  'extensions.mv_uso_consumo_aggregated',
-  'extensions.mv_uso_consumo_detailed',
-  'extensions.mv_fretes_detailed',
-  'extensions.mv_energia_agua_detailed',
+// Lista de views com seus timeouts (views pesadas têm timeout maior)
+const MATERIALIZED_VIEWS: { name: string; timeoutSeconds: number }[] = [
+  { name: 'extensions.mv_mercadorias_aggregated', timeoutSeconds: 120 },
+  { name: 'extensions.mv_fretes_aggregated', timeoutSeconds: 60 },
+  { name: 'extensions.mv_energia_agua_aggregated', timeoutSeconds: 60 },
+  { name: 'extensions.mv_servicos_aggregated', timeoutSeconds: 60 },
+  { name: 'extensions.mv_mercadorias_participante', timeoutSeconds: 300 }, // View pesada - 5 minutos
+  { name: 'extensions.mv_dashboard_stats', timeoutSeconds: 120 },
+  { name: 'extensions.mv_uso_consumo_aggregated', timeoutSeconds: 120 },
+  { name: 'extensions.mv_uso_consumo_detailed', timeoutSeconds: 180 },
+  { name: 'extensions.mv_fretes_detailed', timeoutSeconds: 120 },
+  { name: 'extensions.mv_energia_agua_detailed', timeoutSeconds: 120 },
 ];
 
 Deno.serve(async (req) => {
@@ -50,23 +50,27 @@ Deno.serve(async (req) => {
     console.log("[refresh-views] Starting materialized views refresh...");
     console.log(`[refresh-views] Total views to refresh: ${MATERIALIZED_VIEWS.length}`);
 
-    // Refresh each view individually using exec_sql with longer timeout
-    for (const view of MATERIALIZED_VIEWS) {
+    // Refresh each view individually with its specific timeout
+    for (const viewConfig of MATERIALIZED_VIEWS) {
       const viewStartTime = Date.now();
-      console.log(`[refresh-views] Refreshing ${view}...`);
+      const viewName = viewConfig.name;
+      const timeout = viewConfig.timeoutSeconds;
       
+      console.log(`[refresh-views] Refreshing ${viewName} (timeout: ${timeout}s)...`);
+      
+      // Set timeout and refresh in single transaction
       const { error } = await supabase.rpc('exec_sql', {
-        sql: `REFRESH MATERIALIZED VIEW ${view}`
+        sql: `SET LOCAL statement_timeout = '${timeout}s'; REFRESH MATERIALIZED VIEW ${viewName};`
       });
       
       const viewDuration = Date.now() - viewStartTime;
       
       if (error) {
-        console.error(`[refresh-views] Failed to refresh ${view} (${viewDuration}ms):`, error.message);
-        viewsFailed.push(view.replace('extensions.', ''));
+        console.error(`[refresh-views] Failed to refresh ${viewName} (${viewDuration}ms):`, error.message);
+        viewsFailed.push(viewName.replace('extensions.', ''));
       } else {
-        console.log(`[refresh-views] Successfully refreshed ${view} (${viewDuration}ms)`);
-        viewsRefreshed.push(view.replace('extensions.', ''));
+        console.log(`[refresh-views] Successfully refreshed ${viewName} (${viewDuration}ms)`);
+        viewsRefreshed.push(viewName.replace('extensions.', ''));
       }
     }
 
