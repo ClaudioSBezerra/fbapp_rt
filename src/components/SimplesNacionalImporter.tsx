@@ -12,7 +12,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   Upload, FileSpreadsheet, CheckCircle, XCircle, Trash2, 
-  AlertCircle, Loader2, Download, Link2, Unlink, FileDown
+  AlertCircle, Loader2, Download, Link2, Unlink, FileDown, RefreshCw
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -52,6 +52,18 @@ interface PendingCnpj {
   valor_total: number;
 }
 
+interface RefreshResult {
+  success: boolean;
+  views_refreshed: string[];
+  views_failed: string[];
+  duration_ms: number;
+  error?: string;
+  validation?: {
+    simples_vinculados_uso_consumo: number;
+    simples_vinculados_mercadorias: number;
+  };
+}
+
 export function SimplesNacionalImporter() {
   const { user } = useAuth();
   const [file, setFile] = useState<File | null>(null);
@@ -69,6 +81,7 @@ export function SimplesNacionalImporter() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoadingPending, setIsLoadingPending] = useState(false);
   const [activeTab, setActiveTab] = useState<string>('mercadorias');
+  const [lastRefreshValidation, setLastRefreshValidation] = useState<RefreshResult['validation'] | null>(null);
 
   // Carregar estatísticas de vinculação (nova função com JSONB)
   const loadLinkStats = useCallback(async (tid: string) => {
@@ -228,6 +241,28 @@ export function SimplesNacionalImporter() {
     }
   };
 
+  // Função robusta de refresh via edge function
+  const refreshViewsViaEdge = async (): Promise<RefreshResult | null> => {
+    try {
+      const { data, error } = await supabase.functions.invoke('refresh-views', {
+        body: { 
+          validate: true,
+          priority_views: ['extensions.mv_uso_consumo_detailed', 'extensions.mv_mercadorias_participante']
+        }
+      });
+      
+      if (error) {
+        console.error('Edge function error:', error);
+        return null;
+      }
+      
+      return data as RefreshResult;
+    } catch (err) {
+      console.error('Failed to call refresh-views edge function:', err);
+      return null;
+    }
+  };
+
   // Importar dados
   const handleImport = async () => {
     if (!tenantId || parsedData.length === 0) return;
@@ -240,6 +275,7 @@ export function SimplesNacionalImporter() {
     
     setIsImporting(true);
     setImportProgress(0);
+    setLastRefreshValidation(null);
     
     try {
       // Se substituir existente, limpar primeiro
@@ -271,28 +307,45 @@ export function SimplesNacionalImporter() {
         if (error) throw error;
         
         imported += batch.length;
-        setImportProgress(Math.round((imported / validRows.length) * 100));
+        setImportProgress(Math.round((imported / validRows.length) * 80)); // 80% para importação
       }
       
-      // Refresh materialized views com retry
+      // Refresh materialized views via edge function (mais robusto)
       setIsRefreshing(true);
-      let refreshAttempts = 0;
-      let refreshSuccess = false;
+      setImportProgress(85);
       
-      while (refreshAttempts < 3 && !refreshSuccess) {
-        const { error: refreshError } = await supabase.rpc('refresh_materialized_views');
-        if (!refreshError) {
-          refreshSuccess = true;
-        } else {
-          refreshAttempts++;
-          console.warn(`Retry refresh views (${refreshAttempts}/3):`, refreshError);
-          await new Promise(r => setTimeout(r, 1000));
+      const refreshResult = await refreshViewsViaEdge();
+      
+      setImportProgress(95);
+      
+      if (refreshResult) {
+        setLastRefreshValidation(refreshResult.validation || null);
+        
+        if (refreshResult.success) {
+          const vinculados = (refreshResult.validation?.simples_vinculados_uso_consumo || 0) + 
+                            (refreshResult.validation?.simples_vinculados_mercadorias || 0);
+          toast.success(`${imported} registros importados! Views atualizadas. ${vinculados} vínculos ativos.`);
+        } else if (refreshResult.views_failed.length > 0) {
+          toast.warning(`${imported} registros importados. Algumas views falharam: ${refreshResult.views_failed.join(', ')}`);
         }
+      } else {
+        // Fallback para RPC direto se edge function falhar
+        console.warn('Edge function failed, trying RPC fallback...');
+        let fallbackSuccess = false;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const { error: rpcError } = await supabase.rpc('refresh_materialized_views');
+          if (!rpcError) {
+            fallbackSuccess = true;
+            break;
+          }
+          await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+        }
+        toast.success(`${imported} registros importados! ${fallbackSuccess ? 'Views atualizadas.' : 'Views pendentes.'}`);
       }
-      setIsRefreshing(false);
       
-      const viewsMsg = refreshSuccess ? 'Views atualizadas!' : 'Views pendentes de atualização.';
-      toast.success(`${imported} registros importados! ${viewsMsg}`);
+      setIsRefreshing(false);
+      setImportProgress(100);
+      
       setShowPreview(false);
       setFile(null);
       setParsedData([]);
@@ -303,6 +356,29 @@ export function SimplesNacionalImporter() {
     } finally {
       setIsImporting(false);
       setImportProgress(0);
+    }
+  };
+
+  // Função para reprocessar views manualmente
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      const result = await refreshViewsViaEdge();
+      if (result) {
+        setLastRefreshValidation(result.validation || null);
+        if (result.success) {
+          toast.success(`Views atualizadas em ${result.duration_ms}ms`);
+        } else {
+          toast.warning(`Algumas views falharam: ${result.views_failed.join(', ')}`);
+        }
+        await loadExistingData();
+      } else {
+        toast.error('Falha ao atualizar views');
+      }
+    } catch (err: any) {
+      toast.error('Erro: ' + err.message);
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
@@ -463,12 +539,38 @@ export function SimplesNacionalImporter() {
           </div>
         )}
 
+        {/* Botão de reprocessar views */}
+        {lastRefreshValidation && (
+          <Alert className="border-blue-200 bg-blue-50 dark:bg-blue-950/20">
+            <CheckCircle className="h-4 w-4 text-blue-600" />
+            <AlertDescription className="text-blue-800 dark:text-blue-200">
+              Vínculos ativos: <strong>{lastRefreshValidation.simples_vinculados_uso_consumo}</strong> em Uso/Consumo, 
+              <strong> {lastRefreshValidation.simples_vinculados_mercadorias}</strong> em Mercadorias
+            </AlertDescription>
+          </Alert>
+        )}
+
         {/* Estatísticas de vinculação por área */}
         {linkStats && (
           <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <Link2 className="h-4 w-4 text-primary" />
-              <span className="font-medium">Cobertura de Vinculação</span>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Link2 className="h-4 w-4 text-primary" />
+                <span className="font-medium">Cobertura de Vinculação</span>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleManualRefresh}
+                disabled={isRefreshing}
+              >
+                {isRefreshing ? (
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4 mr-1" />
+                )}
+                Reprocessar views
+              </Button>
             </div>
             
             <Tabs value={activeTab} onValueChange={setActiveTab}>
