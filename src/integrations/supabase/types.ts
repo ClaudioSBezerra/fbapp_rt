@@ -857,6 +857,15 @@ export type Database = {
         Returns: number
       }
       exec_sql: { Args: { sql: string }; Returns: undefined }
+      get_cnpjs_mercadorias_pendentes: {
+        Args: { p_tenant_id: string }
+        Returns: {
+          cnpj: string
+          nome: string
+          quantidade_docs: number
+          valor_total: number
+        }[]
+      }
       get_cnpjs_uso_consumo_pendentes: {
         Args: { p_tenant_id: string }
         Returns: {
