@@ -64,7 +64,9 @@ export default function Configuracoes() {
   const [selectedGrupoForClear, setSelectedGrupoForClear] = useState<string>('');
   const [clearEmpresaDialogOpen, setClearEmpresaDialogOpen] = useState(false);
   const [clearGrupoDialogOpen, setClearGrupoDialogOpen] = useState(false);
+  const [clearTenantDialogOpen, setClearTenantDialogOpen] = useState(false);
   const [confirmationText, setConfirmationText] = useState('');
+  const [tenantConfirmationText, setTenantConfirmationText] = useState('');
 
   // Role management state
   const [promoteDialogOpen, setPromoteDialogOpen] = useState(false);
@@ -365,6 +367,40 @@ export default function Configuracoes() {
       setClearGrupoDialogOpen(false);
       setConfirmationText('');
       setSelectedGrupoForClear('');
+    }
+  };
+
+  const handleClearTenant = async () => {
+    if (tenantConfirmationText !== 'LIMPAR TUDO') {
+      toast.error('Digite "LIMPAR TUDO" para confirmar');
+      return;
+    }
+
+    setIsClearing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('clear-company-data', {
+        body: { scope: 'tenant' }
+      });
+
+      if (error) throw error;
+
+      if (data.success) {
+        toast.success(data.message);
+        const counts = data.counts;
+        const total = Object.values(counts as Record<string, number>).reduce((a: number, b: number) => a + b, 0);
+        if (total > 0) {
+          toast.info(`${total.toLocaleString('pt-BR')} registros removidos`, { duration: 5000 });
+        }
+      } else {
+        throw new Error(data.error || 'Erro ao limpar dados');
+      }
+    } catch (error: any) {
+      console.error('Error clearing tenant data:', error);
+      toast.error(error.message || 'Erro ao limpar dados do ambiente');
+    } finally {
+      setIsClearing(false);
+      setClearTenantDialogOpen(false);
+      setTenantConfirmationText('');
     }
   };
 
@@ -850,6 +886,100 @@ export default function Configuracoes() {
                           <>
                             <Trash2 className="h-4 w-4 mr-2" />
                             Confirmar Limpeza
+                          </>
+                        )}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            </div>
+
+            <div className="border-t border-destructive/20 pt-4 mt-4">
+              {/* Clear Tenant */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertTriangle className="h-5 w-5 text-destructive" />
+                  <Label className="text-sm font-semibold text-destructive">Limpar Todo o Ambiente</Label>
+                </div>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Remove <strong>TODOS</strong> os dados transacionais de <strong>TODAS</strong> as empresas do ambiente. 
+                  A estrutura organizacional (grupos, empresas) será preservada.
+                </p>
+                
+                <Dialog open={clearTenantDialogOpen} onOpenChange={setClearTenantDialogOpen}>
+                  <Button 
+                    variant="destructive" 
+                    onClick={() => setClearTenantDialogOpen(true)}
+                    disabled={isClearing}
+                    className="w-full sm:w-auto"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Limpar Todo o Ambiente
+                  </Button>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle className="flex items-center gap-2 text-destructive">
+                        <AlertTriangle className="h-5 w-5" />
+                        ⚠️ Limpar TODO o Ambiente
+                      </DialogTitle>
+                      <DialogDescription className="space-y-2">
+                        <span className="block">
+                          Você está prestes a remover <strong>TODOS os dados transacionais</strong> de <strong>TODAS as empresas</strong> do ambiente:
+                        </span>
+                        <ul className="list-disc list-inside text-xs space-y-1 mt-2">
+                          <li>Mercadorias, Serviços, Fretes</li>
+                          <li>Energia/Água, Uso e Consumo</li>
+                          <li>Participantes, Simples Nacional</li>
+                          <li>Jobs de Importação, Filiais</li>
+                          <li>Tabelas RAW de importação</li>
+                        </ul>
+                        <span className="block mt-3 font-semibold text-destructive">
+                          Esta ação NÃO PODE ser desfeita!
+                        </span>
+                      </DialogDescription>
+                    </DialogHeader>
+                    
+                    <div className="space-y-3 py-4">
+                      <div className="p-3 bg-destructive/10 border border-destructive/20 rounded">
+                        <p className="text-sm font-medium text-destructive">
+                          Digite <strong>"LIMPAR TUDO"</strong> para confirmar:
+                        </p>
+                      </div>
+                      <Input
+                        value={tenantConfirmationText}
+                        onChange={(e) => setTenantConfirmationText(e.target.value.toUpperCase())}
+                        placeholder="LIMPAR TUDO"
+                        autoComplete="off"
+                        className="font-mono"
+                      />
+                    </div>
+                    
+                    <DialogFooter>
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setClearTenantDialogOpen(false);
+                          setTenantConfirmationText('');
+                        }}
+                        disabled={isClearing}
+                      >
+                        Cancelar
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        onClick={handleClearTenant}
+                        disabled={isClearing || tenantConfirmationText !== 'LIMPAR TUDO'}
+                      >
+                        {isClearing ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Limpando...
+                          </>
+                        ) : (
+                          <>
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Confirmar Limpeza Total
                           </>
                         )}
                       </Button>
