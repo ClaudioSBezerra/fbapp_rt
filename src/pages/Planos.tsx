@@ -153,7 +153,7 @@ export default function Planos() {
 
         {/* Plans grid */}
         <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
-          {defaultPlans.map((plan) => (
+          {plans.map((plan) => (
             <Card 
               key={plan.id}
               className={cn(
@@ -178,7 +178,7 @@ export default function Planos() {
               <CardContent className="flex-1">
                 <div className="text-center mb-6">
                   <span className="text-4xl font-bold">
-                    R$ {plan.price}
+                    R$ {plan.price.toLocaleString('pt-BR')}
                   </span>
                   <span className="text-muted-foreground">/mês</span>
                 </div>
