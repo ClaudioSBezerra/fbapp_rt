@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,7 +11,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { 
   Upload, FileSpreadsheet, CheckCircle, XCircle, Trash2, 
-  AlertCircle, Loader2, RefreshCw, Download
+  AlertCircle, Loader2, RefreshCw, Download, Link2, Unlink
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -30,17 +30,38 @@ interface Stats {
   naoOptantes: number;
 }
 
+interface LinkStats {
+  total_simples: number;
+  vinculados_uso_consumo: number;
+  vinculados_mercadorias: number;
+  optantes_vinculados: number;
+}
+
 export function SimplesNacionalImporter() {
   const { user } = useAuth();
   const [file, setFile] = useState<File | null>(null);
   const [parsedData, setParsedData] = useState<ParsedRow[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
+  const [linkStats, setLinkStats] = useState<LinkStats | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
   const [showPreview, setShowPreview] = useState(false);
   const [replaceExisting, setReplaceExisting] = useState(false);
   const [tenantId, setTenantId] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Carregar estatísticas de vinculação
+  const loadLinkStats = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.rpc('get_simples_link_stats');
+      if (!error && data && data.length > 0) {
+        setLinkStats(data[0]);
+      }
+    } catch (err) {
+      console.error('Erro ao carregar estatísticas de vinculação:', err);
+    }
+  }, []);
 
   // Carregar dados existentes e tenant
   const loadExistingData = useCallback(async () => {
@@ -72,18 +93,21 @@ export function SimplesNacionalImporter() {
             naoOptantes: simplesData.length - optantes
           });
         }
+        
+        // Carregar estatísticas de vinculação
+        await loadLinkStats();
       }
     } catch (err) {
       console.error('Erro ao carregar dados:', err);
     } finally {
       setIsLoading(false);
     }
-  }, [user]);
+  }, [user, loadLinkStats]);
 
   // Carregar dados ao montar
-  useState(() => {
+  useEffect(() => {
     loadExistingData();
-  });
+  }, [loadExistingData]);
 
   // Parsear arquivo CSV
   const parseCSV = (content: string): ParsedRow[] => {
@@ -204,14 +228,29 @@ export function SimplesNacionalImporter() {
         setImportProgress(Math.round((imported / validRows.length) * 100));
       }
       
-      // Refresh materialized views
-      await supabase.rpc('refresh_materialized_views');
+      // Refresh materialized views com retry
+      setIsRefreshing(true);
+      let refreshAttempts = 0;
+      let refreshSuccess = false;
       
-      toast.success(`${imported} registros importados com sucesso!`);
+      while (refreshAttempts < 3 && !refreshSuccess) {
+        const { error: refreshError } = await supabase.rpc('refresh_materialized_views');
+        if (!refreshError) {
+          refreshSuccess = true;
+        } else {
+          refreshAttempts++;
+          console.warn(`Retry refresh views (${refreshAttempts}/3):`, refreshError);
+          await new Promise(r => setTimeout(r, 1000));
+        }
+      }
+      setIsRefreshing(false);
+      
+      const viewsMsg = refreshSuccess ? 'Views atualizadas!' : 'Views pendentes de atualização.';
+      toast.success(`${imported} registros importados! ${viewsMsg}`);
       setShowPreview(false);
       setFile(null);
       setParsedData([]);
-      loadExistingData();
+      await loadExistingData();
     } catch (err: any) {
       console.error('Erro ao importar:', err);
       toast.error('Erro ao importar: ' + err.message);
@@ -243,6 +282,7 @@ export function SimplesNacionalImporter() {
       
       toast.success('Dados removidos com sucesso');
       setStats({ total: 0, optantes: 0, naoOptantes: 0 });
+      setLinkStats(null);
     } catch (err: any) {
       toast.error('Erro ao remover dados: ' + err.message);
     } finally {
@@ -304,6 +344,54 @@ export function SimplesNacionalImporter() {
               <Trash2 className="h-4 w-4 mr-1" />
               Limpar tudo
             </Button>
+          </div>
+        )}
+
+        {/* Estatísticas de vinculação */}
+        {linkStats && linkStats.total_simples > 0 && (
+          <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Link2 className="h-4 w-4 text-primary" />
+              <span className="text-sm font-medium">Vinculação com Movimentos EFD</span>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-primary">
+                  {linkStats.total_simples}
+                </div>
+                <div className="text-xs text-muted-foreground">CNPJs cadastrados</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-blue-600">
+                  {linkStats.vinculados_uso_consumo}
+                </div>
+                <div className="text-xs text-muted-foreground">Vinc. Uso/Consumo</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-purple-600">
+                  {linkStats.vinculados_mercadorias}
+                </div>
+                <div className="text-xs text-muted-foreground">Vinc. Mercadorias</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-green-600">
+                  {linkStats.optantes_vinculados}
+                </div>
+                <div className="text-xs text-muted-foreground">Optantes vinculados</div>
+              </div>
+            </div>
+            {(linkStats.vinculados_uso_consumo > 0 || linkStats.vinculados_mercadorias > 0) && (
+              <div className="mt-3 text-xs text-muted-foreground flex items-center gap-1">
+                <CheckCircle className="h-3 w-3 text-green-500" />
+                Dados do Simples Nacional já estão refletidos nos dashboards automaticamente.
+              </div>
+            )}
+            {linkStats.total_simples > 0 && linkStats.vinculados_uso_consumo === 0 && linkStats.vinculados_mercadorias === 0 && (
+              <div className="mt-3 text-xs text-amber-600 flex items-center gap-1">
+                <Unlink className="h-3 w-3" />
+                Nenhum CNPJ foi vinculado a movimentos. Verifique se os CNPJs correspondem aos fornecedores nos EFDs importados.
+              </div>
+            )}
           </div>
         )}
 
