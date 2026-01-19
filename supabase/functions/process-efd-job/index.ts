@@ -1416,56 +1416,112 @@ serve(async (req) => {
       .eq("id", jobId);
 
     // ======================================================================
-    // INCREMENTAL CONSOLIDATION - Process C100 records in batches
-    // Each batch call stays within PostgreSQL timeout limits (~3-4 seconds)
+    // INCREMENTAL CONSOLIDATION - Process C100 records in adaptive batches
+    // Uses optimized SQL function without ORDER BY, with CTE-based processing
+    // Each batch stays within PostgreSQL timeout limits (~2-4 seconds)
     // ======================================================================
     console.log(`Job ${jobId}: Starting incremental mercadorias consolidation...`);
-    let mercadoriasTotal = 0;
+    let totalDeleted = 0;
     let batchNumber = 0;
     let hasMore = true;
-    let initialRemaining = 0;
+    let currentBatchSize = 10000; // Start with smaller batch for large files
+    const MIN_BATCH_SIZE = 3000;
+    const MAX_BATCH_SIZE = 30000;
+    const FAST_THRESHOLD_MS = 1500;
+    const SLOW_THRESHOLD_MS = 5000;
+    let consecutiveFailures = 0;
+    const MAX_CONSECUTIVE_FAILURES = 3;
 
-    // First batch to get initial count
+    // Get initial count once (before the loop)
+    const { count: initialCount } = await supabase
+      .from('efd_raw_c100')
+      .select('*', { count: 'exact', head: true })
+      .eq('import_job_id', jobId);
+    
+    const initialRemaining = initialCount || 0;
+    console.log(`Job ${jobId}: Initial C100 records to consolidate: ${initialRemaining}`);
+
     while (hasMore) {
       batchNumber++;
       const batchStartTime = Date.now();
       
       const { data: batchResult, error: batchError } = await supabase
-        .rpc('consolidar_mercadorias_single_batch', { p_job_id: jobId, p_batch_size: 50000 });
-      
-      if (batchError) {
-        console.error(`Job ${jobId}: Batch ${batchNumber} error:`, batchError);
-        await supabase
-          .from("import_jobs")
-          .update({ 
-            status: "failed", 
-            error_message: `Consolidation batch ${batchNumber} error: ${batchError.message}`,
-            completed_at: new Date().toISOString() 
-          })
-          .eq("id", jobId);
-        throw new Error(`Consolidation batch error: ${batchError.message}`);
-      }
-      
-      // Track initial count for progress calculation
-      if (batchNumber === 1 && batchResult.remaining > 0) {
-        initialRemaining = batchResult.remaining + (batchResult.batch_size || 50000);
-      }
-      
-      mercadoriasTotal += batchResult.processed || 0;
-      hasMore = batchResult.has_more === true;
+        .rpc('consolidar_mercadorias_single_batch', { p_job_id: jobId, p_batch_size: currentBatchSize });
       
       const batchDuration = Date.now() - batchStartTime;
-      console.log(`Job ${jobId}: Batch ${batchNumber} completed in ${batchDuration}ms - processed: ${batchResult.processed}, remaining: ${batchResult.remaining}`);
+      
+      if (batchError) {
+        console.error(`Job ${jobId}: Batch ${batchNumber} RPC error (batch_size=${currentBatchSize}):`, batchError);
+        consecutiveFailures++;
+        
+        if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+          await supabase
+            .from("import_jobs")
+            .update({ 
+              status: "failed", 
+              error_message: `Consolidation batch ${batchNumber} failed after ${MAX_CONSECUTIVE_FAILURES} retries: ${batchError.message}`,
+              completed_at: new Date().toISOString() 
+            })
+            .eq("id", jobId);
+          throw new Error(`Consolidation batch error after retries: ${batchError.message}`);
+        }
+        
+        // Reduce batch size and retry
+        currentBatchSize = Math.max(MIN_BATCH_SIZE, Math.floor(currentBatchSize / 2));
+        console.log(`Job ${jobId}: Reducing batch size to ${currentBatchSize} after error, will retry...`);
+        continue;
+      }
+      
+      // Check if the function returned an error in the JSON
+      if (batchResult && batchResult.success === false) {
+        console.error(`Job ${jobId}: Batch ${batchNumber} function error:`, batchResult.error);
+        consecutiveFailures++;
+        
+        if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+          await supabase
+            .from("import_jobs")
+            .update({ 
+              status: "failed", 
+              error_message: `Consolidation batch ${batchNumber} failed: ${batchResult.error}`,
+              completed_at: new Date().toISOString() 
+            })
+            .eq("id", jobId);
+          throw new Error(`Consolidation function error: ${batchResult.error}`);
+        }
+        
+        // Reduce batch size and retry
+        currentBatchSize = Math.max(MIN_BATCH_SIZE, Math.floor(currentBatchSize / 2));
+        console.log(`Job ${jobId}: Reducing batch size to ${currentBatchSize} after function error, will retry...`);
+        continue;
+      }
+      
+      // Success - reset failure counter
+      consecutiveFailures = 0;
+      
+      const deletedRows = batchResult.deleted_rows || 0;
+      totalDeleted += deletedRows;
+      hasMore = batchResult.has_more === true;
+      
+      console.log(`Job ${jobId}: Batch ${batchNumber} completed in ${batchDuration}ms - deleted: ${deletedRows}, has_more: ${hasMore}, batch_size: ${currentBatchSize}`);
+      
+      // Adaptive batch sizing: increase if fast, decrease if slow
+      if (batchDuration < FAST_THRESHOLD_MS && currentBatchSize < MAX_BATCH_SIZE) {
+        currentBatchSize = Math.min(MAX_BATCH_SIZE, currentBatchSize + 5000);
+        console.log(`Job ${jobId}: Increasing batch size to ${currentBatchSize} (fast batch)`);
+      } else if (batchDuration > SLOW_THRESHOLD_MS && currentBatchSize > MIN_BATCH_SIZE) {
+        currentBatchSize = Math.max(MIN_BATCH_SIZE, currentBatchSize - 2000);
+        console.log(`Job ${jobId}: Decreasing batch size to ${currentBatchSize} (slow batch)`);
+      }
       
       // Update progress (92-94% range for mercadorias consolidation)
       if (initialRemaining > 0) {
-        const consolidationProgress = 1 - (batchResult.remaining / initialRemaining);
+        const consolidationProgress = totalDeleted / initialRemaining;
         const progress = Math.min(92 + Math.floor(consolidationProgress * 2), 94);
         await supabase.from("import_jobs").update({ progress }).eq("id", jobId);
       }
     }
     
-    console.log(`Job ${jobId}: Mercadorias consolidation completed - ${batchNumber} batches, ${mercadoriasTotal} records upserted`);
+    console.log(`Job ${jobId}: Mercadorias consolidation completed - ${batchNumber} batches, ${totalDeleted} records processed`);
 
     // ======================================================================
     // CONSOLIDATE OTHER RECORD TYPES (energia, fretes, serviços)
@@ -1490,7 +1546,7 @@ serve(async (req) => {
     
     console.log(`Job ${jobId}: Consolidation result:`, { 
       mercadorias_batches: batchNumber, 
-      mercadorias_upserted: mercadoriasTotal,
+      mercadorias_processed: totalDeleted,
       other_types: consolidationResult 
     });
 
