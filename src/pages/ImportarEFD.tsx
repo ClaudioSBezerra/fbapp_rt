@@ -1043,7 +1043,7 @@ export default function ImportarEFD() {
                     const showRaw = !dc.isConsolidated && (dc.rawMercadorias > 0 || dc.rawFretes > 0 || dc.rawEnergiaAgua > 0 || dc.rawServicos > 0);
                     return (
                       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                        <span>Mercadorias: {showRaw ? dc.rawMercadorias : dc.mercadorias}</span>
+                        <span>Operações: {showRaw ? dc.rawMercadorias : dc.mercadorias}</span>
                         <span>Serviços: {showRaw ? dc.rawServicos : dc.servicos}</span>
                         <span>Energia/Água: {showRaw ? dc.rawEnergiaAgua : dc.energiaAgua}</span>
                         <span>Fretes: {showRaw ? dc.rawFretes : dc.fretes}</span>
@@ -1107,7 +1107,7 @@ export default function ImportarEFD() {
                           <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 text-center">
                             <div>
                               <p className="text-lg font-semibold text-foreground">{dc.mercadorias}</p>
-                              <p className="text-xs text-muted-foreground">Mercadorias</p>
+                              <p className="text-xs text-muted-foreground">Operações</p>
                             </div>
                             <div>
                               <p className="text-lg font-semibold text-foreground">{dc.servicos}</p>
