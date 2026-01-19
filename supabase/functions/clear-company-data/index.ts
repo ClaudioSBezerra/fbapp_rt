@@ -104,9 +104,9 @@ Deno.serve(async (req) => {
 
     console.log(`Clear data request - scope: ${scope}, empresaId: ${empresaId}, grupoId: ${grupoId}`);
 
-    if (!scope || (scope !== "empresa" && scope !== "grupo")) {
+    if (!scope || !["empresa", "grupo", "tenant"].includes(scope)) {
       return new Response(
-        JSON.stringify({ error: "Escopo inválido. Use 'empresa' ou 'grupo'" }),
+        JSON.stringify({ error: "Escopo inválido. Use 'empresa', 'grupo' ou 'tenant'" }),
         { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
       );
     }
@@ -183,6 +183,24 @@ Deno.serve(async (req) => {
 
       empresaIds = empresas?.map(e => e.id) || [];
       targetName = grupo.nome;
+    } else if (scope === "tenant") {
+      // Get all grupos and empresas in this tenant
+      const { data: grupos } = await supabaseAdmin
+        .from("grupos_empresas")
+        .select("id, nome")
+        .eq("tenant_id", tenantId);
+
+      if (grupos && grupos.length > 0) {
+        const grupoIds = grupos.map(g => g.id);
+        
+        const { data: empresas } = await supabaseAdmin
+          .from("empresas")
+          .select("id")
+          .in("grupo_id", grupoIds);
+
+        empresaIds = empresas?.map(e => e.id) || [];
+        targetName = "Todo o Ambiente";
+      }
     }
 
     if (empresaIds.length === 0) {
@@ -280,7 +298,46 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 8. Delete import_jobs for these empresas
+    // 8. Get import_job_ids BEFORE deleting them (for RAW table cleanup)
+    const { data: importJobs } = await supabaseAdmin
+      .from("import_jobs")
+      .select("id")
+      .in("empresa_id", empresaIds);
+
+    const importJobIds = importJobs?.map(j => j.id) || [];
+
+    // 8a. Delete RAW tables explicitly (redundancy for CASCADE)
+    if (importJobIds.length > 0) {
+      console.log(`Cleaning RAW tables for ${importJobIds.length} import jobs...`);
+      
+      const { count: rawC100 } = await supabaseAdmin
+        .from("efd_raw_c100")
+        .delete({ count: "exact" })
+        .in("import_job_id", importJobIds);
+      counts.efd_raw_c100 = rawC100 || 0;
+
+      const { count: rawC500 } = await supabaseAdmin
+        .from("efd_raw_c500")
+        .delete({ count: "exact" })
+        .in("import_job_id", importJobIds);
+      counts.efd_raw_c500 = rawC500 || 0;
+
+      const { count: rawFretes } = await supabaseAdmin
+        .from("efd_raw_fretes")
+        .delete({ count: "exact" })
+        .in("import_job_id", importJobIds);
+      counts.efd_raw_fretes = rawFretes || 0;
+
+      const { count: rawA100 } = await supabaseAdmin
+        .from("efd_raw_a100")
+        .delete({ count: "exact" })
+        .in("import_job_id", importJobIds);
+      counts.efd_raw_a100 = rawA100 || 0;
+
+      console.log(`Deleted RAW tables: c100=${rawC100}, c500=${rawC500}, fretes=${rawFretes}, a100=${rawA100}`);
+    }
+
+    // 8b. Delete import_jobs
     const { count: importJobsCount } = await supabaseAdmin
       .from("import_jobs")
       .delete({ count: "exact" })
