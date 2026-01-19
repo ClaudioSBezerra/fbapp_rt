@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.list-tenants]
 verify_jwt = false
+
+[functions.demo-signup]
+verify_jwt = false
