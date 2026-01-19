@@ -15,18 +15,19 @@ interface RefreshResult {
 }
 
 // Lista de views com seus timeouts (views pesadas têm timeout maior)
+// OTIMIZADO: mercadorias agora usa dados pré-agregados (~117k registros vs 1.1M anteriores)
 const MATERIALIZED_VIEWS: { name: string; timeoutSeconds: number }[] = [
-  { name: 'extensions.mv_mercadorias_aggregated', timeoutSeconds: 120 },
+  { name: 'extensions.mv_mercadorias_aggregated', timeoutSeconds: 60 },
   { name: 'extensions.mv_fretes_aggregated', timeoutSeconds: 60 },
   { name: 'extensions.mv_energia_agua_aggregated', timeoutSeconds: 60 },
   { name: 'extensions.mv_servicos_aggregated', timeoutSeconds: 60 },
-  { name: 'extensions.mv_mercadorias_participante', timeoutSeconds: 300 }, // View pesada - 5 minutos
-  { name: 'extensions.mv_dashboard_stats', timeoutSeconds: 120 },
-  { name: 'extensions.mv_uso_consumo_aggregated', timeoutSeconds: 120 },
-  { name: 'extensions.mv_uso_consumo_detailed', timeoutSeconds: 180 },
-  { name: 'extensions.mv_fretes_detailed', timeoutSeconds: 120 },
-  { name: 'extensions.mv_energia_agua_detailed', timeoutSeconds: 120 },
-  { name: 'extensions.mv_participantes_cache', timeoutSeconds: 120 }, // Cache de participantes
+  { name: 'extensions.mv_mercadorias_participante', timeoutSeconds: 60 }, // Antes 300s, agora muito mais rápida
+  { name: 'extensions.mv_dashboard_stats', timeoutSeconds: 60 },
+  { name: 'extensions.mv_uso_consumo_aggregated', timeoutSeconds: 60 },
+  { name: 'extensions.mv_uso_consumo_detailed', timeoutSeconds: 120 },
+  { name: 'extensions.mv_fretes_detailed', timeoutSeconds: 60 },
+  { name: 'extensions.mv_energia_agua_detailed', timeoutSeconds: 60 },
+  { name: 'extensions.mv_participantes_cache', timeoutSeconds: 60 }, // Cache de participantes
 ];
 
 Deno.serve(async (req) => {
