@@ -124,17 +124,17 @@ export function AppSidebar() {
 
       <SidebarFooter className="border-t border-sidebar-border p-4">
         {!collapsed && user && (
-          <div className="mb-3 space-y-3">
+          <div className="mb-2 space-y-2">
             {/* Card do Usuário */}
-            <div className="bg-sidebar-accent/30 rounded-lg p-3 space-y-1.5">
-              <p className="font-medium text-sm text-sidebar-foreground truncate">
+            <div className="bg-sidebar-accent/30 rounded-lg p-2 space-y-1">
+              <p className="font-medium text-xs text-sidebar-foreground truncate">
                 {user.user_metadata?.full_name || 'Usuário'}
               </p>
-              <p className="text-xs text-sidebar-foreground/60 truncate">
+              <p className="text-[10px] text-sidebar-foreground/60 truncate">
                 {user.email}
               </p>
               {isAdmin && (
-                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary/20 text-primary">
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary/20 text-primary">
                   Administrador
                 </span>
               )}
@@ -142,27 +142,27 @@ export function AppSidebar() {
             
             {/* Grupo e Empresas */}
             {grupoNome && (
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-xs text-sidebar-foreground/80">
-                  <Building2 className="h-3.5 w-3.5" />
+              <div className="space-y-1">
+                <div className="flex items-center gap-1.5 text-[10px] text-sidebar-foreground/80">
+                  <Building2 className="h-3 w-3" />
                   <span className="font-medium">{grupoNome}</span>
                 </div>
                 
                 {empresas.length > 0 && (
-                  <div className="pl-5 space-y-0.5">
+                  <div className="pl-4 space-y-0.5">
                     {isAdmin ? (
-                      <p className="text-xs text-sidebar-foreground/60 italic">
+                      <p className="text-[10px] text-sidebar-foreground/60 italic">
                         Acesso a todas ({empresas.length} empresas)
                       </p>
                     ) : (
                       <>
                         {empresas.slice(0, 3).map((e) => (
-                          <p key={e.id} className="text-xs text-sidebar-foreground/60 truncate">
+                          <p key={e.id} className="text-[10px] text-sidebar-foreground/60 truncate">
                             • {e.nome}
                           </p>
                         ))}
                         {empresas.length > 3 && (
-                          <p className="text-xs text-sidebar-foreground/50 italic">
+                          <p className="text-[10px] text-sidebar-foreground/50 italic">
                             +{empresas.length - 3} outras
                           </p>
                         )}
