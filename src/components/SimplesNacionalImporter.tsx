@@ -58,7 +58,8 @@ export function SimplesNacionalImporter() {
   const [parsedData, setParsedData] = useState<ParsedRow[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [linkStats, setLinkStats] = useState<LinkStats | null>(null);
-  const [pendingCnpjs, setPendingCnpjs] = useState<PendingCnpj[]>([]);
+  const [pendingCnpjsUsoConsumo, setPendingCnpjsUsoConsumo] = useState<PendingCnpj[]>([]);
+  const [pendingCnpjsMercadorias, setPendingCnpjsMercadorias] = useState<PendingCnpj[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
@@ -81,13 +82,22 @@ export function SimplesNacionalImporter() {
     }
   }, []);
 
-  // Carregar CNPJs pendentes de Uso/Consumo
+  // Carregar CNPJs pendentes de Uso/Consumo e Mercadorias
   const loadPendingCnpjs = useCallback(async (tid: string) => {
     setIsLoadingPending(true);
     try {
-      const { data, error } = await supabase.rpc('get_cnpjs_uso_consumo_pendentes', { p_tenant_id: tid });
-      if (!error && data) {
-        setPendingCnpjs(data as PendingCnpj[]);
+      // Carregar ambas as listas em paralelo
+      const [usoConsumoResult, mercadoriasResult] = await Promise.all([
+        supabase.rpc('get_cnpjs_uso_consumo_pendentes', { p_tenant_id: tid }),
+        supabase.rpc('get_cnpjs_mercadorias_pendentes', { p_tenant_id: tid })
+      ]);
+      
+      if (!usoConsumoResult.error && usoConsumoResult.data) {
+        setPendingCnpjsUsoConsumo(usoConsumoResult.data as PendingCnpj[]);
+      }
+      
+      if (!mercadoriasResult.error && mercadoriasResult.data) {
+        setPendingCnpjsMercadorias(mercadoriasResult.data as PendingCnpj[]);
       }
     } catch (err) {
       console.error('Erro ao carregar CNPJs pendentes:', err);
@@ -319,7 +329,8 @@ export function SimplesNacionalImporter() {
       toast.success('Dados removidos com sucesso');
       setStats({ total: 0, optantes: 0, naoOptantes: 0 });
       setLinkStats(null);
-      setPendingCnpjs([]);
+      setPendingCnpjsUsoConsumo([]);
+      setPendingCnpjsMercadorias([]);
     } catch (err: any) {
       toast.error('Erro ao remover dados: ' + err.message);
     } finally {
@@ -339,15 +350,18 @@ export function SimplesNacionalImporter() {
     URL.revokeObjectURL(url);
   };
 
-  // Exportar CNPJs pendentes para CSV
-  const handleExportPending = () => {
-    if (pendingCnpjs.length === 0) {
+  // Exportar CNPJs pendentes para CSV (parametrizado para cada área)
+  const handleExportPending = (area: 'uso_consumo' | 'mercadorias') => {
+    const pendingList = area === 'uso_consumo' ? pendingCnpjsUsoConsumo : pendingCnpjsMercadorias;
+    const areaName = area === 'uso_consumo' ? 'uso_consumo' : 'mercadorias';
+    
+    if (pendingList.length === 0) {
       toast.info('Nenhum CNPJ pendente para exportar');
       return;
     }
     
     const header = 'CNPJ;NOME;QTD_DOCS;VALOR_TOTAL;SIMPLES\n';
-    const rows = pendingCnpjs.map(p => 
+    const rows = pendingList.map(p => 
       `${p.cnpj};${p.nome?.replace(/;/g, ',') || ''};${p.quantidade_docs};${p.valor_total?.toFixed(2) || '0'};`
     ).join('\n');
     
@@ -355,11 +369,11 @@ export function SimplesNacionalImporter() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'cnpjs_pendentes_simples_nacional.csv';
+    link.download = `cnpjs_pendentes_${areaName}.csv`;
     link.click();
     URL.revokeObjectURL(url);
     
-    toast.success(`${pendingCnpjs.length} CNPJs exportados para consulta`);
+    toast.success(`${pendingList.length} CNPJs exportados para consulta`);
   };
 
   const validCount = parsedData.filter(r => r.valid).length;
@@ -463,27 +477,23 @@ export function SimplesNacionalImporter() {
                 <TabsTrigger value="uso_consumo">Uso e Consumo</TabsTrigger>
               </TabsList>
               
-              <TabsContent value="mercadorias" className="mt-4">
+              <TabsContent value="mercadorias" className="mt-4 space-y-4">
                 {linkStats.mercadorias && renderAreaStats(linkStats.mercadorias, 'Mercadorias', 'purple')}
-              </TabsContent>
-              
-              <TabsContent value="uso_consumo" className="mt-4 space-y-4">
-                {linkStats.uso_consumo && renderAreaStats(linkStats.uso_consumo, 'Uso e Consumo / Imobilizado', 'blue')}
                 
-                {/* CNPJs pendentes de Uso/Consumo */}
-                {pendingCnpjs.length > 0 && (
+                {/* CNPJs pendentes de Mercadorias */}
+                {pendingCnpjsMercadorias.length > 0 && (
                   <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 p-4">
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-2">
                         <Unlink className="h-4 w-4 text-amber-600" />
                         <span className="font-medium text-amber-800 dark:text-amber-200">
-                          {pendingCnpjs.length} CNPJs pendentes de cadastro
+                          {pendingCnpjsMercadorias.length} CNPJs pendentes de cadastro
                         </span>
                       </div>
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={handleExportPending}
+                        onClick={() => handleExportPending('mercadorias')}
                         className="border-amber-300 hover:bg-amber-100"
                       >
                         <FileDown className="h-4 w-4 mr-2" />
@@ -491,7 +501,7 @@ export function SimplesNacionalImporter() {
                       </Button>
                     </div>
                     <p className="text-xs text-amber-700 dark:text-amber-300 mb-3">
-                      Exporte a lista abaixo para consultar no portal da Receita Federal e depois importe de volta com o status de Simples Nacional.
+                      Exporte a lista para consultar no portal da Receita Federal e depois importe de volta com o status de Simples Nacional.
                     </p>
                     <ScrollArea className="h-[150px]">
                       <Table>
@@ -504,7 +514,7 @@ export function SimplesNacionalImporter() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {pendingCnpjs.slice(0, 20).map((p, idx) => (
+                          {pendingCnpjsMercadorias.slice(0, 20).map((p, idx) => (
                             <TableRow key={idx}>
                               <TableCell className="font-mono text-xs">
                                 {formatCnpj(p.cnpj)}
@@ -520,10 +530,10 @@ export function SimplesNacionalImporter() {
                               </TableCell>
                             </TableRow>
                           ))}
-                          {pendingCnpjs.length > 20 && (
+                          {pendingCnpjsMercadorias.length > 20 && (
                             <TableRow>
                               <TableCell colSpan={4} className="text-center text-xs text-muted-foreground">
-                                ... e mais {pendingCnpjs.length - 20} CNPJs
+                                ... e mais {pendingCnpjsMercadorias.length - 20} CNPJs
                               </TableCell>
                             </TableRow>
                           )}
@@ -533,7 +543,81 @@ export function SimplesNacionalImporter() {
                   </div>
                 )}
                 
-                {pendingCnpjs.length === 0 && linkStats.uso_consumo?.pendentes === 0 && linkStats.uso_consumo?.total_participantes > 0 && (
+                {pendingCnpjsMercadorias.length === 0 && linkStats.mercadorias?.pendentes === 0 && linkStats.mercadorias?.total_participantes > 0 && (
+                  <div className="flex items-center gap-2 text-green-600 text-sm">
+                    <CheckCircle className="h-4 w-4" />
+                    Todos os fornecedores de Mercadorias estão cadastrados!
+                  </div>
+                )}
+              </TabsContent>
+              
+              <TabsContent value="uso_consumo" className="mt-4 space-y-4">
+                {linkStats.uso_consumo && renderAreaStats(linkStats.uso_consumo, 'Uso e Consumo / Imobilizado', 'blue')}
+                
+                {/* CNPJs pendentes de Uso/Consumo */}
+                {pendingCnpjsUsoConsumo.length > 0 && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <Unlink className="h-4 w-4 text-amber-600" />
+                        <span className="font-medium text-amber-800 dark:text-amber-200">
+                          {pendingCnpjsUsoConsumo.length} CNPJs pendentes de cadastro
+                        </span>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleExportPending('uso_consumo')}
+                        className="border-amber-300 hover:bg-amber-100"
+                      >
+                        <FileDown className="h-4 w-4 mr-2" />
+                        Exportar para CSV
+                      </Button>
+                    </div>
+                    <p className="text-xs text-amber-700 dark:text-amber-300 mb-3">
+                      Exporte a lista para consultar no portal da Receita Federal e depois importe de volta com o status de Simples Nacional.
+                    </p>
+                    <ScrollArea className="h-[150px]">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>CNPJ</TableHead>
+                            <TableHead>Nome</TableHead>
+                            <TableHead className="text-right">Docs</TableHead>
+                            <TableHead className="text-right">Valor</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {pendingCnpjsUsoConsumo.slice(0, 20).map((p, idx) => (
+                            <TableRow key={idx}>
+                              <TableCell className="font-mono text-xs">
+                                {formatCnpj(p.cnpj)}
+                              </TableCell>
+                              <TableCell className="text-xs truncate max-w-[150px]">
+                                {p.nome || '-'}
+                              </TableCell>
+                              <TableCell className="text-right text-xs">
+                                {p.quantidade_docs}
+                              </TableCell>
+                              <TableCell className="text-right text-xs">
+                                {formatCurrency(p.valor_total || 0)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                          {pendingCnpjsUsoConsumo.length > 20 && (
+                            <TableRow>
+                              <TableCell colSpan={4} className="text-center text-xs text-muted-foreground">
+                                ... e mais {pendingCnpjsUsoConsumo.length - 20} CNPJs
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </TableBody>
+                      </Table>
+                    </ScrollArea>
+                  </div>
+                )}
+                
+                {pendingCnpjsUsoConsumo.length === 0 && linkStats.uso_consumo?.pendentes === 0 && linkStats.uso_consumo?.total_participantes > 0 && (
                   <div className="flex items-center gap-2 text-green-600 text-sm">
                     <CheckCircle className="h-4 w-4" />
                     Todos os fornecedores de Uso/Consumo estão cadastrados!
