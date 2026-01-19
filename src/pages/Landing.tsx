@@ -26,6 +26,10 @@ const Landing = () => {
   const navigate = useNavigate();
 
   const handleCTA = () => {
+    navigate("/auth?mode=demo");
+  };
+
+  const handleLogin = () => {
     navigate("/auth");
   };
 

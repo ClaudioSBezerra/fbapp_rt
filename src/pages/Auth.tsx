@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,12 +7,16 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
-import { TrendingUp, Mail, Lock, User, ArrowLeft, Key, Shield, CheckCircle, MapPin, Calendar } from 'lucide-react';
+import { TrendingUp, Mail, Lock, User, ArrowLeft, Key, Shield, CheckCircle, MapPin, Calendar, Sparkles, Clock } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 
-type AuthMode = 'login' | 'signup' | 'forgot' | 'forgot-keyword' | 'reset-keyword';
+type AuthMode = 'login' | 'signup' | 'forgot' | 'forgot-keyword' | 'reset-keyword' | 'demo-signup';
 
 export default function Auth() {
-  const [mode, setMode] = useState<AuthMode>('login');
+  const [searchParams] = useSearchParams();
+  const initialMode = searchParams.get('mode') === 'demo' ? 'demo-signup' : 'login';
+  
+  const [mode, setMode] = useState<AuthMode>(initialMode);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -326,6 +330,47 @@ export default function Auth() {
     savePendingKeyword();
   }, [user]);
 
+  const handleDemoSignup = async () => {
+    if (!email || !password) {
+      toast.error('Preencha email e senha');
+      return;
+    }
+
+    if (password.length < 6) {
+      toast.error('A senha deve ter pelo menos 6 caracteres');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('demo-signup', {
+        body: { email, password, fullName: fullName || email.split('@')[0] }
+      });
+
+      if (error) {
+        throw new Error(error.message || 'Erro ao criar conta demo');
+      }
+
+      if (data?.error) {
+        throw new Error(data.error);
+      }
+
+      // Demo account created - now sign in
+      toast.success('Conta demo criada! Entrando...');
+      
+      const { error: signInError } = await signIn(email, password);
+      if (signInError) {
+        toast.error('Conta criada, mas houve erro no login. Tente fazer login manualmente.');
+        setMode('login');
+      }
+    } catch (err: any) {
+      console.error('Demo signup error:', err);
+      toast.error(err.message || 'Erro ao criar conta demo');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const getTitle = () => {
     switch (mode) {
       case 'login': return 'Acessar conta';
@@ -333,6 +378,7 @@ export default function Auth() {
       case 'forgot': return 'Recuperar senha';
       case 'forgot-keyword': return 'Recuperar senha';
       case 'reset-keyword': return 'Nova senha';
+      case 'demo-signup': return 'Simulação Grátis';
     }
   };
 
@@ -343,6 +389,7 @@ export default function Auth() {
       case 'forgot': return 'Informe seu e-mail para receber o link de recuperação';
       case 'forgot-keyword': return 'Digite sua palavra-chave de segurança para recuperar o acesso';
       case 'reset-keyword': return 'Defina sua nova senha';
+      case 'demo-signup': return 'Teste grátis por 14 dias - sem cartão de crédito';
     }
   };
 
@@ -354,6 +401,7 @@ export default function Auth() {
       case 'forgot': return 'Enviar link de recuperação';
       case 'forgot-keyword': return 'Verificar palavra-chave';
       case 'reset-keyword': return 'Redefinir senha';
+      case 'demo-signup': return 'Iniciar Simulação Grátis';
     }
   };
 
@@ -363,6 +411,8 @@ export default function Auth() {
       handleVerifyKeyword();
     } else if (mode === 'reset-keyword') {
       handleResetWithToken();
+    } else if (mode === 'demo-signup') {
+      handleDemoSignup();
     } else {
       handleSubmit(e);
     }
@@ -376,6 +426,7 @@ export default function Auth() {
     setResetToken('');
     setPassword('');
     setConfirmPassword('');
+    setFullName('');
   };
 
   return (
@@ -391,9 +442,9 @@ export default function Auth() {
           </div>
         </div>
 
-        <Card className="border-border/50 shadow-lg">
+        <Card className={`border-border/50 shadow-lg ${mode === 'demo-signup' ? 'border-primary/30' : ''}`}>
           <CardHeader className="space-y-1">
-            {(mode === 'forgot' || mode === 'forgot-keyword' || mode === 'reset-keyword') && (
+            {(mode === 'forgot' || mode === 'forgot-keyword' || mode === 'reset-keyword' || mode === 'demo-signup') && (
               <button
                 type="button"
                 onClick={handleBackToLogin}
@@ -403,12 +454,36 @@ export default function Auth() {
                 Voltar ao login
               </button>
             )}
+            {mode === 'demo-signup' && (
+              <div className="flex items-center gap-2 mb-2">
+                <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20">
+                  <Sparkles className="h-3 w-3 mr-1" />
+                  14 dias grátis
+                </Badge>
+              </div>
+            )}
             <CardTitle className="text-xl">{getTitle()}</CardTitle>
             <CardDescription>{getDescription()}</CardDescription>
+            {mode === 'demo-signup' && (
+              <div className="flex items-center gap-4 text-xs text-muted-foreground pt-2">
+                <span className="flex items-center gap-1">
+                  <CheckCircle className="h-3 w-3 text-positive" />
+                  Sem cartão
+                </span>
+                <span className="flex items-center gap-1">
+                  <Clock className="h-3 w-3 text-primary" />
+                  14 dias
+                </span>
+                <span className="flex items-center gap-1">
+                  <Shield className="h-3 w-3 text-primary" />
+                  Dados seguros
+                </span>
+              </div>
+            )}
           </CardHeader>
           <form onSubmit={handleFormSubmit}>
             <CardContent className="space-y-4">
-              {mode === 'signup' && (
+              {(mode === 'signup' || mode === 'demo-signup') && (
                 <div className="space-y-2">
                   <Label htmlFor="fullName">Nome completo</Label>
                   <div className="relative">
@@ -522,7 +597,7 @@ export default function Auth() {
                 </>
               )}
 
-              {(mode === 'login' || mode === 'signup') && (
+              {(mode === 'login' || mode === 'signup' || mode === 'demo-signup') && (
                 <div className="space-y-2">
                   <Label htmlFor="password">Senha</Label>
                   <div className="relative">
@@ -547,6 +622,30 @@ export default function Auth() {
                       {isCheckingKeyword ? 'Verificando...' : 'Esqueceu sua senha?'}
                     </button>
                   )}
+                </div>
+              )}
+
+              {mode === 'demo-signup' && (
+                <div className="bg-muted/50 rounded-lg p-4 space-y-3">
+                  <p className="text-sm font-medium">O que está incluído:</p>
+                  <ul className="text-sm text-muted-foreground space-y-2">
+                    <li className="flex items-center gap-2">
+                      <CheckCircle className="h-4 w-4 text-positive flex-shrink-0" />
+                      <span>1 arquivo EFD Contribuições por período</span>
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <CheckCircle className="h-4 w-4 text-positive flex-shrink-0" />
+                      <span>2 arquivos EFD ICMS/IPI por período</span>
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <CheckCircle className="h-4 w-4 text-positive flex-shrink-0" />
+                      <span>Acesso completo aos dashboards</span>
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <CheckCircle className="h-4 w-4 text-positive flex-shrink-0" />
+                      <span>Simulações de 2027 a 2033</span>
+                    </li>
+                  </ul>
                 </div>
               )}
 
@@ -633,6 +732,32 @@ export default function Auth() {
                     {mode === 'login' ? 'Criar conta' : 'Fazer login'}
                   </button>
                 </p>
+              )}
+
+              {mode === 'demo-signup' && (
+                <p className="text-sm text-muted-foreground text-center">
+                  Já tem uma conta?{' '}
+                  <button
+                    type="button"
+                    onClick={handleBackToLogin}
+                    className="text-primary hover:underline font-medium"
+                  >
+                    Fazer login
+                  </button>
+                </p>
+              )}
+
+              {mode === 'login' && (
+                <div className="pt-2 border-t border-border/50">
+                  <button
+                    type="button"
+                    onClick={() => setMode('demo-signup')}
+                    className="w-full py-2 text-sm text-primary hover:text-primary/80 font-medium flex items-center justify-center gap-2"
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    Experimente grátis por 14 dias
+                  </button>
+                </div>
               )}
             </CardFooter>
           </form>

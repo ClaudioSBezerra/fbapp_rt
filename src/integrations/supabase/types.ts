@@ -89,22 +89,28 @@ export type Database = {
       empresas: {
         Row: {
           created_at: string
+          demo_owner_id: string | null
           grupo_id: string
           id: string
+          is_demo: boolean
           nome: string
           updated_at: string
         }
         Insert: {
           created_at?: string
+          demo_owner_id?: string | null
           grupo_id: string
           id?: string
+          is_demo?: boolean
           nome: string
           updated_at?: string
         }
         Update: {
           created_at?: string
+          demo_owner_id?: string | null
           grupo_id?: string
           id?: string
+          is_demo?: boolean
           nome?: string
           updated_at?: string
         }
@@ -512,7 +518,9 @@ export type Database = {
       }
       profiles: {
         Row: {
+          account_type: Database["public"]["Enums"]["account_type"]
           created_at: string
+          demo_trial_ends_at: string | null
           email: string
           full_name: string | null
           id: string
@@ -521,7 +529,9 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          account_type?: Database["public"]["Enums"]["account_type"]
           created_at?: string
+          demo_trial_ends_at?: string | null
           email: string
           full_name?: string | null
           id: string
@@ -530,7 +540,9 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          account_type?: Database["public"]["Enums"]["account_type"]
           created_at?: string
+          demo_trial_ends_at?: string | null
           email?: string
           full_name?: string | null
           id?: string
@@ -832,6 +844,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      check_demo_import_limits: {
+        Args: { _empresa_id: string; _file_type: string; _mes_ano: string }
+        Returns: Json
+      }
       delete_energia_agua_batch: {
         Args: { _batch_size?: number; _filial_ids: string[]; _user_id: string }
         Returns: number
@@ -875,6 +891,7 @@ export type Database = {
           valor_total: number
         }[]
       }
+      get_demo_status: { Args: { _user_id: string }; Returns: Json }
       get_mercadorias_participante_lista: {
         Args: never
         Returns: {
@@ -1191,6 +1208,7 @@ export type Database = {
       show_trgm: { Args: { "": string }; Returns: string[] }
     }
     Enums: {
+      account_type: "standard" | "demo" | "paid"
       app_role: "admin" | "user" | "viewer"
       subscription_status:
         | "trial"
@@ -1325,6 +1343,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      account_type: ["standard", "demo", "paid"],
       app_role: ["admin", "user", "viewer"],
       subscription_status: [
         "trial",
