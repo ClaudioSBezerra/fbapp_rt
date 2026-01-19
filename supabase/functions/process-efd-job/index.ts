@@ -6,12 +6,12 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const BATCH_SIZE = 500;
-const PROGRESS_UPDATE_INTERVAL = 5000; // Update progress every 5k lines
+const BATCH_SIZE = 1000; // Increased batch size for raw inserts (no conflicts)
+const PROGRESS_UPDATE_INTERVAL = 5000;
 
 // Chunk processing limits
-const MAX_LINES_PER_CHUNK = 100000; // Process max 100k lines per execution
-const MAX_EXECUTION_TIME_MS = 45000; // Stop after 45 seconds to have safety margin
+const MAX_LINES_PER_CHUNK = 100000;
+const MAX_EXECUTION_TIME_MS = 45000;
 
 // Valid prefixes by scope
 const ALL_PREFIXES = ["|0000|", "|0140|", "|0150|", "|A010|", "|A100|", "|C010|", "|C100|", "|C500|", "|C600|", "|D010|", "|D100|", "|D101|", "|D105|", "|D500|", "|D501|", "|D505|"];
@@ -21,10 +21,8 @@ const ONLY_D_PREFIXES = ["|0000|", "|0140|", "|0150|", "|D010|", "|D100|", "|D10
 
 type ImportScope = 'all' | 'only_a' | 'only_c' | 'only_d';
 
-// Intermediate save interval (save progress more frequently for recovery)
-const INTERMEDIATE_SAVE_INTERVAL = 50000; // Save bytes_processed every 50k lines
+const INTERMEDIATE_SAVE_INTERVAL = 50000;
 
-// Check if an error is a recoverable stream error
 function isRecoverableStreamError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   const recoverablePatterns = [
@@ -42,7 +40,6 @@ function isRecoverableStreamError(error: unknown): boolean {
   );
 }
 
-// Mapa de participantes (COD_PART -> dados do 0150)
 interface Participante {
   codPart: string;
   nome: string;
@@ -63,39 +60,9 @@ function getValidPrefixes(scope: ImportScope): string[] {
 
 type EFDType = 'icms_ipi' | 'contribuicoes' | null;
 
-interface ParsedRecord {
-  table: "mercadorias" | "energia_agua" | "fretes" | "servicos";
-  data: Record<string, any>;
-}
-
-interface PendingRecord {
-  record: ParsedRecord;
-  pis: number;
-  cofins: number;
-}
-
-interface ProcessingContext {
-  currentPeriod: string;
-  currentCNPJ: string;
-  currentFilialId: string | null;
-  efdType: EFDType;
-  pendingD100: PendingRecord | null;
-  pendingD500: PendingRecord | null;
-  filialMap: Map<string, string>; // CNPJ -> filial_id
-  participantesMap: Map<string, Participante>; // COD_PART -> Participante data
-  estabelecimentosMap: Map<string, string>; // CNPJ -> COD_EST (do registro 0140)
-}
-
-interface BatchBuffers {
-  mercadorias: any[];
-  energia_agua: any[];
-  fretes: any[];
-  servicos: any[];
-  participantes: any[];
-}
-
-// Aggregation map for mercadorias - key format: filial_id|mes_ano|tipo|cod_part
-interface MercadoriasAggregateValue {
+// NEW: Raw record types for 3-layer architecture
+interface RawC100Record {
+  import_job_id: string;
   filial_id: string;
   mes_ano: string;
   tipo: string;
@@ -107,17 +74,74 @@ interface MercadoriasAggregateValue {
   ipi: number;
 }
 
-type MercadoriasAggregateMap = Map<string, MercadoriasAggregateValue>;
+interface RawC500Record {
+  import_job_id: string;
+  filial_id: string;
+  mes_ano: string;
+  tipo_operacao: string;
+  tipo_servico: string;
+  cnpj_fornecedor: string | null;
+  valor: number;
+  pis: number;
+  cofins: number;
+  icms: number;
+}
 
-function getMercadoriasAggregateKey(filial_id: string, mes_ano: string, tipo: string, cod_part: string | null): string {
-  return `${filial_id}|${mes_ano}|${tipo}|${cod_part || '__NULL__'}`;
+interface RawFretesRecord {
+  import_job_id: string;
+  filial_id: string;
+  mes_ano: string;
+  tipo: string;
+  cnpj_transportadora: string | null;
+  valor: number;
+  pis: number;
+  cofins: number;
+  icms: number;
+}
+
+interface RawA100Record {
+  import_job_id: string;
+  filial_id: string;
+  mes_ano: string;
+  tipo: string;
+  valor: number;
+  pis: number;
+  cofins: number;
+  iss: number;
+}
+
+interface PendingFreteRecord {
+  data: RawFretesRecord;
+  pis: number;
+  cofins: number;
+}
+
+interface ProcessingContext {
+  currentPeriod: string;
+  currentCNPJ: string;
+  currentFilialId: string | null;
+  efdType: EFDType;
+  pendingD100: PendingFreteRecord | null;
+  pendingD500: PendingFreteRecord | null;
+  filialMap: Map<string, string>;
+  participantesMap: Map<string, Participante>;
+  estabelecimentosMap: Map<string, string>;
+}
+
+// NEW: Raw batch buffers for 3-layer architecture
+interface RawBatchBuffers {
+  efd_raw_c100: RawC100Record[];
+  efd_raw_c500: RawC500Record[];
+  efd_raw_fretes: RawFretesRecord[];
+  efd_raw_a100: RawA100Record[];
+  participantes: any[];
 }
 
 interface InsertCounts {
-  mercadorias: number;
-  energia_agua: number;
-  fretes: number;
-  servicos: number;
+  raw_c100: number;
+  raw_c500: number;
+  raw_fretes: number;
+  raw_a100: number;
   participantes: number;
   estabelecimentos: number;
 }
@@ -139,7 +163,6 @@ function createSeenCounts(): SeenCounts {
   return { a100: 0, c100: 0, c500: 0, c600: 0, d100: 0, d101: 0, d105: 0, d500: 0, d501: 0, d505: 0 };
 }
 
-// Block limits control
 interface BlockLimits {
   a100: { count: number; limit: number };
   c100: { count: number; limit: number };
@@ -150,11 +173,6 @@ interface BlockLimits {
 }
 
 function createBlockLimits(recordLimit: number, scope: ImportScope): BlockLimits {
-  // Se recordLimit = 0, significa sem limite para todos (importação completa)
-  // Se recordLimit > 0, aplica limite apenas aos blocos ativos pelo scope
-  const noLimit = 0;
-  
-  // Blocos inativos recebem limit = -1 para serem ignorados
   const inactive = -1;
   
   switch (scope) {
@@ -185,7 +203,7 @@ function createBlockLimits(recordLimit: number, scope: ImportScope): BlockLimits
         d100: { count: 0, limit: recordLimit },
         d500: { count: 0, limit: recordLimit },
       };
-    default: // 'all'
+    default:
       return {
         a100: { count: 0, limit: recordLimit },
         c100: { count: 0, limit: recordLimit },
@@ -198,48 +216,29 @@ function createBlockLimits(recordLimit: number, scope: ImportScope): BlockLimits
 }
 
 function allLimitsReached(limits: BlockLimits): boolean {
-  // Pegar apenas blocos que têm limite definido (limit > 0)
-  // Ignorar blocos inativos (limit = -1) e sem limite (limit = 0)
   const blocksWithLimits = Object.values(limits).filter(b => b.limit > 0);
-  
-  // Se nenhum bloco tem limite (todos = 0 ou -1), nunca para antecipadamente
   if (blocksWithLimits.length === 0) return false;
-  
-  // Retorna true apenas se TODOS os blocos COM limite atingiram seus limites
   return blocksWithLimits.every(b => b.count >= b.limit);
 }
 
 function parseNumber(value: string | undefined): number {
   if (!value) return 0;
-  // Valores no EFD usam vírgula como separador decimal (ex: "1092,82" = R$ 1.092,82)
   return parseFloat(value.replace(",", ".")) || 0;
 }
 
-// Detecta o tipo de EFD baseado na estrutura do registro 0000
-// EFD ICMS/IPI: |0000|COD_VER|COD_FIN|DT_INI|DT_FIN|NOME|...
-// EFD Contribuições: |0000|COD_VER|TIPO_ESCRIT|IND_SIT_ESP|NUM_REC_ANT|DT_INI|DT_FIN|NOME|...
 function detectEFDType(fields: string[]): EFDType {
-  // fields[4] em ICMS/IPI é DT_INI (8 dígitos numéricos)
-  // fields[4] em Contribuições é NUM_REC_ANTERIOR (pode estar vazio ou ter outro formato)
   const field4 = fields[4] || '';
-  
-  // Se field4 tem exatamente 8 caracteres numéricos e parece uma data (DDMMAAAA)
   if (/^\d{8}$/.test(field4)) {
     const day = parseInt(field4.substring(0, 2), 10);
     const month = parseInt(field4.substring(2, 4), 10);
-    // Validar se parece uma data válida
     if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
       return 'icms_ipi';
     }
   }
-  
-  // Caso contrário, é Contribuições (DT_INI está no field6)
   return 'contribuicoes';
 }
 
 function getPeriodFromHeader(fields: string[], efdType: EFDType): string {
-  // Posição do DT_INI depende do tipo de EFD
-  // ICMS/IPI: fields[4], Contribuições: fields[6]
   const dtIniIndex = efdType === 'icms_ipi' ? 4 : 6;
   const dtIni = fields[dtIniIndex] || '';
   
@@ -253,78 +252,73 @@ function getPeriodFromHeader(fields: string[], efdType: EFDType): string {
   return "";
 }
 
-function finalizePendingD100(context: ProcessingContext): ParsedRecord | null {
+function finalizePendingD100(context: ProcessingContext): RawFretesRecord | null {
   if (!context.pendingD100) return null;
   
-  const record = context.pendingD100.record;
-  record.data.pis = context.pendingD100.pis;
-  record.data.cofins = context.pendingD100.cofins;
+  const record = context.pendingD100.data;
+  record.pis = context.pendingD100.pis;
+  record.cofins = context.pendingD100.cofins;
   context.pendingD100 = null;
   
   return record;
 }
 
-function finalizePendingD500(context: ProcessingContext): ParsedRecord | null {
+function finalizePendingD500(context: ProcessingContext): RawFretesRecord | null {
   if (!context.pendingD500) return null;
   
-  const record = context.pendingD500.record;
-  record.data.pis = context.pendingD500.pis;
-  record.data.cofins = context.pendingD500.cofins;
+  const record = context.pendingD500.data;
+  record.pis = context.pendingD500.pis;
+  record.cofins = context.pendingD500.cofins;
   context.pendingD500 = null;
   
   return record;
 }
 
-// Return type for processLine now includes createFilial for 0140 records
+// NEW: Result type for raw record processing
 interface ProcessLineResult {
-  record: ParsedRecord | null;
+  rawC100?: RawC100Record;
+  rawC500?: RawC500Record;
+  rawFretes?: RawFretesRecord;
+  rawA100?: RawA100Record;
   context: ProcessingContext;
   blockType?: string;
-  filialUpdate?: string; // CNPJ for C010/D010/A010 context switch
+  filialUpdate?: string;
   participanteData?: Participante;
-  createFilial?: { cnpj: string; nome: string; codEst: string }; // For 0140 to create filial
+  createFilial?: { cnpj: string; nome: string; codEst: string };
 }
 
 function processLine(
   line: string,
   context: ProcessingContext,
   validPrefixes: string[],
-  updateFilial?: (cnpj: string) => Promise<string | null>
+  jobId: string
 ): ProcessLineResult {
   if (!validPrefixes.some(p => line.startsWith(p))) {
-    return { record: null, context };
+    return { context };
   }
 
   const fields = line.split("|");
   if (fields.length < 2) {
-    return { record: null, context };
+    return { context };
   }
 
   const registro = fields[1];
-  let record: ParsedRecord | null = null;
   let blockType: string | undefined;
 
   switch (registro) {
     case "0000":
       if (fields.length > 9) {
-        // Detectar tipo de EFD na primeira vez que encontrar o registro 0000
         if (!context.efdType) {
           context.efdType = detectEFDType(fields);
           console.log(`Detected EFD type: ${context.efdType}`);
         }
         context.currentPeriod = getPeriodFromHeader(fields, context.efdType);
-        // CNPJ está em posições diferentes dependendo do tipo
-        // ICMS/IPI: fields[9], Contribuições: fields[9] também
         context.currentCNPJ = fields[9]?.replace(/\D/g, "") || "";
         console.log(`Parsed 0000: period=${context.currentPeriod}, CNPJ=${context.currentCNPJ}`);
       }
       break;
 
     case "0140":
-      // Registro de Estabelecimentos (Cadastro de Estabelecimentos)
-      // Layout: |0140|COD_EST|NOME|CNPJ|UF|IE|COD_MUN|IM|SUFRAMA|
-      // Índices: 2=COD_EST, 3=NOME, 4=CNPJ, 5=UF, 6=IE, 7=COD_MUN
-      // IMPORTANTE: Criar filial AQUI, não no C010/D010/A010
       if (fields.length > 4) {
         const codEst = fields[2] || "";
         const nome = fields[3] || "";
@@ -334,21 +328,15 @@ function processLine(
           context.estabelecimentosMap.set(cnpj, codEst);
           console.log(`Parsed 0140: COD_EST=${codEst}, NOME=${nome}, CNPJ=${cnpj}`);
           
-          // Check if filial already exists in map
           if (context.filialMap.has(cnpj)) {
             context.currentFilialId = context.filialMap.get(cnpj)!;
             context.currentCNPJ = cnpj;
-            console.log(`0140: Switched to existing filial ${cnpj} -> ${context.currentFilialId}`);
-            // Return signal to update cod_est on existing filial
             return { 
-              record: null, 
               context, 
               createFilial: { cnpj, nome: nome || `Filial ${cnpj}`, codEst } 
             };
           } else {
-            // Return signal to CREATE new filial with all data
             return { 
-              record: null, 
               context, 
               createFilial: { cnpj, nome: nome || `Filial ${cnpj}`, codEst } 
             };
@@ -358,10 +346,6 @@ function processLine(
       break;
 
     case "0150":
-      // Registro de Participantes (Cadastro de Parceiros)
-      // Layout: |0150|COD_PART|NOME|COD_PAIS|CNPJ|CPF|IE|COD_MUN|SUFRAMA|END|NUM|COMPL|BAIRRO|
-      // Índices: 2=COD_PART, 3=NOME, 4=COD_PAIS, 5=CNPJ, 6=CPF, 7=IE, 8=COD_MUN
-      // Participantes são vinculados à filial atual (definida pelo 0140)
       if (fields.length > 3) {
         const codPart = fields[2] || "";
         const nome = (fields[3] || "").substring(0, 100);
@@ -371,12 +355,8 @@ function processLine(
         const codMun = fields.length > 8 ? (fields[8] || null) : null;
         
         if (codPart && nome) {
-          // Still add to map for lookup purposes (cod_part -> nome)
           context.participantesMap.set(codPart, { codPart, nome, cnpj, cpf, ie, codMun });
-          
-          // Return as a special participante record for batch processing
           return {
-            record: null,
             context,
             participanteData: { codPart, nome, cnpj, cpf, ie, codMun }
           };
@@ -387,48 +367,41 @@ function processLine(
     case "A010":
     case "C010":
     case "D010":
-      // Estes registros apenas TROCAM o contexto para a filial existente
-      // A filial já foi criada no 0140 correspondente
       if (fields.length > 2 && fields[2]) {
         const cnpj = fields[2].replace(/\D/g, "");
         context.currentCNPJ = cnpj;
         
-        // Look up existing filial (should already exist from 0140)
         if (context.filialMap.has(cnpj)) {
           context.currentFilialId = context.filialMap.get(cnpj)!;
           console.log(`${registro}: Switched to filial ${cnpj} -> ${context.currentFilialId}`);
         } else {
-          // Fallback: filial not found in map, signal to create it
-          // This can happen if 0140 was missed or on chunk resumption
           console.warn(`${registro}: Filial ${cnpj} not found in map, will create`);
-          return { record: null, context, filialUpdate: cnpj };
+          return { context, filialUpdate: cnpj };
         }
       }
       break;
 
     case "A100":
-      // Nota Fiscal de Serviço - Bloco A (EFD Contribuições)
-      // Layout: |A100|IND_OPER|IND_EMIT|COD_PART|COD_SIT|SER|SUB|NUM_DOC|CHV_NFSE|DT_DOC|DT_EXE_SERV|VL_DOC|IND_PGTO|VL_DESC|VL_BC_PIS|VL_PIS|VL_BC_COFINS|VL_COFINS|VL_PIS_RET|VL_COFINS_RET|VL_ISS|
-      // Índices: 2=IND_OPER, 8=NUM_DOC, 9=CHV_NFSE, 12=VL_DOC, 16=VL_PIS, 18=VL_COFINS, 21=VL_ISS
       blockType = "a100";
       
-      if (fields.length > 12) {
+      if (fields.length > 12 && context.currentFilialId && context.currentPeriod) {
         const indOper = fields[2];
         const tipo = indOper === "0" ? "entrada" : "saida";
-        const valorDoc = parseNumber(fields[12]); // VL_DOC
+        const valorDoc = parseNumber(fields[12]);
         
         if (valorDoc > 0) {
-          record = {
-            table: "servicos",
-            data: {
-              tipo,
+          return {
+            context,
+            blockType,
+            rawA100: {
+              import_job_id: jobId,
+              filial_id: context.currentFilialId,
               mes_ano: context.currentPeriod,
-              ncm: null, // Serviços usam NBS, mas não extraímos aqui
-              descricao: `NFS-e ${fields[9] || fields[8] || ""}`.trim().substring(0, 200) || "Nota de Serviço",
+              tipo,
               valor: valorDoc,
-              pis: fields.length > 16 ? parseNumber(fields[16]) : 0,     // VL_PIS
-              cofins: fields.length > 18 ? parseNumber(fields[18]) : 0,  // VL_COFINS
-              iss: fields.length > 21 ? parseNumber(fields[21]) : 0,     // VL_ISS
+              pis: fields.length > 16 ? parseNumber(fields[16]) : 0,
+              cofins: fields.length > 18 ? parseNumber(fields[18]) : 0,
+              iss: fields.length > 21 ? parseNumber(fields[21]) : 0,
             },
           };
         }
@@ -436,403 +409,359 @@ function processLine(
       break;
 
     case "C100":
-      // Layout diferente para ICMS/IPI e Contribuições
       blockType = "c100";
       
-      if (context.efdType === 'contribuicoes') {
-        // Layout EFD Contribuições - C100:
-        // |C100|IND_OPER|IND_EMIT|COD_PART|COD_MOD|COD_SIT|SER|NUM_DOC|CHV_NFE|DT_DOC|DT_E_S|VL_DOC|IND_PGTO|VL_DESC|VL_ABAT_NT|VL_MERC|IND_FRT|VL_FRT|VL_SEG|VL_OUT_DA|VL_BC_ICMS|VL_ICMS|VL_BC_ICMS_ST|VL_ICMS_ST|VL_IPI|VL_PIS|VL_COFINS|VL_PIS_ST|VL_COFINS_ST|
-        // Índices (após split, pos 0 vazio): 2=IND_OPER, 4=COD_PART, 8=NUM_DOC, 12=VL_DOC, 22=VL_ICMS, 25=VL_IPI, 26=VL_PIS, 27=VL_COFINS
-        if (fields.length > 12) {
-          const indOper = fields[2];
-          const tipo = indOper === "0" ? "entrada" : "saida";
-          const codPartRaw = fields[4] || null;
-          // Para entradas/saídas sem cod_part válido, usar código padrão apropriado
-          let codPart = codPartRaw;
-          if (!codPartRaw || codPartRaw.trim() === '' || codPartRaw === '0') {
-            codPart = tipo === 'saida' ? '9999999999' : '8888888888';
+      if (context.currentFilialId && context.currentPeriod) {
+        if (context.efdType === 'contribuicoes') {
+          if (fields.length > 12) {
+            const indOper = fields[2];
+            const tipo = indOper === "0" ? "entrada" : "saida";
+            const codPartRaw = fields[4] || null;
+            let codPart = codPartRaw;
+            if (!codPartRaw || codPartRaw.trim() === '' || codPartRaw === '0') {
+              codPart = tipo === 'saida' ? '9999999999' : '8888888888';
+            }
+            const valorDoc = parseNumber(fields[12]);
+            
+            if (valorDoc > 0) {
+              return {
+                context,
+                blockType,
+                rawC100: {
+                  import_job_id: jobId,
+                  filial_id: context.currentFilialId,
+                  mes_ano: context.currentPeriod,
+                  tipo,
+                  cod_part: codPart,
+                  valor: valorDoc,
+                  pis: fields.length > 26 ? parseNumber(fields[26]) : 0,
+                  cofins: fields.length > 27 ? parseNumber(fields[27]) : 0,
+                  icms: fields.length > 22 ? parseNumber(fields[22]) : 0,
+                  ipi: fields.length > 25 ? parseNumber(fields[25]) : 0,
+                },
+              };
+            }
           }
-          const valorDoc = parseNumber(fields[12]); // Campo 12: VL_DOC
-          
-          if (valorDoc > 0) {
-            record = {
-              table: "mercadorias",
-              data: {
-                tipo,
-                mes_ano: context.currentPeriod,
-                ncm: null,
-                descricao: `NF-e ${fields[8] || ""}`.trim().substring(0, 200) || "NF-e",
-                valor: valorDoc,
-                pis: fields.length > 26 ? parseNumber(fields[26]) : 0,    // Campo 26: VL_PIS (se existir)
-                cofins: fields.length > 27 ? parseNumber(fields[27]) : 0, // Campo 27: VL_COFINS (se existir)
-                icms: fields.length > 22 ? parseNumber(fields[22]) : 0,   // Campo 22: VL_ICMS (se existir)
-                ipi: fields.length > 25 ? parseNumber(fields[25]) : 0,    // Campo 25: VL_IPI (se existir)
-                cod_part: codPart, // Referência ao participante (ou CONSUMIDOR FINAL)
-              },
-            };
-          }
-        }
-      } else {
-        // Layout EFD ICMS/IPI - C100 (após split com índice 0 vazio):
-        // 2=IND_OPER, 4=COD_PART, 8=NUM_DOC, 12=VL_DOC, 22=VL_ICMS, 25=VL_IPI, 26=VL_PIS, 27=VL_COFINS
-        if (fields.length > 27) {
-          const indOper = fields[2];
-          const tipo = indOper === "0" ? "entrada" : "saida";
-          const codPartRaw = fields[4] || null;
-          // Para entradas/saídas sem cod_part válido, usar código padrão apropriado
-          let codPart = codPartRaw;
-          if (!codPartRaw || codPartRaw.trim() === '' || codPartRaw === '0') {
-            codPart = tipo === 'saida' ? '9999999999' : '8888888888';
-          }
-          const valorDoc = parseNumber(fields[12]); // Campo 12: VL_DOC
-          
-          if (valorDoc > 0) {
-            record = {
-              table: "mercadorias",
-              data: {
-                tipo,
-                mes_ano: context.currentPeriod,
-                ncm: null,
-                descricao: `NF-e ${fields[8] || ""}`.trim().substring(0, 200) || "NF-e",
-                valor: valorDoc,
-                pis: parseNumber(fields[26]),    // Campo 26: VL_PIS
-                cofins: parseNumber(fields[27]), // Campo 27: VL_COFINS
-                icms: parseNumber(fields[22]),   // Campo 22: VL_ICMS
-                ipi: parseNumber(fields[25]),    // Campo 25: VL_IPI
-                cod_part: codPart, // Referência ao participante (ou CONSUMIDOR FINAL)
-              },
-            };
+        } else {
+          if (fields.length > 27) {
+            const indOper = fields[2];
+            const tipo = indOper === "0" ? "entrada" : "saida";
+            const codPartRaw = fields[4] || null;
+            let codPart = codPartRaw;
+            if (!codPartRaw || codPartRaw.trim() === '' || codPartRaw === '0') {
+              codPart = tipo === 'saida' ? '9999999999' : '8888888888';
+            }
+            const valorDoc = parseNumber(fields[12]);
+            
+            if (valorDoc > 0) {
+              return {
+                context,
+                blockType,
+                rawC100: {
+                  import_job_id: jobId,
+                  filial_id: context.currentFilialId,
+                  mes_ano: context.currentPeriod,
+                  tipo,
+                  cod_part: codPart,
+                  valor: valorDoc,
+                  pis: parseNumber(fields[26]),
+                  cofins: parseNumber(fields[27]),
+                  icms: parseNumber(fields[22]),
+                  ipi: parseNumber(fields[25]),
+                },
+              };
+            }
           }
         }
       }
       break;
 
     case "C500":
-      // Energia/Água/Gás/Comunicação - layout diferente para ICMS/IPI e Contribuições
       blockType = "c500";
       
-      // Mapeamento expandido de códigos de modelo de documento
       const codModMapC500: Record<string, string> = {
-        "06": "energia",      // Nota Fiscal/Conta de Energia Elétrica
-        "21": "comunicacao",  // Nota Fiscal de Serviço de Comunicação
-        "22": "comunicacao",  // Nota Fiscal de Serviço de Telecomunicação
-        "28": "gas",          // Nota Fiscal/Conta de Gás Canalizado
-        "29": "agua",         // Nota Fiscal/Conta de Fornecimento de Água
+        "06": "energia",
+        "21": "comunicacao",
+        "22": "comunicacao",
+        "28": "gas",
+        "29": "agua",
       };
       
-      if (context.efdType === 'contribuicoes') {
-        // Layout EFD Contribuições - C500 (Energia/Água/Gás com crédito)
-        // |C500|COD_PART|COD_MOD|COD_SIT|SER|SUB|NUM_DOC|DT_DOC|DT_E_S|VL_DOC|VL_ICMS|COD_INF|VL_PIS|VL_COFINS|
-        // Indices: 2=COD_PART, 3=COD_MOD, 10=VL_DOC, 11=VL_ICMS, 13=VL_PIS, 14=VL_COFINS
-        if (fields.length > 10) {
-          const codMod = fields[3] || "";
-          const tipoServico = codModMapC500[codMod] || "outros";
-          const cnpjFornecedor = fields[2]?.replace(/\D/g, "") || null;
-          const valorDoc = parseNumber(fields[10]);
-          
-          console.log(`C500 Contrib: codMod=${codMod}, tipo=${tipoServico}, valor=${valorDoc}, fields=${fields.length}`);
+      if (context.currentFilialId && context.currentPeriod) {
+        if (context.efdType === 'contribuicoes') {
+          if (fields.length > 10) {
+            const codMod = fields[3] || "";
+            const tipoServico = codModMapC500[codMod] || "outros";
+            const cnpjFornecedor = fields[2]?.replace(/\D/g, "") || null;
+            const valorDoc = parseNumber(fields[10]);
 
-          if (valorDoc > 0) {
-            const tipoLabel = tipoServico === "energia" ? "Energia Elétrica" : 
-                              tipoServico === "agua" ? "Água" : 
-                              tipoServico === "gas" ? "Gás" :
-                              tipoServico === "comunicacao" ? "Comunicação" : "Outros";
-            record = {
-              table: "energia_agua",
-              data: {
-                tipo_operacao: "credito", // EFD Contribuições C500 é sempre crédito
-                tipo_servico: tipoServico,
-                cnpj_fornecedor: cnpjFornecedor,
-                descricao: `${tipoLabel} - Doc ${fields[7] || ""}`.trim().substring(0, 200),
-                mes_ano: context.currentPeriod,
-                valor: valorDoc,
-                pis: fields.length > 13 ? parseNumber(fields[13]) : 0,
-                cofins: fields.length > 14 ? parseNumber(fields[14]) : 0,
-                icms: fields.length > 11 ? parseNumber(fields[11]) : 0,
-              },
-            };
+            if (valorDoc > 0) {
+              return {
+                context,
+                blockType,
+                rawC500: {
+                  import_job_id: jobId,
+                  filial_id: context.currentFilialId,
+                  mes_ano: context.currentPeriod,
+                  tipo_operacao: "credito",
+                  tipo_servico: tipoServico,
+                  cnpj_fornecedor: cnpjFornecedor,
+                  valor: valorDoc,
+                  pis: fields.length > 13 ? parseNumber(fields[13]) : 0,
+                  cofins: fields.length > 14 ? parseNumber(fields[14]) : 0,
+                  icms: fields.length > 11 ? parseNumber(fields[11]) : 0,
+                },
+              };
+            }
           }
-        }
-      } else {
-        // Layout EFD ICMS/IPI - C500 (Energia/Água):
-        // 2=IND_OPER, 4=COD_PART, 5=COD_MOD, 7=SER, 10=VL_DOC, 13=VL_ICMS, 16=VL_PIS, 18=VL_COFINS
-        if (fields.length > 10) {
-          const indOper = fields[2];
-          const tipoOperacao = indOper === "0" ? "credito" : "debito";
-          const codMod = fields[5] || "";
-          const tipoServico = codModMapC500[codMod] || "outros";
-          const cnpjFornecedor = fields[4]?.replace(/\D/g, "") || null;
-          const valorDoc = parseNumber(fields[10]);
-          
-          console.log(`C500 ICMS/IPI: codMod=${codMod}, tipo=${tipoServico}, valor=${valorDoc}, fields=${fields.length}`);
+        } else {
+          if (fields.length > 10) {
+            const indOper = fields[2];
+            const tipoOperacao = indOper === "0" ? "credito" : "debito";
+            const codMod = fields[5] || "";
+            const tipoServico = codModMapC500[codMod] || "outros";
+            const cnpjFornecedor = fields[4]?.replace(/\D/g, "") || null;
+            const valorDoc = parseNumber(fields[10]);
 
-          if (valorDoc > 0) {
-            const tipoLabel = tipoServico === "energia" ? "Energia Elétrica" : 
-                              tipoServico === "agua" ? "Água" : 
-                              tipoServico === "gas" ? "Gás" :
-                              tipoServico === "comunicacao" ? "Comunicação" : "Outros";
-            record = {
-              table: "energia_agua",
-              data: {
-                tipo_operacao: tipoOperacao,
-                tipo_servico: tipoServico,
-                cnpj_fornecedor: cnpjFornecedor,
-                descricao: `${tipoLabel} - ${fields[7] || ""}`.trim().substring(0, 200),
-                mes_ano: context.currentPeriod,
-                valor: valorDoc,
-                pis: fields.length > 16 ? parseNumber(fields[16]) : 0,
-                cofins: fields.length > 18 ? parseNumber(fields[18]) : 0,
-                icms: fields.length > 13 ? parseNumber(fields[13]) : 0,
-              },
-            };
+            if (valorDoc > 0) {
+              return {
+                context,
+                blockType,
+                rawC500: {
+                  import_job_id: jobId,
+                  filial_id: context.currentFilialId,
+                  mes_ano: context.currentPeriod,
+                  tipo_operacao: tipoOperacao,
+                  tipo_servico: tipoServico,
+                  cnpj_fornecedor: cnpjFornecedor,
+                  valor: valorDoc,
+                  pis: fields.length > 16 ? parseNumber(fields[16]) : 0,
+                  cofins: fields.length > 18 ? parseNumber(fields[18]) : 0,
+                  icms: fields.length > 13 ? parseNumber(fields[13]) : 0,
+                },
+              };
+            }
           }
         }
       }
       break;
 
     case "C600":
-      // Consolidação diária - layout diferente para ICMS/IPI e Contribuições
+      // C600 goes to raw_c100 as mercadorias
       blockType = "c600";
       
-      if (context.efdType === 'contribuicoes') {
-        // Layout EFD Contribuições - C600 (Consolidação diária de energia/água/gás/comunicação):
-        // |C600|COD_MOD|COD_MUN|SER|SUB|COD_CONS|QTD_CONS|QTD_CONS_REDUZ|DT_DOC_INI|DT_DOC_FIN|VL_DOC|VL_DESC|
-        // |VL_FORN|VL_SERV_NT|VL_TERC|VL_DA|VL_BC_ICMS|VL_ICMS|VL_BC_ICMS_ST|VL_ICMS_ST|VL_PIS|VL_COFINS|...
-        // Índices corretos: 10=VL_DOC, 18=VL_ICMS, 21=VL_PIS, 22=VL_COFINS
-        if (fields.length > 22) {
-          const valorDoc = parseNumber(fields[10]);
-          
-          if (valorDoc > 0) {
-            record = {
-              table: "mercadorias",
-              data: {
-                tipo: "saida",
-                mes_ano: context.currentPeriod,
-                ncm: null,
-                descricao: `Consolidação NF ${fields[1] || ""} ${fields[2] || ""}`.trim().substring(0, 200) || "Consolidação diária",
-                valor: valorDoc,
-                pis: parseNumber(fields[21]),    // Campo 21 = VL_PIS
-                cofins: parseNumber(fields[22]), // Campo 22 = VL_COFINS
-                icms: parseNumber(fields[18]),   // Campo 18 = VL_ICMS
-                ipi: 0,
-              },
-            };
+      if (context.currentFilialId && context.currentPeriod) {
+        if (context.efdType === 'contribuicoes') {
+          if (fields.length > 22) {
+            const valorDoc = parseNumber(fields[10]);
+            
+            if (valorDoc > 0) {
+              return {
+                context,
+                blockType,
+                rawC100: {
+                  import_job_id: jobId,
+                  filial_id: context.currentFilialId,
+                  mes_ano: context.currentPeriod,
+                  tipo: "saida",
+                  cod_part: null, // C600 doesn't have cod_part
+                  valor: valorDoc,
+                  pis: parseNumber(fields[21]),
+                  cofins: parseNumber(fields[22]),
+                  icms: parseNumber(fields[18]),
+                  ipi: 0,
+                },
+              };
+            }
           }
-        }
-      } else {
-        // Layout EFD ICMS/IPI - C600 (Consolidação diária):
-        // 2=COD_MOD, 3=COD_MUN, 7=VL_DOC, 12=VL_ICMS, 15=VL_PIS, 16=VL_COFINS
-        if (fields.length > 16) {
-          const valorDoc = parseNumber(fields[7]);
-          
-          if (valorDoc > 0) {
-            record = {
-              table: "mercadorias",
-              data: {
-                tipo: "saida",
-                mes_ano: context.currentPeriod,
-                ncm: null,
-                descricao: `Consolidação NF ${fields[2] || ""} ${fields[3] || ""}`.trim().substring(0, 200) || "Consolidação diária",
-                valor: valorDoc,
-                pis: parseNumber(fields[15]),
-                cofins: parseNumber(fields[16]),
-                icms: parseNumber(fields[12]),
-                ipi: 0,
-              },
-            };
+        } else {
+          if (fields.length > 16) {
+            const valorDoc = parseNumber(fields[7]);
+            
+            if (valorDoc > 0) {
+              return {
+                context,
+                blockType,
+                rawC100: {
+                  import_job_id: jobId,
+                  filial_id: context.currentFilialId,
+                  mes_ano: context.currentPeriod,
+                  tipo: "saida",
+                  cod_part: null,
+                  valor: valorDoc,
+                  pis: parseNumber(fields[15]),
+                  cofins: parseNumber(fields[16]),
+                  icms: parseNumber(fields[12]),
+                  ipi: 0,
+                },
+              };
+            }
           }
         }
       }
       break;
 
     case "D100":
-      // CT-e - layout diferente para ICMS/IPI e Contribuições
       blockType = "d100";
       
-      if (context.efdType === 'contribuicoes') {
-        // Finalize any pending D100 before starting a new one
-        record = finalizePendingD100(context);
-        
-        // Layout EFD Contribuições - D100 (CT-e com crédito)
-        // |D100|IND_OPER|IND_EMIT|COD_PART|COD_MOD|COD_SIT|SER|SUB|NUM_DOC|CHV_CTE|DT_DOC|DT_A_P|TP_CTE|CHV_CTE_REF|VL_DOC|VL_DESC|IND_FRT|VL_SERV|VL_BC_ICMS|VL_ICMS|VL_NT|COD_INF|COD_CTA|
-        // Indices: 2=IND_OPER, 4=COD_PART, 9=NUM_DOC ou 10=CHV_CTE, 15=VL_DOC, 20=VL_ICMS
-        // IMPORTANTE: PIS/COFINS vêm dos registros D101 e D105
-        if (fields.length > 20) {
-          const indOper = fields[2];
-          const tipo = indOper === "0" ? "entrada" : "saida";
-          // Extrair CNPJ dos primeiros 14 dígitos da chave do CT-e (campos 7-20 da CHV_CTE)
-          const chvCte = fields[10] || "";
-          const cnpjTransportadora = chvCte.length >= 20 ? chvCte.substring(6, 20) : null;
-          const valorDoc = parseNumber(fields[15]);
+      if (context.currentFilialId && context.currentPeriod) {
+        if (context.efdType === 'contribuicoes') {
+          // Return any pending D100 first
+          const pendingRecord = finalizePendingD100(context);
+          
+          if (fields.length > 20) {
+            const indOper = fields[2];
+            const tipo = indOper === "0" ? "entrada" : "saida";
+            const chvCte = fields[10] || "";
+            const cnpjTransportadora = chvCte.length >= 20 ? chvCte.substring(6, 20) : null;
+            const valorDoc = parseNumber(fields[15]);
 
-          if (valorDoc > 0) {
-            // Store pending D100 - PIS/COFINS will be accumulated from D101/D105
-            context.pendingD100 = {
-              record: {
-                table: "fretes",
+            if (valorDoc > 0) {
+              context.pendingD100 = {
                 data: {
-                  tipo,
+                  import_job_id: jobId,
+                  filial_id: context.currentFilialId,
                   mes_ano: context.currentPeriod,
-                  ncm: null,
-                  descricao: `CT-e ${fields[10] || fields[9] || ""}`.trim().substring(0, 200) || "Conhecimento de Transporte",
+                  tipo,
                   cnpj_transportadora: cnpjTransportadora,
                   valor: valorDoc,
-                  pis: 0,      // Will be filled by D101
-                  cofins: 0,   // Will be filled by D105
+                  pis: 0,
+                  cofins: 0,
                   icms: parseNumber(fields[20]),
                 },
-              },
-              pis: 0,
-              cofins: 0,
-            };
+                pis: 0,
+                cofins: 0,
+              };
+            }
           }
-        }
-      } else {
-        // Layout EFD ICMS/IPI - D100 (CT-e):
-        // 2=IND_OPER, 5=COD_PART, 8=NUM_DOC, 14=VL_DOC, 23=VL_ICMS, 24=VL_PIS, 26=VL_COFINS
-        if (fields.length > 26) {
-          const indOper = fields[2];
-          const tipo = indOper === "0" ? "entrada" : "saida";
-          const cnpjTransportadora = fields[5]?.replace(/\D/g, "") || null;
-          const valorDoc = parseNumber(fields[14]);
+          
+          if (pendingRecord) {
+            return { context, blockType, rawFretes: pendingRecord };
+          }
+        } else {
+          if (fields.length > 26) {
+            const indOper = fields[2];
+            const tipo = indOper === "0" ? "entrada" : "saida";
+            const cnpjTransportadora = fields[5]?.replace(/\D/g, "") || null;
+            const valorDoc = parseNumber(fields[14]);
 
-          if (valorDoc > 0) {
-            record = {
-              table: "fretes",
-              data: {
-                tipo,
-                mes_ano: context.currentPeriod,
-                ncm: null,
-                descricao: `CT-e ${fields[8] || ""}`.trim().substring(0, 200) || "Conhecimento de Transporte",
-                cnpj_transportadora: cnpjTransportadora,
-                valor: valorDoc,
-                pis: parseNumber(fields[24]),
-                cofins: parseNumber(fields[26]),
-                icms: parseNumber(fields[23]),
-              },
-            };
+            if (valorDoc > 0) {
+              return {
+                context,
+                blockType,
+                rawFretes: {
+                  import_job_id: jobId,
+                  filial_id: context.currentFilialId,
+                  mes_ano: context.currentPeriod,
+                  tipo,
+                  cnpj_transportadora: cnpjTransportadora,
+                  valor: valorDoc,
+                  pis: parseNumber(fields[24]),
+                  cofins: parseNumber(fields[26]),
+                  icms: parseNumber(fields[23]),
+                },
+              };
+            }
           }
         }
       }
       break;
 
     case "D101":
-      // Complemento do D100 - PIS (EFD Contribuições)
-      // |D101|IND_NAT_FRT|VL_ITEM|CST_PIS|NAT_BC_CR|VL_BC_PIS|ALIQ_PIS|VL_PIS|COD_CTA|
-      // Indice 8 = VL_PIS
       if (context.efdType === 'contribuicoes' && context.pendingD100 && fields.length > 8) {
         context.pendingD100.pis += parseNumber(fields[8]);
       }
       break;
 
     case "D105":
-      // Complemento do D100 - COFINS (EFD Contribuições)
-      // |D105|IND_NAT_FRT|VL_ITEM|CST_COFINS|NAT_BC_CR|VL_BC_COFINS|ALIQ_COFINS|VL_COFINS|COD_CTA|
-      // Indice 8 = VL_COFINS
       if (context.efdType === 'contribuicoes' && context.pendingD100 && fields.length > 8) {
         context.pendingD100.cofins += parseNumber(fields[8]);
       }
       break;
 
     case "D500":
-      // Telecom/Comunicação - layout diferente para ICMS/IPI e Contribuições
       blockType = "d500";
       
-      if (context.efdType === 'contribuicoes') {
-        // Finalize any pending D100 and D500 before starting a new D500
-        const pendingD100Record = finalizePendingD100(context);
-        if (pendingD100Record) {
-          // Return pending D100 first - D500 will be processed next
-          record = pendingD100Record;
-          blockType = "d100";
-        }
-        
-        const pendingD500Record = finalizePendingD500(context);
-        if (pendingD500Record && !record) {
-          record = pendingD500Record;
-        }
-        
-        // Layout EFD Contribuições - D500 (Telecom/Comunicação com crédito)
-        // |D500|IND_OPER|IND_EMIT|COD_PART|COD_MOD|COD_SIT|SER|SUB|NUM_DOC|DT_DOC|DT_A_P|VL_DOC|VL_DESC|VL_SERV|VL_SERV_NT|VL_TERC|VL_DA|VL_BC_ICMS|VL_ICMS|COD_INF|COD_CTA|
-        // Indices: 2=IND_OPER, 4=COD_PART, 9=NUM_DOC, 12=VL_DOC, 19=VL_ICMS
-        // IMPORTANTE: PIS/COFINS vêm dos registros D501 e D505
-        if (fields.length > 19) {
-          const indOper = fields[2];
-          const tipo = indOper === "0" ? "entrada" : "saida";
-          const cnpjFornecedor = fields[4]?.replace(/\D/g, "") || null;
-          const valorDoc = parseNumber(fields[12]);
+      if (context.currentFilialId && context.currentPeriod) {
+        if (context.efdType === 'contribuicoes') {
+          const pendingD100Record = finalizePendingD100(context);
+          const pendingD500Record = finalizePendingD500(context);
+          
+          if (fields.length > 19) {
+            const indOper = fields[2];
+            const tipo = indOper === "0" ? "entrada" : "saida";
+            const cnpjFornecedor = fields[4]?.replace(/\D/g, "") || null;
+            const valorDoc = parseNumber(fields[12]);
 
-          if (valorDoc > 0) {
-            // Store pending D500 - PIS/COFINS will be accumulated from D501/D505
-            context.pendingD500 = {
-              record: {
-                table: "fretes",
+            if (valorDoc > 0) {
+              context.pendingD500 = {
                 data: {
-                  tipo,
+                  import_job_id: jobId,
+                  filial_id: context.currentFilialId,
                   mes_ano: context.currentPeriod,
-                  ncm: null,
-                  descricao: `Telecom/Comunicação ${fields[9] || ""}`.trim().substring(0, 200) || "Serviço de Comunicação",
+                  tipo,
                   cnpj_transportadora: cnpjFornecedor,
                   valor: valorDoc,
-                  pis: 0,      // Will be filled by D501
-                  cofins: 0,   // Will be filled by D505
+                  pis: 0,
+                  cofins: 0,
                   icms: parseNumber(fields[19]),
                 },
-              },
-              pis: 0,
-              cofins: 0,
-            };
+                pis: 0,
+                cofins: 0,
+              };
+            }
           }
-        }
-      } else {
-        // Layout EFD ICMS/IPI - D500 (Telecom/Comunicação):
-        // 2=IND_OPER, 4=COD_PART, 7=SER, 11=VL_DOC, 14=VL_ICMS, 17=VL_PIS, 19=VL_COFINS
-        if (fields.length > 19) {
-          const indOper = fields[2];
-          const tipo = indOper === "0" ? "entrada" : "saida";
-          const cnpjFornecedor = fields[4]?.replace(/\D/g, "") || null;
-          const valorDoc = parseNumber(fields[11]);
+          
+          // Return pending D100 first if exists
+          if (pendingD100Record) {
+            return { context, blockType: "d100", rawFretes: pendingD100Record };
+          }
+          if (pendingD500Record) {
+            return { context, blockType, rawFretes: pendingD500Record };
+          }
+        } else {
+          if (fields.length > 19) {
+            const indOper = fields[2];
+            const tipo = indOper === "0" ? "entrada" : "saida";
+            const cnpjFornecedor = fields[4]?.replace(/\D/g, "") || null;
+            const valorDoc = parseNumber(fields[11]);
 
-          if (valorDoc > 0) {
-            record = {
-              table: "fretes",
-              data: {
-                tipo,
-                mes_ano: context.currentPeriod,
-                ncm: null,
-                descricao: `Telecom/Comunicação ${fields[7] || ""}`.trim().substring(0, 200) || "Serviço de Comunicação",
-                cnpj_transportadora: cnpjFornecedor,
-                valor: valorDoc,
-                pis: parseNumber(fields[17]),
-                cofins: parseNumber(fields[19]),
-                icms: parseNumber(fields[14]),
-              },
-            };
+            if (valorDoc > 0) {
+              return {
+                context,
+                blockType,
+                rawFretes: {
+                  import_job_id: jobId,
+                  filial_id: context.currentFilialId,
+                  mes_ano: context.currentPeriod,
+                  tipo,
+                  cnpj_transportadora: cnpjFornecedor,
+                  valor: valorDoc,
+                  pis: parseNumber(fields[17]),
+                  cofins: parseNumber(fields[19]),
+                  icms: parseNumber(fields[14]),
+                },
+              };
+            }
           }
         }
       }
       break;
 
     case "D501":
-      // Complemento do D500 - PIS (EFD Contribuições)
-      // |D501|CST_PIS|VL_ITEM|NAT_BC_CR|VL_BC_PIS|ALIQ_PIS|VL_PIS|COD_CTA|
-      // Indice 7 = VL_PIS
       if (context.efdType === 'contribuicoes' && context.pendingD500 && fields.length > 7) {
         context.pendingD500.pis += parseNumber(fields[7]);
       }
       break;
 
     case "D505":
-      // Complemento do D500 - COFINS (EFD Contribuições)
-      // |D505|CST_COFINS|VL_ITEM|NAT_BC_CR|VL_BC_COFINS|ALIQ_COFINS|VL_COFINS|COD_CTA|
-      // Indice 7 = VL_COFINS
       if (context.efdType === 'contribuicoes' && context.pendingD500 && fields.length > 7) {
         context.pendingD500.cofins += parseNumber(fields[7]);
       }
       break;
   }
 
-  return { record, context, blockType };
+  return { context, blockType };
 }
 
 serve(async (req) => {
@@ -859,7 +788,6 @@ serve(async (req) => {
 
     console.log(`Starting processing for job: ${jobId}`);
 
-    // Get job details
     const { data: job, error: jobError } = await supabase
       .from("import_jobs")
       .select("*")
@@ -874,7 +802,6 @@ serve(async (req) => {
       );
     }
 
-    // Check if job was cancelled before starting
     if (job.status === "cancelled") {
       console.log(`Job ${jobId}: Already cancelled, skipping processing`);
       return new Response(
@@ -883,7 +810,6 @@ serve(async (req) => {
       );
     }
 
-    // Check if job is already completed
     if (job.status === "completed") {
       console.log(`Job ${jobId}: Already completed`);
       return new Response(
@@ -892,110 +818,62 @@ serve(async (req) => {
       );
     }
 
-    // Get resumption info
     const startByte = job.bytes_processed || 0;
     const chunkNumber = (job.chunk_number || 0) + 1;
     const isResuming = startByte > 0;
 
     console.log(`Job ${jobId}: Chunk ${chunkNumber}, ${isResuming ? `resuming from byte ${startByte}` : 'starting fresh'}`);
 
-    // Get record limit and import scope from job
     const recordLimit = job.record_limit || 0;
-    const importScope: ImportScope = (job.import_scope as ImportScope) || 'all';
+    const importScope = (job.import_scope || 'all') as ImportScope;
     const validPrefixes = getValidPrefixes(importScope);
-    console.log(`Job ${jobId}: Import scope: ${importScope}, Record limit: ${recordLimit === 0 ? 'unlimited' : recordLimit}`);
+    console.log(`Job ${jobId}: Using scope '${importScope}' with ${validPrefixes.length} valid prefixes, recordLimit: ${recordLimit}`);
 
-    // Update job status to processing (only on first chunk)
+    // Update job status to processing
     if (!isResuming) {
       await supabase
         .from("import_jobs")
         .update({ status: "processing", started_at: new Date().toISOString() })
         .eq("id", jobId);
-    }
-
-    console.log(`Job ${jobId}: Creating signed URL for ${job.file_path}`);
-
-    // Helper function to create signed URL with retry logic
-    const createSignedUrlWithRetry = async (maxRetries: number = 3): Promise<string | null> => {
-      for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-          console.log(`Job ${jobId}: Signed URL attempt ${attempt}/${maxRetries}`);
-          
-          const { data, error } = await supabase.storage
-            .from("efd-files")
-            .createSignedUrl(job.file_path, 3600);
-          
-          if (error) {
-            console.error(`Signed URL attempt ${attempt} failed:`, error);
-            
-            // Check if error message contains HTML (API returned error page)
-            if (typeof error.message === 'string' && error.message.includes('<')) {
-              console.warn('Received HTML response instead of JSON, retrying...');
-            }
-            
-            if (attempt < maxRetries) {
-              const delay = 1000 * Math.pow(2, attempt - 1); // Exponential backoff: 1s, 2s, 4s
-              console.log(`Job ${jobId}: Waiting ${delay}ms before retry...`);
-              await new Promise(resolve => setTimeout(resolve, delay));
-              continue;
-            }
-            return null;
-          }
-          
-          if (data?.signedUrl) {
-            console.log(`Job ${jobId}: Signed URL created successfully on attempt ${attempt}`);
-            return data.signedUrl;
-          }
-        } catch (e) {
-          console.error(`Signed URL attempt ${attempt} threw exception:`, e);
-          if (attempt < maxRetries) {
-            const delay = 1000 * Math.pow(2, attempt - 1);
-            await new Promise(resolve => setTimeout(resolve, delay));
-          }
-        }
-      }
-      return null;
-    };
-
-    // Create signed URL with retry logic
-    const signedUrl = await createSignedUrlWithRetry(3);
-
-    if (!signedUrl) {
-      console.error("Failed to create signed URL after all retries");
+    } else {
       await supabase
         .from("import_jobs")
-        .update({ 
-          status: "failed", 
-          error_message: "Failed to create signed URL after 3 attempts. Please try importing the file again.",
-          completed_at: new Date().toISOString() 
-        })
+        .update({ status: "processing" })
+        .eq("id", jobId);
+    }
+
+    // Get signed URL for file
+    const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+      .from("efd-files")
+      .createSignedUrl(job.file_path, 3600);
+
+    if (signedUrlError || !signedUrlData) {
+      console.error("Failed to get signed URL:", signedUrlError);
+      await supabase
+        .from("import_jobs")
+        .update({ status: "failed", error_message: "Failed to get file URL", completed_at: new Date().toISOString() })
         .eq("id", jobId);
       return new Response(
-        JSON.stringify({ error: "Failed to create signed URL" }),
+        JSON.stringify({ error: "Failed to get file URL" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Fetch file as stream with Range header for resumption
-    const fetchHeaders: HeadersInit = {};
+    // Fetch file with Range header for resumption
+    const headers: Record<string, string> = {};
     if (startByte > 0) {
-      fetchHeaders['Range'] = `bytes=${startByte}-`;
-      console.log(`Job ${jobId}: Using Range header: bytes=${startByte}-`);
+      headers["Range"] = `bytes=${startByte}-`;
+      console.log(`Job ${jobId}: Requesting file from byte ${startByte}`);
     }
 
-    const fetchResponse = await fetch(signedUrl, { headers: fetchHeaders });
-    if (!fetchResponse.ok || !fetchResponse.body) {
-      // 416 Range Not Satisfiable means we've reached end of file
-      if (fetchResponse.status === 416) {
-        console.log(`Job ${jobId}: Range not satisfiable - file fully processed`);
-        // Mark as completed
+    const fetchResponse = await fetch(signedUrlData.signedUrl, { headers });
+
+    if (!fetchResponse.ok) {
+      if (fetchResponse.status === 416 && startByte > 0) {
+        console.log(`Job ${jobId}: Range not satisfiable, file likely fully processed`);
         await supabase
           .from("import_jobs")
-          .update({ 
-            status: "completed", 
-            progress: 100,
-            completed_at: new Date().toISOString() 
-          })
+          .update({ status: "completed", progress: 100, completed_at: new Date().toISOString() })
           .eq("id", jobId);
         return new Response(
           JSON.stringify({ success: true, message: "File fully processed" }),
@@ -1020,39 +898,33 @@ serve(async (req) => {
 
     console.log(`Job ${jobId}: Stream connected, starting chunk ${chunkNumber} processing`);
 
-    // Start time for chunk limit
     const chunkStartTime = Date.now();
 
-    // STREAMING PROCESSING - read file chunk by chunk
-    const batches: BatchBuffers = {
-      mercadorias: [],
-      energia_agua: [],
-      fretes: [],
-      servicos: [],
+    // NEW: Raw batch buffers for 3-layer architecture
+    const batches: RawBatchBuffers = {
+      efd_raw_c100: [],
+      efd_raw_c500: [],
+      efd_raw_fretes: [],
+      efd_raw_a100: [],
       participantes: [],
     };
     
-    // Initialize counts with existing values (for resumption)
-    const existingCounts = job.counts as any || { mercadorias: 0, energia_agua: 0, fretes: 0, servicos: 0, participantes: 0, estabelecimentos: 0 };
+    const existingCounts = job.counts as any || {};
     const counts: InsertCounts = {
-      mercadorias: existingCounts.mercadorias || 0,
-      energia_agua: existingCounts.energia_agua || 0,
-      fretes: existingCounts.fretes || 0,
-      servicos: existingCounts.servicos || 0,
+      raw_c100: existingCounts.raw_c100 || 0,
+      raw_c500: existingCounts.raw_c500 || 0,
+      raw_fretes: existingCounts.raw_fretes || 0,
+      raw_a100: existingCounts.raw_a100 || 0,
       participantes: existingCounts.participantes || 0,
       estabelecimentos: existingCounts.estabelecimentos || 0,
     };
     
-    // Track seen record counts (for diagnostics)
     const existingSeen = existingCounts.seen as SeenCounts || createSeenCounts();
     const seenCounts: SeenCounts = { ...existingSeen };
     
-    // CRITICAL: Restore context from previous chunk for proper resumption
-    // Without this, currentPeriod/currentCNPJ would be empty in chunks 2+ 
-    // because the 0000 record was already processed in chunk 1
     const existingContext = existingCounts.context || null;
     
-    // Pre-load filiais for the empresa
+    // Pre-load filiais
     const { data: existingFiliais } = await supabase
       .from("filiais")
       .select("id, cnpj")
@@ -1063,7 +935,6 @@ serve(async (req) => {
     );
     console.log(`Job ${jobId}: Pre-loaded ${filialMap.size} filiais for empresa ${job.empresa_id}`);
     
-    // Restore filial map from context if resuming
     if (existingContext?.filialMapEntries) {
       for (const [cnpj, id] of existingContext.filialMapEntries) {
         filialMap.set(cnpj, id);
@@ -1075,189 +946,74 @@ serve(async (req) => {
       currentCNPJ: existingContext?.currentCNPJ || "",
       currentFilialId: existingContext?.currentFilialId || job.filial_id,
       efdType: existingContext?.efdType || null,
-      pendingD100: null, // Pending records are finalized at chunk end
+      pendingD100: null,
       pendingD500: null,
       filialMap,
-      participantesMap: new Map(), // Will be populated from 0150 records (not persisted between chunks)
-      estabelecimentosMap: new Map(), // Will be populated from 0140 records (not persisted between chunks)
+      participantesMap: new Map(),
+      estabelecimentosMap: new Map(),
     };
-    
-    // NOTE: participantesMap and estabelecimentosMap are NO LONGER restored from context
-    // because they can grow to 100k+ entries and cause DB timeout on UPDATE.
-    // These maps are used for lookup during current chunk only.
-    // Participantes are inserted directly to DB via batch processing.
-    // Estabelecimentos (filiais) are persisted in the filiais table.
     
     if (isResuming && existingContext) {
       console.log(`Job ${jobId}: Restored context from previous chunk - period: ${context.currentPeriod}, CNPJ: ${context.currentCNPJ}, filialId: ${context.currentFilialId}, efdType: ${context.efdType}`);
     }
     
-    // Track if generic participants have been created for current filial
-    const genericParticipantsCreated = new Set<string>(); // Set of filial_ids
-
-    // Initialize block limits
+    const genericParticipantsCreated = new Set<string>();
     const blockLimits = createBlockLimits(recordLimit, importScope);
-
-    // Track bytes processed in this chunk
     let bytesProcessedInChunk = 0;
-    
-    // ========================================================================
-    // AGGREGATION MAP: Accumulate mercadorias by (filial_id, mes_ano, tipo, cod_part)
-    // This reduces 1M+ records to ~100k unique combinations
-    // ========================================================================
-    const mercadoriasAggregateMap: MercadoriasAggregateMap = new Map();
-    
-    // Function to add to aggregate map instead of batch
-    const addToMercadoriasAggregate = (filial_id: string, data: any) => {
-      const key = getMercadoriasAggregateKey(filial_id, data.mes_ano, data.tipo, data.cod_part);
-      const existing = mercadoriasAggregateMap.get(key);
-      
-      if (existing) {
-        // Accumulate values
-        existing.valor += data.valor || 0;
-        existing.pis += data.pis || 0;
-        existing.cofins += data.cofins || 0;
-        existing.icms += data.icms || 0;
-        existing.ipi += data.ipi || 0;
-      } else {
-        // Create new entry
-        mercadoriasAggregateMap.set(key, {
-          filial_id,
-          mes_ano: data.mes_ano,
-          tipo: data.tipo,
-          cod_part: data.cod_part || null,
-          valor: data.valor || 0,
-          pis: data.pis || 0,
-          cofins: data.cofins || 0,
-          icms: data.icms || 0,
-          ipi: data.ipi || 0,
-        });
-      }
-    };
-    
-    // Flush aggregated mercadorias to DB using UPSERT
-    // Since we aggregate in memory first, we use ignoreDuplicates for simplicity
-    // The key insight: each import session will only have ONE record per unique key
-    // because we aggregate in the Map. Duplicates only happen across sessions.
-    const flushMercadoriasAggregate = async (): Promise<string | null> => {
-      if (mercadoriasAggregateMap.size === 0) return null;
-      
-      const records = Array.from(mercadoriasAggregateMap.values()).map(v => ({
-        filial_id: v.filial_id,
-        mes_ano: v.mes_ano,
-        tipo: v.tipo,
-        cod_part: v.cod_part,
-        descricao: 'Agregado',
-        ncm: null,
-        valor: v.valor,
-        pis: v.pis,
-        cofins: v.cofins,
-        icms: v.icms,
-        ipi: v.ipi,
-      }));
-      
-      console.log(`Job ${jobId}: Flushing ${records.length} aggregated mercadorias records`);
-      
-      // Process in batches for reliability
-      const UPSERT_BATCH_SIZE = 500;
-      let insertedCount = 0;
-      
-      for (let i = 0; i < records.length; i += UPSERT_BATCH_SIZE) {
-        const batch = records.slice(i, i + UPSERT_BATCH_SIZE);
-        
-        // Try insert - if duplicates exist from previous imports, they'll be ignored
-        // This is fine because we consolidated all existing data in the migration
-        const { error } = await supabase.from('mercadorias').insert(batch);
-        
-        if (error) {
-          // Check if it's a duplicate key error
-          if (error.message.includes('duplicate') || error.message.includes('unique')) {
-            // Insert one by one, skipping duplicates
-            console.log(`Job ${jobId}: Duplicate keys detected, inserting individually`);
-            for (const record of batch) {
-              const { error: singleError } = await supabase.from('mercadorias').insert(record);
-              if (!singleError) {
-                insertedCount++;
-              } else if (!singleError.message.includes('duplicate') && !singleError.message.includes('unique')) {
-                console.error(`Insert error for single mercadoria:`, singleError);
-                return singleError.message;
-              }
-              // Skip duplicate errors silently
-            }
-          } else {
-            console.error(`Insert error for mercadorias batch:`, error);
-            return error.message;
-          }
-        } else {
-          insertedCount += batch.length;
-        }
-      }
-      
-      console.log(`Job ${jobId}: Inserted ${insertedCount}/${records.length} mercadorias records`);
-      counts.mercadorias += insertedCount;
-      mercadoriasAggregateMap.clear();
-      return null;
-    };
 
-    const flushBatch = async (table: keyof BatchBuffers): Promise<string | null> => {
-      // Skip mercadorias - handled separately by flushMercadoriasAggregate
-      if (table === 'mercadorias') return null;
+    // NEW: Flush function for raw tables (simple INSERT, no conflicts)
+    const flushRawBatch = async (table: keyof RawBatchBuffers): Promise<string | null> => {
       if (batches[table].length === 0) return null;
 
-      // Use upsert with ignoreDuplicates for other tables
-      const onConflictMap: Record<keyof BatchBuffers, string> = {
-        mercadorias: '', // Not used - handled separately
-        fretes: 'filial_id,mes_ano,tipo,valor,pis,cofins,icms',
-        energia_agua: 'filial_id,mes_ano,tipo_operacao,tipo_servico,valor,pis,cofins,icms',
-        servicos: 'filial_id,mes_ano,tipo,descricao,valor,pis,cofins,iss',
-        participantes: 'filial_id,cod_part',
-      };
-      
-      const { error } = await supabase.from(table).upsert(batches[table], { 
-        onConflict: onConflictMap[table],
-        ignoreDuplicates: true 
-      });
+      const { error } = await supabase.from(table).insert(batches[table]);
       if (error) {
-        // If unique constraint doesn't exist yet, fall back to insert
-        if (error.message.includes('constraint') || error.message.includes('unique')) {
-          console.log(`Job ${jobId}: Constraint not found for ${table}, using insert (duplicates may occur)`);
-          const { error: insertError } = await supabase.from(table).insert(batches[table]);
-          if (insertError) {
-            console.error(`Insert error for ${table}:`, insertError);
-            return insertError.message;
-          }
-        } else {
-          console.error(`Upsert error for ${table}:`, error);
-          return error.message;
-        }
+        console.error(`Insert error for ${table}:`, error);
+        return error.message;
       }
 
-      counts[table] += batches[table].length;
+      const countKey = table === 'efd_raw_c100' ? 'raw_c100' :
+                       table === 'efd_raw_c500' ? 'raw_c500' :
+                       table === 'efd_raw_fretes' ? 'raw_fretes' :
+                       table === 'efd_raw_a100' ? 'raw_a100' : 'participantes';
+      counts[countKey as keyof InsertCounts] += batches[table].length;
       batches[table] = [];
       return null;
     };
 
-    const flushAllBatches = async (): Promise<string | null> => {
-      // First flush aggregated mercadorias
-      const mercErr = await flushMercadoriasAggregate();
-      if (mercErr) return mercErr;
+    const flushParticipantes = async (): Promise<string | null> => {
+      if (batches.participantes.length === 0) return null;
       
-      // Then flush other tables
-      for (const table of ["energia_agua", "fretes", "servicos", "participantes"] as const) {
-        const err = await flushBatch(table);
-        if (err) return err;
+      const { error } = await supabase.from('participantes').upsert(batches.participantes, { 
+        onConflict: 'filial_id,cod_part',
+        ignoreDuplicates: true 
+      });
+      if (error) {
+        console.error(`Upsert error for participantes:`, error);
+        return error.message;
       }
+      
+      counts.participantes += batches.participantes.length;
+      batches.participantes = [];
       return null;
     };
 
-    // Stream processing using TextDecoderStream - reads chunks without loading entire file
-    const reader = fetchResponse.body.pipeThrough(new TextDecoderStream()).getReader();
+    const flushAllBatches = async (): Promise<string | null> => {
+      for (const table of ["efd_raw_c100", "efd_raw_c500", "efd_raw_fretes", "efd_raw_a100"] as const) {
+        const err = await flushRawBatch(table);
+        if (err) return err;
+      }
+      const partErr = await flushParticipantes();
+      if (partErr) return partErr;
+      return null;
+    };
+
+    const reader = fetchResponse.body!.pipeThrough(new TextDecoderStream()).getReader();
     
     let buffer = "";
     let linesProcessedInChunk = 0;
     let totalLinesProcessed = job.total_lines || 0;
     let lastProgressUpdate = 0;
-    let estimatedTotalLines = Math.ceil(job.file_size / 200); // Rough estimate: ~200 bytes per line
+    let estimatedTotalLines = Math.ceil(job.file_size / 200);
 
     console.log(`Job ${jobId}: Estimated total lines: ${estimatedTotalLines}`);
 
@@ -1265,7 +1021,6 @@ serve(async (req) => {
     let reachedChunkLimit = false;
 
     while (true) {
-      // Check if we've hit chunk limits
       const elapsedTime = Date.now() - chunkStartTime;
       if (elapsedTime > MAX_EXECUTION_TIME_MS || linesProcessedInChunk >= MAX_LINES_PER_CHUNK) {
         console.log(`Job ${jobId}: Chunk limit reached (time: ${elapsedTime}ms, lines: ${linesProcessedInChunk})`);
@@ -1275,7 +1030,6 @@ serve(async (req) => {
         break;
       }
 
-      // Check if all limits reached - exit early
       if (allLimitsReached(blockLimits)) {
         console.log(`Job ${jobId}: All block limits reached, stopping early`);
         reader.cancel();
@@ -1288,10 +1042,9 @@ serve(async (req) => {
         // Process remaining buffer
         if (buffer.trim()) {
           const trimmedLine = buffer.trim();
-          const result = processLine(trimmedLine, context, validPrefixes);
+          const result = processLine(trimmedLine, context, validPrefixes, jobId);
           context = result.context;
           
-          // Handle filial creation from 0140 (for final buffer line)
           if (result.createFilial) {
             const { cnpj, nome, codEst } = result.createFilial;
             if (context.filialMap.has(cnpj)) {
@@ -1304,11 +1057,11 @@ serve(async (req) => {
               if (newFilial) {
                 context.filialMap.set(cnpj, newFilial.id);
                 context.currentFilialId = newFilial.id;
+                counts.estabelecimentos++;
               }
             }
           }
           
-          // Handle filial update from C010/D010 (fallback for final buffer line)
           if (result.filialUpdate) {
             const cnpj = result.filialUpdate;
             const codEst = context.estabelecimentosMap.get(cnpj) || null;
@@ -1324,75 +1077,42 @@ serve(async (req) => {
               if (newFilial) {
                 context.filialMap.set(cnpj, newFilial.id);
                 context.currentFilialId = newFilial.id;
+                counts.estabelecimentos++;
               }
             }
           }
           
-          if (result.record && result.blockType) {
-            // Validar que mes_ano não está vazio
-            if (!result.record.data.mes_ano) {
-              console.warn(`Job ${jobId}: Skipping final buffer record with empty mes_ano`);
-            } else {
-              const blockKey = result.blockType as keyof BlockLimits;
-              // Check block limit
-              if (blockLimits[blockKey].limit === 0 || blockLimits[blockKey].count < blockLimits[blockKey].limit) {
-                blockLimits[blockKey].count++;
-                const { table, data } = result.record;
-                const filialId = context.currentFilialId || job.filial_id;
-                
-                // Use aggregation for mercadorias
-                if (table === 'mercadorias') {
-                  addToMercadoriasAggregate(filialId, data);
-                } else {
-                  batches[table].push({
-                    ...data,
-                    filial_id: filialId,
-                  });
-                }
-              }
-            }
-          }
+          // Add raw records to batches
+          if (result.rawC100) batches.efd_raw_c100.push(result.rawC100);
+          if (result.rawC500) batches.efd_raw_c500.push(result.rawC500);
+          if (result.rawFretes) batches.efd_raw_fretes.push(result.rawFretes);
+          if (result.rawA100) batches.efd_raw_a100.push(result.rawA100);
+          
           linesProcessedInChunk++;
           totalLinesProcessed++;
         }
         
-        // Finalize any pending D100/D500 records at end of file
+        // Finalize pending D100/D500
         const finalD100 = finalizePendingD100(context);
-        if (finalD100 && finalD100.data.mes_ano) {
-          if (blockLimits.d100.limit === 0 || blockLimits.d100.count < blockLimits.d100.limit) {
-            blockLimits.d100.count++;
-            batches.fretes.push({
-              ...finalD100.data,
-              filial_id: context.currentFilialId || job.filial_id,
-            });
-            console.log(`Job ${jobId}: Finalized pending D100 at end of file`);
-          }
+        if (finalD100) {
+          batches.efd_raw_fretes.push(finalD100);
         }
         
         const finalD500 = finalizePendingD500(context);
-        if (finalD500 && finalD500.data.mes_ano) {
-          if (blockLimits.d500.limit === 0 || blockLimits.d500.count < blockLimits.d500.limit) {
-            blockLimits.d500.count++;
-            batches.fretes.push({
-              ...finalD500.data,
-              filial_id: context.currentFilialId || job.filial_id,
-            });
-            console.log(`Job ${jobId}: Finalized pending D500 at end of file`);
-          }
+        if (finalD500) {
+          batches.efd_raw_fretes.push(finalD500);
         }
         
         break;
       }
 
-      // Track bytes for resumption
       bytesProcessedInChunk += new TextEncoder().encode(value).length;
 
       buffer += value;
       const lines = buffer.split("\n");
-      buffer = lines.pop() || ""; // Keep incomplete line in buffer
+      buffer = lines.pop() || "";
 
       for (const line of lines) {
-        // Check chunk limits inside loop
         const elapsedTimeInLoop = Date.now() - chunkStartTime;
         if (elapsedTimeInLoop > MAX_EXECUTION_TIME_MS || linesProcessedInChunk >= MAX_LINES_PER_CHUNK) {
           console.log(`Job ${jobId}: Chunk limit reached in loop (time: ${elapsedTimeInLoop}ms, lines: ${linesProcessedInChunk})`);
@@ -1401,7 +1121,6 @@ serve(async (req) => {
           break;
         }
 
-        // Check if all limits reached
         if (allLimitsReached(blockLimits)) {
           console.log(`Job ${jobId}: All block limits reached during line processing`);
           break;
@@ -1410,130 +1129,32 @@ serve(async (req) => {
         const trimmedLine = line.trim();
         if (!trimmedLine) continue;
 
-        const result = processLine(trimmedLine, context, validPrefixes);
+        const result = processLine(trimmedLine, context, validPrefixes, jobId);
         context = result.context;
         
-        // Handle filial creation from 0140 (preferred) or fallback from C010/D010/A010
+        // Handle filial creation from 0140
         if (result.createFilial) {
           const { cnpj, nome, codEst } = result.createFilial;
-          
-          if (context.filialMap.has(cnpj)) {
-            // Filial exists - update cod_est and switch context
-            context.currentFilialId = context.filialMap.get(cnpj)!;
-            context.currentCNPJ = cnpj;
-            console.log(`Job ${jobId}: 0140 - Switched to existing filial ${cnpj} -> ${context.currentFilialId}`);
-            
-            // Update cod_est and razao_social if we have better data from 0140
-            await supabase
-              .from("filiais")
-              .update({ cod_est: codEst, razao_social: nome })
-              .eq("id", context.currentFilialId);
-            console.log(`Job ${jobId}: Updated filial ${context.currentFilialId} with cod_est: ${codEst}, nome: ${nome}`);
-          } else {
-            // Create new filial with full data from 0140
-            const { data: newFilial } = await supabase
-              .from("filiais")
-              .insert({
-                empresa_id: job.empresa_id,
-                cnpj: cnpj,
-                razao_social: nome,
-                cod_est: codEst,
-              })
-              .select("id")
-              .single();
-            
-            if (newFilial) {
-              context.filialMap.set(cnpj, newFilial.id);
-              context.currentFilialId = newFilial.id;
-              context.currentCNPJ = cnpj;
-              counts.estabelecimentos++;
-              console.log(`Job ${jobId}: 0140 - Created new filial ${cnpj} -> ${newFilial.id} with cod_est: ${codEst}, nome: ${nome}`);
-              
-              // Create generic participants for this new filial
-              if (!genericParticipantsCreated.has(newFilial.id)) {
-                genericParticipantsCreated.add(newFilial.id);
-                
-                // Insert CONSUMIDOR FINAL and FORNECEDOR NÃO IDENTIFICADO
-                const genericParticipants = [
-                  {
-                    filial_id: newFilial.id,
-                    cod_part: '9999999999',
-                    nome: 'CONSUMIDOR FINAL',
-                    cnpj: null,
-                    cpf: null,
-                    ie: null,
-                    cod_mun: null,
-                  },
-                  {
-                    filial_id: newFilial.id,
-                    cod_part: '8888888888',
-                    nome: 'FORNECEDOR NÃO IDENTIFICADO',
-                    cnpj: null,
-                    cpf: null,
-                    ie: null,
-                    cod_mun: null,
-                  },
-                ];
-                
-                const { error: genPartError } = await supabase
-                  .from("participantes")
-                  .upsert(genericParticipants, { onConflict: 'filial_id,cod_part', ignoreDuplicates: true });
-                
-                if (genPartError) {
-                  console.warn(`Job ${jobId}: Failed to create generic participants for filial ${newFilial.id}: ${genPartError.message}`);
-                } else {
-                  console.log(`Job ${jobId}: Created generic participants (CONSUMIDOR FINAL, FORNECEDOR NÃO IDENTIFICADO) for filial ${newFilial.id}`);
-                  counts.participantes += 2;
-                }
-              }
-            }
-          }
-        }
-        
-        // Handle filial update from C010/D010/A010 (fallback - filial should already exist from 0140)
-        if (result.filialUpdate) {
-          const cnpj = result.filialUpdate;
-          const codEst = context.estabelecimentosMap.get(cnpj) || null;
-          
           if (context.filialMap.has(cnpj)) {
             context.currentFilialId = context.filialMap.get(cnpj)!;
-            console.log(`Job ${jobId}: C/D/A010 - Switched to filial ${cnpj} -> ${context.currentFilialId}`);
-            
-            // Update cod_est if we have it from 0140
-            if (codEst) {
-              await supabase
-                .from("filiais")
-                .update({ cod_est: codEst })
-                .eq("id", context.currentFilialId);
-            }
+            await supabase.from("filiais").update({ cod_est: codEst, razao_social: nome }).eq("id", context.currentFilialId);
           } else {
-            // Fallback: Create new filial (should rarely happen)
-            const { data: newFilial } = await supabase
-              .from("filiais")
-              .insert({
-                empresa_id: job.empresa_id,
-                cnpj: cnpj,
-                razao_social: `Filial ${cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5")}`,
-                cod_est: codEst,
-              })
-              .select("id")
-              .single();
-            
+            const { data: newFilial } = await supabase.from("filiais")
+              .insert({ empresa_id: job.empresa_id, cnpj, razao_social: nome, cod_est: codEst })
+              .select("id").single();
             if (newFilial) {
               context.filialMap.set(cnpj, newFilial.id);
               context.currentFilialId = newFilial.id;
               counts.estabelecimentos++;
-              console.log(`Job ${jobId}: C/D/A010 - Created fallback filial ${cnpj} -> ${newFilial.id}`);
+              console.log(`Job ${jobId}: Created filial ${cnpj} -> ${newFilial.id}`);
               
-              // Also create generic participants for fallback filial
+              // Create generic participants
               if (!genericParticipantsCreated.has(newFilial.id)) {
                 genericParticipantsCreated.add(newFilial.id);
-                
                 const genericParticipants = [
                   { filial_id: newFilial.id, cod_part: '9999999999', nome: 'CONSUMIDOR FINAL', cnpj: null, cpf: null, ie: null, cod_mun: null },
                   { filial_id: newFilial.id, cod_part: '8888888888', nome: 'FORNECEDOR NÃO IDENTIFICADO', cnpj: null, cpf: null, ie: null, cod_mun: null },
                 ];
-                
                 await supabase.from("participantes").upsert(genericParticipants, { onConflict: 'filial_id,cod_part', ignoreDuplicates: true });
                 counts.participantes += 2;
               }
@@ -1541,14 +1162,46 @@ serve(async (req) => {
           }
         }
         
-        // Track seen record counts for diagnostics
+        // Handle filial update from C010/D010
+        if (result.filialUpdate) {
+          const cnpj = result.filialUpdate;
+          const codEst = context.estabelecimentosMap.get(cnpj) || null;
+          if (context.filialMap.has(cnpj)) {
+            context.currentFilialId = context.filialMap.get(cnpj)!;
+            if (codEst) {
+              await supabase.from("filiais").update({ cod_est: codEst }).eq("id", context.currentFilialId);
+            }
+          } else {
+            const { data: newFilial } = await supabase.from("filiais")
+              .insert({ empresa_id: job.empresa_id, cnpj, razao_social: `Filial ${cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5")}`, cod_est: codEst })
+              .select("id").single();
+            if (newFilial) {
+              context.filialMap.set(cnpj, newFilial.id);
+              context.currentFilialId = newFilial.id;
+              counts.estabelecimentos++;
+              
+              if (!genericParticipantsCreated.has(newFilial.id)) {
+                genericParticipantsCreated.add(newFilial.id);
+                const genericParticipants = [
+                  { filial_id: newFilial.id, cod_part: '9999999999', nome: 'CONSUMIDOR FINAL', cnpj: null, cpf: null, ie: null, cod_mun: null },
+                  { filial_id: newFilial.id, cod_part: '8888888888', nome: 'FORNECEDOR NÃO IDENTIFICADO', cnpj: null, cpf: null, ie: null, cod_mun: null },
+                ];
+                await supabase.from("participantes").upsert(genericParticipants, { onConflict: 'filial_id,cod_part', ignoreDuplicates: true });
+                counts.participantes += 2;
+              }
+            }
+          }
+        }
+        
+        // Track seen record counts
         if (result.blockType) {
           const seenKey = result.blockType as keyof SeenCounts;
           if (seenKey in seenCounts) {
             seenCounts[seenKey]++;
           }
         }
-        // Also track D101/D105/D501/D505 lines even when they don't produce records
+        
+        // Track D101/D105/D501/D505
         const fields = trimmedLine.split("|");
         const registro = fields[1];
         if (registro === "D101" && "d101" in seenCounts) seenCounts.d101++;
@@ -1556,7 +1209,7 @@ serve(async (req) => {
         if (registro === "D501" && "d501" in seenCounts) seenCounts.d501++;
         if (registro === "D505" && "d505" in seenCounts) seenCounts.d505++;
 
-        // Handle participante data from 0150 records - batch insert instead of accumulating
+        // Handle participante data
         if (result.participanteData && context.currentFilialId) {
           const p = result.participanteData;
           batches.participantes.push({
@@ -1569,96 +1222,53 @@ serve(async (req) => {
             cod_mun: p.codMun,
           });
           
-          // Flush participantes batch when it reaches BATCH_SIZE
           if (batches.participantes.length >= BATCH_SIZE) {
-            const err = await flushBatch("participantes");
+            const err = await flushParticipantes();
             if (err) {
-              console.warn(`Job ${jobId}: Failed to flush participantes batch: ${err}`);
-              // Don't fail the job for participantes errors, just log and continue
+              console.warn(`Job ${jobId}: Failed to flush participantes: ${err}`);
               batches.participantes = [];
             }
           }
         }
 
-        if (result.record && result.blockType) {
-          const blockKey = result.blockType as keyof BlockLimits;
-          
-          // Validar que mes_ano não está vazio antes de processar
-          if (!result.record.data.mes_ano) {
-            console.warn(`Job ${jobId}: Skipping record with empty mes_ano (block: ${result.blockType}, line: ${totalLinesProcessed})`);
-            linesProcessedInChunk++;
-            totalLinesProcessed++;
-            continue;
+        // Add raw records to batches
+        if (result.rawC100) {
+          batches.efd_raw_c100.push(result.rawC100);
+          if (batches.efd_raw_c100.length >= BATCH_SIZE) {
+            const err = await flushRawBatch('efd_raw_c100');
+            if (err) throw new Error(`Insert error: ${err}`);
           }
-          
-          // Check block limit before processing
-          if (blockLimits[blockKey].limit > 0 && blockLimits[blockKey].count >= blockLimits[blockKey].limit) {
-            // Skip this record - limit reached for this block
-            linesProcessedInChunk++;
-            totalLinesProcessed++;
-            continue;
+        }
+        
+        if (result.rawC500) {
+          batches.efd_raw_c500.push(result.rawC500);
+          if (batches.efd_raw_c500.length >= BATCH_SIZE) {
+            const err = await flushRawBatch('efd_raw_c500');
+            if (err) throw new Error(`Insert error: ${err}`);
           }
-
-          // Increment block counter
-          blockLimits[blockKey].count++;
-          
-          const { table, data } = result.record;
-          const filialId = context.currentFilialId || job.filial_id;
-          
-          // Use aggregation map for mercadorias, regular batch for others
-          if (table === 'mercadorias') {
-            addToMercadoriasAggregate(filialId, data);
-            
-            // Flush aggregated mercadorias periodically (every 10k unique keys)
-            if (mercadoriasAggregateMap.size >= 10000) {
-              const err = await flushMercadoriasAggregate();
-              if (err) {
-                await supabase
-                  .from("import_jobs")
-                  .update({ 
-                    status: "failed", 
-                    error_message: `Failed to insert mercadorias: ${err}`,
-                    progress: Math.min(95, Math.round((totalLinesProcessed / estimatedTotalLines) * 100)),
-                    total_lines: totalLinesProcessed,
-                    counts,
-                    completed_at: new Date().toISOString() 
-                  })
-                  .eq("id", jobId);
-                throw new Error(`Insert error: ${err}`);
-              }
-            }
-          } else {
-            batches[table].push({
-              ...data,
-              filial_id: filialId,
-            });
-
-            if (batches[table].length >= BATCH_SIZE) {
-              const err = await flushBatch(table);
-              if (err) {
-                await supabase
-                  .from("import_jobs")
-                  .update({ 
-                    status: "failed", 
-                    error_message: `Failed to insert ${table}: ${err}`,
-                    progress: Math.min(95, Math.round((totalLinesProcessed / estimatedTotalLines) * 100)),
-                    total_lines: totalLinesProcessed,
-                    counts,
-                    completed_at: new Date().toISOString() 
-                  })
-                  .eq("id", jobId);
-                throw new Error(`Insert error: ${err}`);
-              }
-            }
+        }
+        
+        if (result.rawFretes) {
+          batches.efd_raw_fretes.push(result.rawFretes);
+          if (batches.efd_raw_fretes.length >= BATCH_SIZE) {
+            const err = await flushRawBatch('efd_raw_fretes');
+            if (err) throw new Error(`Insert error: ${err}`);
+          }
+        }
+        
+        if (result.rawA100) {
+          batches.efd_raw_a100.push(result.rawA100);
+          if (batches.efd_raw_a100.length >= BATCH_SIZE) {
+            const err = await flushRawBatch('efd_raw_a100');
+            if (err) throw new Error(`Insert error: ${err}`);
           }
         }
 
         linesProcessedInChunk++;
         totalLinesProcessed++;
 
-        // Update progress periodically and check for cancellation
+        // Update progress periodically
         if (linesProcessedInChunk - lastProgressUpdate >= PROGRESS_UPDATE_INTERVAL) {
-          // Check if job was cancelled
           const { data: currentJob } = await supabase
             .from("import_jobs")
             .select("status")
@@ -1674,9 +1284,8 @@ serve(async (req) => {
             );
           }
 
-          const progress = Math.min(95, Math.round((totalLinesProcessed / estimatedTotalLines) * 100));
+          const progress = Math.min(90, Math.round((totalLinesProcessed / estimatedTotalLines) * 100));
           
-          // Save intermediate progress more frequently for better recovery from stream errors
           const shouldSaveIntermediate = linesProcessedInChunk % INTERMEDIATE_SAVE_INTERVAL < PROGRESS_UPDATE_INTERVAL;
           const intermediateBytesProcessed = startByte + bytesProcessedInChunk;
           
@@ -1686,7 +1295,6 @@ serve(async (req) => {
               progress, 
               total_lines: totalLinesProcessed, 
               counts,
-              // Save bytes_processed periodically for recovery
               ...(shouldSaveIntermediate ? { bytes_processed: intermediateBytesProcessed } : {})
             })
             .eq("id", jobId);
@@ -1696,46 +1304,30 @@ serve(async (req) => {
           }
           
           lastProgressUpdate = linesProcessedInChunk;
-          console.log(`Job ${jobId}: Progress ${progress}% (${totalLinesProcessed} lines, mercadorias: ${counts.mercadorias}, servicos: ${counts.servicos}, energia_agua: ${counts.energia_agua}, fretes: ${counts.fretes}, participantes: ${counts.participantes})`);
+          console.log(`Job ${jobId}: Progress ${progress}% (${totalLinesProcessed} lines, raw_c100: ${counts.raw_c100}, raw_c500: ${counts.raw_c500}, raw_fretes: ${counts.raw_fretes}, raw_a100: ${counts.raw_a100})`);
         }
       }
 
-      // Break outer loop if we hit chunk limit
       if (reachedChunkLimit) {
         break;
       }
     }
 
-    // Log block limits and seen counts info
     console.log(`Job ${jobId}: Block counts - A100: ${blockLimits.a100.count}, C100: ${blockLimits.c100.count}, C500: ${blockLimits.c500.count}, C600: ${blockLimits.c600.count}, D100: ${blockLimits.d100.count}, D500: ${blockLimits.d500.count}`);
     console.log(`Job ${jobId}: Seen counts - A100: ${seenCounts.a100}, C100: ${seenCounts.c100}, C500: ${seenCounts.c500}, C600: ${seenCounts.c600}, D100: ${seenCounts.d100}, D101: ${seenCounts.d101}, D105: ${seenCounts.d105}, D500: ${seenCounts.d500}, D501: ${seenCounts.d501}, D505: ${seenCounts.d505}`);
 
-    // Finalize any pending D100/D500 records before flushing (important for chunk boundaries)
+    // Finalize pending D100/D500 at chunk end
     const chunkFinalD100 = finalizePendingD100(context);
-    if (chunkFinalD100 && chunkFinalD100.data.mes_ano) {
-      if (blockLimits.d100.limit === 0 || blockLimits.d100.count < blockLimits.d100.limit) {
-        blockLimits.d100.count++;
-        batches.fretes.push({
-          ...chunkFinalD100.data,
-          filial_id: context.currentFilialId || job.filial_id,
-        });
-        console.log(`Job ${jobId}: Finalized pending D100 at chunk end`);
-      }
+    if (chunkFinalD100) {
+      batches.efd_raw_fretes.push(chunkFinalD100);
     }
     
     const chunkFinalD500 = finalizePendingD500(context);
-    if (chunkFinalD500 && chunkFinalD500.data.mes_ano) {
-      if (blockLimits.d500.limit === 0 || blockLimits.d500.count < blockLimits.d500.limit) {
-        blockLimits.d500.count++;
-        batches.fretes.push({
-          ...chunkFinalD500.data,
-          filial_id: context.currentFilialId || job.filial_id,
-        });
-        console.log(`Job ${jobId}: Finalized pending D500 at chunk end`);
-      }
+    if (chunkFinalD500) {
+      batches.efd_raw_fretes.push(chunkFinalD500);
     }
 
-    // Final flush for this chunk
+    // Final flush
     const flushErr = await flushAllBatches();
     if (flushErr) {
       await supabase
@@ -1752,21 +1344,15 @@ serve(async (req) => {
       throw new Error(`Final flush error: ${flushErr}`);
     }
 
-    // NOTE: Participantes are now inserted in batches during processing (via flushBatch)
-    // No more mass insertion at chunk end - this was causing CPU timeout on large files
-    console.log(`Job ${jobId}: Chunk completed. Participantes inserted: ${counts.participantes}, Map size: ${context.participantesMap.size}`);
+    console.log(`Job ${jobId}: Chunk completed. Raw records: C100=${counts.raw_c100}, C500=${counts.raw_c500}, Fretes=${counts.raw_fretes}, A100=${counts.raw_a100}`);
 
     // If we need to continue with another chunk
     if (shouldContinueNextChunk) {
       const newBytesProcessed = startByte + bytesProcessedInChunk;
-      const progress = Math.min(95, Math.round((totalLinesProcessed / estimatedTotalLines) * 100));
+      const progress = Math.min(90, Math.round((totalLinesProcessed / estimatedTotalLines) * 100));
       
       console.log(`Job ${jobId}: Chunk ${chunkNumber} completed, saving progress. Bytes: ${newBytesProcessed}, Lines: ${totalLinesProcessed}`);
       
-      // Save progress for resumption (include seenCounts and context for proper resumption)
-      // CRITICAL: Save context so next chunk knows the period, CNPJ, and filialId
-      // NOTE: We NO LONGER save participantesMapEntries or estabelecimentosMapEntries
-      // because they can grow to 100k+ entries and cause DB timeout on UPDATE
       await supabase
         .from("import_jobs")
         .update({ 
@@ -1777,14 +1363,12 @@ serve(async (req) => {
           counts: { 
             ...counts, 
             seen: seenCounts,
-            // estabelecimentos is already in counts (cumulative)
             context: {
               currentPeriod: context.currentPeriod,
               currentCNPJ: context.currentCNPJ,
               currentFilialId: context.currentFilialId,
               efdType: context.efdType,
               filialMapEntries: Array.from(context.filialMap.entries()),
-              // participantesMap and estabelecimentosMap are rebuilt from DB if needed
             }
           }
         })
@@ -1821,24 +1405,44 @@ serve(async (req) => {
       );
     }
 
-    // Job fully completed
-    const totalRecords = counts.mercadorias + counts.servicos + counts.energia_agua + counts.fretes;
-    console.log(`Job ${jobId}: Completed! Total lines: ${totalLinesProcessed}, Total records: ${totalRecords}`);
-    console.log(`Job ${jobId}: Final seen counts - A100: ${seenCounts.a100}, D100: ${seenCounts.d100}, D101: ${seenCounts.d101}, D105: ${seenCounts.d105}, D500: ${seenCounts.d500}, D501: ${seenCounts.d501}, D505: ${seenCounts.d505}`);
-
-    // Update job status to "refreshing_views" before starting refresh
+    // ======================================================================
+    // JOB FULLY COMPLETED - Now consolidate raw data into final tables
+    // ======================================================================
+    console.log(`Job ${jobId}: File parsing completed! Starting consolidation phase...`);
+    
     await supabase
       .from("import_jobs")
-      .update({ 
-        status: "refreshing_views", 
-        progress: 98,
-        total_lines: totalLinesProcessed,
-        counts: { ...counts, seen: seenCounts }
-      })
+      .update({ status: "consolidating", progress: 92 })
       .eq("id", jobId);
 
-    // Refresh materialized views individually for better reliability
-    console.log(`Job ${jobId}: Refreshing materialized views individually...`);
+    // Call consolidation function
+    console.log(`Job ${jobId}: Calling consolidar_import_job...`);
+    const { data: consolidationResult, error: consolidationError } = await supabase
+      .rpc('consolidar_import_job', { p_job_id: jobId });
+    
+    if (consolidationError) {
+      console.error(`Job ${jobId}: Consolidation error:`, consolidationError);
+      await supabase
+        .from("import_jobs")
+        .update({ 
+          status: "failed", 
+          error_message: `Consolidation error: ${consolidationError.message}`,
+          completed_at: new Date().toISOString() 
+        })
+        .eq("id", jobId);
+      throw new Error(`Consolidation error: ${consolidationError.message}`);
+    }
+    
+    console.log(`Job ${jobId}: Consolidation result:`, consolidationResult);
+
+    // Update status for view refresh
+    await supabase
+      .from("import_jobs")
+      .update({ status: "refreshing_views", progress: 95 })
+      .eq("id", jobId);
+
+    // Refresh materialized views
+    console.log(`Job ${jobId}: Refreshing materialized views...`);
     const viewsToRefresh = [
       'extensions.mv_mercadorias_aggregated',
       'extensions.mv_fretes_aggregated',
@@ -1850,6 +1454,7 @@ serve(async (req) => {
       'extensions.mv_uso_consumo_detailed',
       'extensions.mv_fretes_detailed',
       'extensions.mv_energia_agua_detailed',
+      'extensions.mv_participantes_cache',
     ];
 
     let refreshError = null;
@@ -1872,16 +1477,20 @@ serve(async (req) => {
       }
     }
     console.log(`Job ${jobId}: Refreshed ${viewsRefreshed}/${viewsToRefresh.length} views`);
-    const refreshSuccess = viewsRefreshed === viewsToRefresh.length;
 
-    // Update job as completed (include seenCounts, estabelecimentos, and refresh_success for diagnostics)
+    // Update job as completed
     await supabase
       .from("import_jobs")
       .update({ 
         status: "completed", 
         progress: 100,
         total_lines: totalLinesProcessed,
-        counts: { ...counts, seen: seenCounts, refresh_success: refreshSuccess },
+        counts: { 
+          ...counts, 
+          seen: seenCounts, 
+          consolidation: consolidationResult,
+          refresh_success: viewsRefreshed === viewsToRefresh.length 
+        },
         completed_at: new Date().toISOString() 
       })
       .eq("id", jobId);
@@ -1913,41 +1522,42 @@ serve(async (req) => {
       console.warn(`Job ${jobId}: Failed to send email:`, emailErr);
     }
 
+    console.log(`Job ${jobId}: Import completed successfully!`);
+
     return new Response(
       JSON.stringify({ 
         success: true, 
-        job_id: jobId,
+        message: "Import completed",
+        total_lines: totalLinesProcessed,
         counts,
-        total_records: totalRecords 
+        consolidation: consolidationResult
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(`Job ${jobId}: Error processing:`, error);
+
+  } catch (error: any) {
+    console.error(`Job ${jobId}: Error:`, error);
     
-    // Check if this is a recoverable stream error
-    if (jobId && isRecoverableStreamError(error)) {
-      console.log(`Job ${jobId}: Recoverable stream error detected: "${errorMessage}"`);
+    // Check if it's a recoverable stream error
+    if (isRecoverableStreamError(error) && jobId) {
+      console.log(`Job ${jobId}: Recoverable stream error, will retry on next invocation`);
       
-      // Get current job state to check if we have progress
-      const { data: currentJob } = await supabase
+      // Don't mark as failed, just update status for retry
+      await supabase
         .from("import_jobs")
-        .select("bytes_processed, chunk_number, total_lines")
-        .eq("id", jobId)
-        .single();
+        .update({ 
+          status: "pending",
+          error_message: `Stream error (will retry): ${error.message}`
+        })
+        .eq("id", jobId);
       
-      if (currentJob && currentJob.bytes_processed > 0) {
-        console.log(`Job ${jobId}: Has progress - bytes: ${currentJob.bytes_processed}, lines: ${currentJob.total_lines}, chunk: ${currentJob.chunk_number}`);
-        console.log(`Job ${jobId}: Attempting automatic retry from saved position...`);
-        
-        // Invoke next chunk to resume (with a small delay for connection recovery)
+      // Schedule retry
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+      const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      
+      setTimeout(async () => {
         try {
-          // Wait 2 seconds before retry to allow connection to recover
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          
-          const selfUrl = `${supabaseUrl}/functions/v1/process-efd-job`;
-          const retryResponse = await fetch(selfUrl, {
+          await fetch(`${supabaseUrl}/functions/v1/process-efd-job`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -1955,39 +1565,34 @@ serve(async (req) => {
             },
             body: JSON.stringify({ job_id: jobId }),
           });
-          console.log(`Job ${jobId}: Retry invoked, status: ${retryResponse.status}`);
-          
-          return new Response(
-            JSON.stringify({ 
-              message: "Stream error recovered, retrying from saved position",
-              bytes_processed: currentJob.bytes_processed,
-              retry_status: retryResponse.status
-            }),
-            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-          );
-        } catch (retryErr) {
-          console.error(`Job ${jobId}: Retry invocation failed:`, retryErr);
-          // Fall through to mark as failed
+        } catch (e) {
+          console.error(`Job ${jobId}: Failed to schedule retry:`, e);
         }
-      } else {
-        console.log(`Job ${jobId}: No progress saved yet, cannot recover`);
-      }
+      }, 5000);
+      
+      return new Response(
+        JSON.stringify({ success: false, message: "Stream error, retrying...", error: error.message }),
+        { status: 202, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
     
-    // Non-recoverable error or retry failed - mark as failed
     if (jobId) {
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+      const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      const supabase = createClient(supabaseUrl, supabaseKey);
+      
       await supabase
         .from("import_jobs")
         .update({ 
           status: "failed", 
-          error_message: errorMessage,
+          error_message: error.message || "Unknown error",
           completed_at: new Date().toISOString() 
         })
         .eq("id", jobId);
     }
-
+    
     return new Response(
-      JSON.stringify({ error: errorMessage }),
+      JSON.stringify({ success: false, error: error.message }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }

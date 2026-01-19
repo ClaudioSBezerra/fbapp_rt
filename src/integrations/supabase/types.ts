@@ -86,6 +86,237 @@ export type Database = {
         }
         Relationships: []
       }
+      efd_raw_a100: {
+        Row: {
+          cofins: number
+          created_at: string | null
+          filial_id: string
+          id: string
+          import_job_id: string
+          iss: number | null
+          mes_ano: string
+          pis: number
+          tipo: string
+          valor: number
+        }
+        Insert: {
+          cofins?: number
+          created_at?: string | null
+          filial_id: string
+          id?: string
+          import_job_id: string
+          iss?: number | null
+          mes_ano: string
+          pis?: number
+          tipo: string
+          valor?: number
+        }
+        Update: {
+          cofins?: number
+          created_at?: string | null
+          filial_id?: string
+          id?: string
+          import_job_id?: string
+          iss?: number | null
+          mes_ano?: string
+          pis?: number
+          tipo?: string
+          valor?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "efd_raw_a100_filial_id_fkey"
+            columns: ["filial_id"]
+            isOneToOne: false
+            referencedRelation: "filiais"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "efd_raw_a100_import_job_id_fkey"
+            columns: ["import_job_id"]
+            isOneToOne: false
+            referencedRelation: "import_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      efd_raw_c100: {
+        Row: {
+          cod_part: string | null
+          cofins: number
+          created_at: string | null
+          filial_id: string
+          icms: number | null
+          id: string
+          import_job_id: string
+          ipi: number | null
+          mes_ano: string
+          pis: number
+          tipo: string
+          valor: number
+        }
+        Insert: {
+          cod_part?: string | null
+          cofins?: number
+          created_at?: string | null
+          filial_id: string
+          icms?: number | null
+          id?: string
+          import_job_id: string
+          ipi?: number | null
+          mes_ano: string
+          pis?: number
+          tipo: string
+          valor?: number
+        }
+        Update: {
+          cod_part?: string | null
+          cofins?: number
+          created_at?: string | null
+          filial_id?: string
+          icms?: number | null
+          id?: string
+          import_job_id?: string
+          ipi?: number | null
+          mes_ano?: string
+          pis?: number
+          tipo?: string
+          valor?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "efd_raw_c100_filial_id_fkey"
+            columns: ["filial_id"]
+            isOneToOne: false
+            referencedRelation: "filiais"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "efd_raw_c100_import_job_id_fkey"
+            columns: ["import_job_id"]
+            isOneToOne: false
+            referencedRelation: "import_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      efd_raw_c500: {
+        Row: {
+          cnpj_fornecedor: string | null
+          cofins: number
+          created_at: string | null
+          filial_id: string
+          icms: number | null
+          id: string
+          import_job_id: string
+          mes_ano: string
+          pis: number
+          tipo_operacao: string
+          tipo_servico: string
+          valor: number
+        }
+        Insert: {
+          cnpj_fornecedor?: string | null
+          cofins?: number
+          created_at?: string | null
+          filial_id: string
+          icms?: number | null
+          id?: string
+          import_job_id: string
+          mes_ano: string
+          pis?: number
+          tipo_operacao: string
+          tipo_servico: string
+          valor?: number
+        }
+        Update: {
+          cnpj_fornecedor?: string | null
+          cofins?: number
+          created_at?: string | null
+          filial_id?: string
+          icms?: number | null
+          id?: string
+          import_job_id?: string
+          mes_ano?: string
+          pis?: number
+          tipo_operacao?: string
+          tipo_servico?: string
+          valor?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "efd_raw_c500_filial_id_fkey"
+            columns: ["filial_id"]
+            isOneToOne: false
+            referencedRelation: "filiais"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "efd_raw_c500_import_job_id_fkey"
+            columns: ["import_job_id"]
+            isOneToOne: false
+            referencedRelation: "import_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      efd_raw_fretes: {
+        Row: {
+          cnpj_transportadora: string | null
+          cofins: number
+          created_at: string | null
+          filial_id: string
+          icms: number | null
+          id: string
+          import_job_id: string
+          mes_ano: string
+          pis: number
+          tipo: string
+          valor: number
+        }
+        Insert: {
+          cnpj_transportadora?: string | null
+          cofins?: number
+          created_at?: string | null
+          filial_id: string
+          icms?: number | null
+          id?: string
+          import_job_id: string
+          mes_ano: string
+          pis?: number
+          tipo: string
+          valor?: number
+        }
+        Update: {
+          cnpj_transportadora?: string | null
+          cofins?: number
+          created_at?: string | null
+          filial_id?: string
+          icms?: number | null
+          id?: string
+          import_job_id?: string
+          mes_ano?: string
+          pis?: number
+          tipo?: string
+          valor?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "efd_raw_fretes_filial_id_fkey"
+            columns: ["filial_id"]
+            isOneToOne: false
+            referencedRelation: "filiais"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "efd_raw_fretes_import_job_id_fkey"
+            columns: ["import_job_id"]
+            isOneToOne: false
+            referencedRelation: "import_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       empresas: {
         Row: {
           created_at: string
@@ -848,6 +1079,12 @@ export type Database = {
         Args: { _empresa_id: string; _file_type: string; _mes_ano: string }
         Returns: Json
       }
+      cleanup_orphaned_raw_data: { Args: never; Returns: undefined }
+      consolidar_energia_agua: { Args: { p_job_id: string }; Returns: Json }
+      consolidar_fretes: { Args: { p_job_id: string }; Returns: Json }
+      consolidar_import_job: { Args: { p_job_id: string }; Returns: Json }
+      consolidar_mercadorias: { Args: { p_job_id: string }; Returns: Json }
+      consolidar_servicos: { Args: { p_job_id: string }; Returns: Json }
       delete_energia_agua_batch: {
         Args: { _batch_size?: number; _filial_ids: string[]; _user_id: string }
         Returns: number
