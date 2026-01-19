@@ -28,6 +28,19 @@ interface ImportCounts {
   participantes?: number;
   estabelecimentos?: number;
   refresh_success?: boolean;
+  // Campos da arquitetura 3 camadas (raw tables)
+  raw_c100?: number;
+  raw_c500?: number;
+  raw_fretes?: number;
+  raw_a100?: number;
+  // Resultados da consolidação
+  consolidation?: {
+    mercadorias?: { inserted: number; raw_count: number };
+    energia_agua?: { inserted: number; raw_count: number };
+    fretes?: { inserted: number; raw_count: number };
+    servicos?: { inserted: number; raw_count: number };
+    success?: boolean;
+  };
   seen?: {
     a100?: number;
     c100?: number;
@@ -39,6 +52,35 @@ interface ImportCounts {
     d500?: number;
     d501?: number;
     d505?: number;
+  };
+}
+
+// Helper para obter contadores exibíveis (compatível com arquitetura 3 camadas)
+function getDisplayCounts(counts: ImportCounts) {
+  // Durante processamento usa raw counts; após consolidação usa consolidation ou fallback
+  const mercadorias = counts.consolidation?.mercadorias?.inserted ?? counts.mercadorias ?? counts.raw_c100 ?? 0;
+  const energiaAgua = counts.consolidation?.energia_agua?.inserted ?? counts.energia_agua ?? counts.raw_c500 ?? 0;
+  const fretes = counts.consolidation?.fretes?.inserted ?? counts.fretes ?? counts.raw_fretes ?? 0;
+  const servicos = counts.consolidation?.servicos?.inserted ?? counts.servicos ?? counts.raw_a100 ?? 0;
+  
+  // Para exibição durante processamento, mostra raw counts
+  const rawMercadorias = counts.raw_c100 ?? 0;
+  const rawEnergiaAgua = counts.raw_c500 ?? 0;
+  const rawFretes = counts.raw_fretes ?? 0;
+  const rawServicos = counts.raw_a100 ?? 0;
+  
+  return {
+    mercadorias,
+    energiaAgua,
+    fretes,
+    servicos,
+    participantes: counts.participantes ?? 0,
+    estabelecimentos: counts.estabelecimentos ?? 0,
+    rawMercadorias,
+    rawEnergiaAgua,
+    rawFretes,
+    rawServicos,
+    isConsolidated: !!counts.consolidation?.success,
   };
 }
 
@@ -995,16 +1037,21 @@ export default function ImportarEFD() {
                     </div>
                   )}
 
-                  {(job.status === 'processing' || job.status === 'refreshing_views') && (
-                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                      <span>Mercadorias: {job.counts.mercadorias}</span>
-                      <span>Serviços: {job.counts.servicos || 0}</span>
-                      <span>Energia/Água: {job.counts.energia_agua}</span>
-                      <span>Fretes: {job.counts.fretes}</span>
-                      <span>Participantes: {job.counts.participantes || 0}</span>
-                      <span>Estabelecimentos: {job.counts.estabelecimentos || 0}</span>
-                    </div>
-                  )}
+                  {(job.status === 'processing' || job.status === 'refreshing_views' || job.status === 'generating') && (() => {
+                    const dc = getDisplayCounts(job.counts);
+                    // Durante processamento, mostra raw counts se disponíveis
+                    const showRaw = !dc.isConsolidated && (dc.rawMercadorias > 0 || dc.rawFretes > 0 || dc.rawEnergiaAgua > 0 || dc.rawServicos > 0);
+                    return (
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                        <span>Mercadorias: {showRaw ? dc.rawMercadorias : dc.mercadorias}</span>
+                        <span>Serviços: {showRaw ? dc.rawServicos : dc.servicos}</span>
+                        <span>Energia/Água: {showRaw ? dc.rawEnergiaAgua : dc.energiaAgua}</span>
+                        <span>Fretes: {showRaw ? dc.rawFretes : dc.fretes}</span>
+                        <span>Participantes: {dc.participantes}</span>
+                        <span>Estabelecimentos: {dc.estabelecimentos}</span>
+                      </div>
+                    );
+                  })()}
 
                   <Button
                     variant="outline"
@@ -1036,7 +1083,6 @@ export default function ImportarEFD() {
               {completedJobs.map((job) => {
                 const statusInfo = getStatusInfo(job.status);
                 const StatusIcon = statusInfo.icon;
-                const totalRecords = job.counts.mercadorias + job.counts.energia_agua + job.counts.fretes;
                 
                 return (
                   <div key={job.id} className="border rounded-lg p-4">
@@ -1053,53 +1099,57 @@ export default function ImportarEFD() {
                       </Badge>
                     </div>
 
-                    {job.status === 'completed' && (
-                      <div className="bg-muted/50 rounded-lg p-3 mt-3">
-                        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 text-center">
-                          <div>
-                            <p className="text-lg font-semibold text-foreground">{job.counts.mercadorias}</p>
-                            <p className="text-xs text-muted-foreground">Mercadorias</p>
+                    {job.status === 'completed' && (() => {
+                      const dc = getDisplayCounts(job.counts);
+                      const total = dc.mercadorias + dc.energiaAgua + dc.fretes + dc.servicos;
+                      return (
+                        <div className="bg-muted/50 rounded-lg p-3 mt-3">
+                          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 text-center">
+                            <div>
+                              <p className="text-lg font-semibold text-foreground">{dc.mercadorias}</p>
+                              <p className="text-xs text-muted-foreground">Mercadorias</p>
+                            </div>
+                            <div>
+                              <p className="text-lg font-semibold text-foreground">{dc.servicos}</p>
+                              <p className="text-xs text-muted-foreground">Serviços</p>
+                            </div>
+                            <div>
+                              <p className="text-lg font-semibold text-foreground">{dc.energiaAgua}</p>
+                              <p className="text-xs text-muted-foreground">Energia/Água</p>
+                            </div>
+                            <div>
+                              <p className="text-lg font-semibold text-foreground">{dc.fretes}</p>
+                              <p className="text-xs text-muted-foreground">Fretes</p>
+                            </div>
+                            <div>
+                              <p className="text-lg font-semibold text-foreground">{dc.participantes}</p>
+                              <p className="text-xs text-muted-foreground">Participantes</p>
+                            </div>
+                            <div>
+                              <p className="text-lg font-semibold text-foreground">{dc.estabelecimentos}</p>
+                              <p className="text-xs text-muted-foreground">Estabelecimentos</p>
+                            </div>
                           </div>
-                          <div>
-                            <p className="text-lg font-semibold text-foreground">{job.counts.servicos || 0}</p>
-                            <p className="text-xs text-muted-foreground">Serviços</p>
-                          </div>
-                          <div>
-                            <p className="text-lg font-semibold text-foreground">{job.counts.energia_agua}</p>
-                            <p className="text-xs text-muted-foreground">Energia/Água</p>
-                          </div>
-                          <div>
-                            <p className="text-lg font-semibold text-foreground">{job.counts.fretes}</p>
-                            <p className="text-xs text-muted-foreground">Fretes</p>
-                          </div>
-                          <div>
-                            <p className="text-lg font-semibold text-foreground">{job.counts.participantes || 0}</p>
-                            <p className="text-xs text-muted-foreground">Participantes</p>
-                          </div>
-                          <div>
-                            <p className="text-lg font-semibold text-foreground">{job.counts.estabelecimentos || 0}</p>
-                            <p className="text-xs text-muted-foreground">Estabelecimentos</p>
-                          </div>
-                        </div>
-                        <div className="text-center mt-2 pt-2 border-t border-border">
-                          <p className="text-sm font-medium text-foreground">{totalRecords + (job.counts.servicos || 0)} registros importados</p>
-                        </div>
-                        {job.counts.seen && (job.counts.seen.d100 !== undefined || job.counts.seen.d500 !== undefined) && (
                           <div className="text-center mt-2 pt-2 border-t border-border">
-                            <p className="text-xs text-muted-foreground">
-                              Registros detectados no arquivo: 
-                              {job.counts.seen.d100 ? ` D100: ${job.counts.seen.d100}` : ''} 
-                              {job.counts.seen.d500 ? ` D500: ${job.counts.seen.d500}` : ''}
-                              {!job.counts.seen.d100 && !job.counts.seen.d500 && ' nenhum D100/D500'}
-                            </p>
+                            <p className="text-sm font-medium text-foreground">{total} registros importados</p>
                           </div>
-                        )}
-                        <div className="flex items-center justify-center gap-2 text-xs text-positive mt-2 pt-2 border-t border-border">
-                          <Shield className="h-3 w-3" />
-                          <span>Arquivo original excluído por segurança</span>
+                          {job.counts.seen && (job.counts.seen.d100 !== undefined || job.counts.seen.d500 !== undefined) && (
+                            <div className="text-center mt-2 pt-2 border-t border-border">
+                              <p className="text-xs text-muted-foreground">
+                                Registros detectados no arquivo: 
+                                {job.counts.seen.d100 ? ` D100: ${job.counts.seen.d100}` : ''} 
+                                {job.counts.seen.d500 ? ` D500: ${job.counts.seen.d500}` : ''}
+                                {!job.counts.seen.d100 && !job.counts.seen.d500 && ' nenhum D100/D500'}
+                              </p>
+                            </div>
+                          )}
+                          <div className="flex items-center justify-center gap-2 text-xs text-positive mt-2 pt-2 border-t border-border">
+                            <Shield className="h-3 w-3" />
+                            <span>Arquivo original excluído por segurança</span>
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      );
+                    })()}
 
                     {job.status === 'failed' && job.error_message && (
                       <div className="bg-destructive/10 rounded-lg p-3 mt-3 flex items-start gap-2">
