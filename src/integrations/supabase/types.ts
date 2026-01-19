@@ -1135,6 +1135,13 @@ export type Database = {
               valor: number
             }[]
           }
+      get_simples_counts: {
+        Args: never
+        Returns: {
+          mercadorias_count: number
+          uso_consumo_count: number
+        }[]
+      }
       get_simples_link_stats:
         | {
             Args: never
