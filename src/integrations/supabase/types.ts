@@ -857,6 +857,15 @@ export type Database = {
         Returns: number
       }
       exec_sql: { Args: { sql: string }; Returns: undefined }
+      get_cnpjs_uso_consumo_pendentes: {
+        Args: { p_tenant_id: string }
+        Returns: {
+          cnpj: string
+          nome: string
+          quantidade_docs: number
+          valor_total: number
+        }[]
+      }
       get_mercadorias_participante_lista: {
         Args: never
         Returns: {
@@ -1117,15 +1126,17 @@ export type Database = {
               valor: number
             }[]
           }
-      get_simples_link_stats: {
-        Args: never
-        Returns: {
-          optantes_vinculados: number
-          total_simples: number
-          vinculados_mercadorias: number
-          vinculados_uso_consumo: number
-        }[]
-      }
+      get_simples_link_stats:
+        | {
+            Args: never
+            Returns: {
+              optantes_vinculados: number
+              total_simples: number
+              vinculados_mercadorias: number
+              vinculados_uso_consumo: number
+            }[]
+          }
+        | { Args: { p_tenant_id: string }; Returns: Json }
       get_tenant_subscription_info: {
         Args: { p_user_id: string }
         Returns: {
