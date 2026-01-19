@@ -26,6 +26,7 @@ const MATERIALIZED_VIEWS: { name: string; timeoutSeconds: number }[] = [
   { name: 'extensions.mv_uso_consumo_detailed', timeoutSeconds: 180 },
   { name: 'extensions.mv_fretes_detailed', timeoutSeconds: 120 },
   { name: 'extensions.mv_energia_agua_detailed', timeoutSeconds: 120 },
+  { name: 'extensions.mv_participantes_cache', timeoutSeconds: 120 }, // Cache de participantes
 ];
 
 Deno.serve(async (req) => {
