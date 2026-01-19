@@ -1084,6 +1084,10 @@ export type Database = {
       consolidar_fretes: { Args: { p_job_id: string }; Returns: Json }
       consolidar_import_job: { Args: { p_job_id: string }; Returns: Json }
       consolidar_mercadorias: { Args: { p_job_id: string }; Returns: Json }
+      consolidar_mercadorias_batch: {
+        Args: { p_batch_size?: number; p_job_id: string }
+        Returns: Json
+      }
       consolidar_servicos: { Args: { p_job_id: string }; Returns: Json }
       delete_energia_agua_batch: {
         Args: { _batch_size?: number; _filial_ids: string[]; _user_id: string }
