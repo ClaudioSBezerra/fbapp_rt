@@ -94,6 +94,25 @@ interface BatchBuffers {
   participantes: any[];
 }
 
+// Aggregation map for mercadorias - key format: filial_id|mes_ano|tipo|cod_part
+interface MercadoriasAggregateValue {
+  filial_id: string;
+  mes_ano: string;
+  tipo: string;
+  cod_part: string | null;
+  valor: number;
+  pis: number;
+  cofins: number;
+  icms: number;
+  ipi: number;
+}
+
+type MercadoriasAggregateMap = Map<string, MercadoriasAggregateValue>;
+
+function getMercadoriasAggregateKey(filial_id: string, mes_ano: string, tipo: string, cod_part: string | null): string {
+  return `${filial_id}|${mes_ano}|${tipo}|${cod_part || '__NULL__'}`;
+}
+
 interface InsertCounts {
   mercadorias: number;
   energia_agua: number;
@@ -1081,14 +1100,113 @@ serve(async (req) => {
 
     // Track bytes processed in this chunk
     let bytesProcessedInChunk = 0;
+    
+    // ========================================================================
+    // AGGREGATION MAP: Accumulate mercadorias by (filial_id, mes_ano, tipo, cod_part)
+    // This reduces 1M+ records to ~100k unique combinations
+    // ========================================================================
+    const mercadoriasAggregateMap: MercadoriasAggregateMap = new Map();
+    
+    // Function to add to aggregate map instead of batch
+    const addToMercadoriasAggregate = (filial_id: string, data: any) => {
+      const key = getMercadoriasAggregateKey(filial_id, data.mes_ano, data.tipo, data.cod_part);
+      const existing = mercadoriasAggregateMap.get(key);
+      
+      if (existing) {
+        // Accumulate values
+        existing.valor += data.valor || 0;
+        existing.pis += data.pis || 0;
+        existing.cofins += data.cofins || 0;
+        existing.icms += data.icms || 0;
+        existing.ipi += data.ipi || 0;
+      } else {
+        // Create new entry
+        mercadoriasAggregateMap.set(key, {
+          filial_id,
+          mes_ano: data.mes_ano,
+          tipo: data.tipo,
+          cod_part: data.cod_part || null,
+          valor: data.valor || 0,
+          pis: data.pis || 0,
+          cofins: data.cofins || 0,
+          icms: data.icms || 0,
+          ipi: data.ipi || 0,
+        });
+      }
+    };
+    
+    // Flush aggregated mercadorias to DB using UPSERT
+    // Since we aggregate in memory first, we use ignoreDuplicates for simplicity
+    // The key insight: each import session will only have ONE record per unique key
+    // because we aggregate in the Map. Duplicates only happen across sessions.
+    const flushMercadoriasAggregate = async (): Promise<string | null> => {
+      if (mercadoriasAggregateMap.size === 0) return null;
+      
+      const records = Array.from(mercadoriasAggregateMap.values()).map(v => ({
+        filial_id: v.filial_id,
+        mes_ano: v.mes_ano,
+        tipo: v.tipo,
+        cod_part: v.cod_part,
+        descricao: 'Agregado',
+        ncm: null,
+        valor: v.valor,
+        pis: v.pis,
+        cofins: v.cofins,
+        icms: v.icms,
+        ipi: v.ipi,
+      }));
+      
+      console.log(`Job ${jobId}: Flushing ${records.length} aggregated mercadorias records`);
+      
+      // Process in batches for reliability
+      const UPSERT_BATCH_SIZE = 500;
+      let insertedCount = 0;
+      
+      for (let i = 0; i < records.length; i += UPSERT_BATCH_SIZE) {
+        const batch = records.slice(i, i + UPSERT_BATCH_SIZE);
+        
+        // Try insert - if duplicates exist from previous imports, they'll be ignored
+        // This is fine because we consolidated all existing data in the migration
+        const { error } = await supabase.from('mercadorias').insert(batch);
+        
+        if (error) {
+          // Check if it's a duplicate key error
+          if (error.message.includes('duplicate') || error.message.includes('unique')) {
+            // Insert one by one, skipping duplicates
+            console.log(`Job ${jobId}: Duplicate keys detected, inserting individually`);
+            for (const record of batch) {
+              const { error: singleError } = await supabase.from('mercadorias').insert(record);
+              if (!singleError) {
+                insertedCount++;
+              } else if (!singleError.message.includes('duplicate') && !singleError.message.includes('unique')) {
+                console.error(`Insert error for single mercadoria:`, singleError);
+                return singleError.message;
+              }
+              // Skip duplicate errors silently
+            }
+          } else {
+            console.error(`Insert error for mercadorias batch:`, error);
+            return error.message;
+          }
+        } else {
+          insertedCount += batch.length;
+        }
+      }
+      
+      console.log(`Job ${jobId}: Inserted ${insertedCount}/${records.length} mercadorias records`);
+      counts.mercadorias += insertedCount;
+      mercadoriasAggregateMap.clear();
+      return null;
+    };
 
     const flushBatch = async (table: keyof BatchBuffers): Promise<string | null> => {
+      // Skip mercadorias - handled separately by flushMercadoriasAggregate
+      if (table === 'mercadorias') return null;
       if (batches[table].length === 0) return null;
 
-      // Use upsert with ignoreDuplicates to avoid inserting duplicate records
-      // This requires unique constraints on the tables (will be added via migration after data cleanup)
+      // Use upsert with ignoreDuplicates for other tables
       const onConflictMap: Record<keyof BatchBuffers, string> = {
-        mercadorias: 'filial_id,mes_ano,tipo,descricao,valor,pis,cofins,icms,ipi',
+        mercadorias: '', // Not used - handled separately
         fretes: 'filial_id,mes_ano,tipo,valor,pis,cofins,icms',
         energia_agua: 'filial_id,mes_ano,tipo_operacao,tipo_servico,valor,pis,cofins,icms',
         servicos: 'filial_id,mes_ano,tipo,descricao,valor,pis,cofins,iss',
@@ -1120,7 +1238,12 @@ serve(async (req) => {
     };
 
     const flushAllBatches = async (): Promise<string | null> => {
-      for (const table of ["mercadorias", "energia_agua", "fretes", "servicos", "participantes"] as const) {
+      // First flush aggregated mercadorias
+      const mercErr = await flushMercadoriasAggregate();
+      if (mercErr) return mercErr;
+      
+      // Then flush other tables
+      for (const table of ["energia_agua", "fretes", "servicos", "participantes"] as const) {
         const err = await flushBatch(table);
         if (err) return err;
       }
@@ -1215,10 +1338,17 @@ serve(async (req) => {
               if (blockLimits[blockKey].limit === 0 || blockLimits[blockKey].count < blockLimits[blockKey].limit) {
                 blockLimits[blockKey].count++;
                 const { table, data } = result.record;
-                batches[table].push({
-                  ...data,
-                  filial_id: context.currentFilialId || job.filial_id,
-                });
+                const filialId = context.currentFilialId || job.filial_id;
+                
+                // Use aggregation for mercadorias
+                if (table === 'mercadorias') {
+                  addToMercadoriasAggregate(filialId, data);
+                } else {
+                  batches[table].push({
+                    ...data,
+                    filial_id: filialId,
+                  });
+                }
               }
             }
           }
@@ -1473,26 +1603,52 @@ serve(async (req) => {
           blockLimits[blockKey].count++;
           
           const { table, data } = result.record;
-          batches[table].push({
-            ...data,
-            filial_id: context.currentFilialId || job.filial_id,
-          });
+          const filialId = context.currentFilialId || job.filial_id;
+          
+          // Use aggregation map for mercadorias, regular batch for others
+          if (table === 'mercadorias') {
+            addToMercadoriasAggregate(filialId, data);
+            
+            // Flush aggregated mercadorias periodically (every 10k unique keys)
+            if (mercadoriasAggregateMap.size >= 10000) {
+              const err = await flushMercadoriasAggregate();
+              if (err) {
+                await supabase
+                  .from("import_jobs")
+                  .update({ 
+                    status: "failed", 
+                    error_message: `Failed to insert mercadorias: ${err}`,
+                    progress: Math.min(95, Math.round((totalLinesProcessed / estimatedTotalLines) * 100)),
+                    total_lines: totalLinesProcessed,
+                    counts,
+                    completed_at: new Date().toISOString() 
+                  })
+                  .eq("id", jobId);
+                throw new Error(`Insert error: ${err}`);
+              }
+            }
+          } else {
+            batches[table].push({
+              ...data,
+              filial_id: filialId,
+            });
 
-          if (batches[table].length >= BATCH_SIZE) {
-            const err = await flushBatch(table);
-            if (err) {
-              await supabase
-                .from("import_jobs")
-                .update({ 
-                  status: "failed", 
-                  error_message: `Failed to insert ${table}: ${err}`,
-                  progress: Math.min(95, Math.round((totalLinesProcessed / estimatedTotalLines) * 100)),
-                  total_lines: totalLinesProcessed,
-                  counts,
-                  completed_at: new Date().toISOString() 
-                })
-                .eq("id", jobId);
-              throw new Error(`Insert error: ${err}`);
+            if (batches[table].length >= BATCH_SIZE) {
+              const err = await flushBatch(table);
+              if (err) {
+                await supabase
+                  .from("import_jobs")
+                  .update({ 
+                    status: "failed", 
+                    error_message: `Failed to insert ${table}: ${err}`,
+                    progress: Math.min(95, Math.round((totalLinesProcessed / estimatedTotalLines) * 100)),
+                    total_lines: totalLinesProcessed,
+                    counts,
+                    completed_at: new Date().toISOString() 
+                  })
+                  .eq("id", jobId);
+                throw new Error(`Insert error: ${err}`);
+              }
             }
           }
         }
