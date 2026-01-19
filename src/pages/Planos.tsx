@@ -19,14 +19,13 @@ interface Plan {
   popular?: boolean;
 }
 
-// Planos serão carregados do Stripe, mas definimos defaults aqui
-const defaultPlans: Plan[] = [
+const plans: Plan[] = [
   {
     id: "profissional",
     name: "Profissional",
     description: "Ideal para pequenas e médias empresas",
-    price: 297,
-    stripePriceId: "", // Será preenchido pelo Stripe
+    price: 1000,
+    stripePriceId: "price_1SrHHxIxxX0LNvvtwcduGIzN",
     features: [
       "Até 5 empresas",
       "Importação ilimitada de arquivos EFD",
@@ -39,8 +38,8 @@ const defaultPlans: Plan[] = [
     id: "empresarial",
     name: "Empresarial",
     description: "Para grupos econômicos e escritórios",
-    price: 597,
-    stripePriceId: "", // Será preenchido pelo Stripe
+    price: 5000,
+    stripePriceId: "price_1SrHIAIxxX0LNvvtEyEe98sk",
     popular: true,
     features: [
       "Empresas ilimitadas",
