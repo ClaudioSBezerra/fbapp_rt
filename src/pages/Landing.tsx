@@ -36,9 +36,9 @@ const Landing = () => {
         <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-background to-background" />
         <div className="relative container mx-auto px-4 py-20 lg:py-32">
           <div className="max-w-4xl mx-auto text-center space-y-8">
-            <Badge variant="destructive" className="text-sm px-4 py-1.5">
-              <Clock className="w-4 h-4 mr-2" />
-              EC 132/2023 - Transição inicia em 2027
+            <Badge variant="secondary" className="text-sm px-4 py-1.5">
+              <Building2 className="w-4 h-4 mr-2" />
+              Fortes Bezerra Tecnologia
             </Badge>
             
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-foreground">
