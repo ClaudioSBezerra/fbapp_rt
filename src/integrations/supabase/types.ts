@@ -436,6 +436,7 @@ export type Database = {
       participantes: {
         Row: {
           cnpj: string | null
+          cnpj_normalizado: string | null
           cod_mun: string | null
           cod_part: string
           cpf: string | null
@@ -448,6 +449,7 @@ export type Database = {
         }
         Insert: {
           cnpj?: string | null
+          cnpj_normalizado?: string | null
           cod_mun?: string | null
           cod_part: string
           cpf?: string | null
@@ -460,6 +462,7 @@ export type Database = {
         }
         Update: {
           cnpj?: string | null
+          cnpj_normalizado?: string | null
           cod_mun?: string | null
           cod_part?: string
           cpf?: string | null
@@ -1114,6 +1117,15 @@ export type Database = {
               valor: number
             }[]
           }
+      get_simples_link_stats: {
+        Args: never
+        Returns: {
+          optantes_vinculados: number
+          total_simples: number
+          vinculados_mercadorias: number
+          vinculados_uso_consumo: number
+        }[]
+      }
       get_tenant_subscription_info: {
         Args: { p_user_id: string }
         Returns: {
