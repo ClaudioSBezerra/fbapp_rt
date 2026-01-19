@@ -39,7 +39,7 @@ const Landing = () => {
             
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-foreground">
               Sua empresa está preparada para a{" "}
-              <span className="text-primary">Reforma Tributária</span> de 2027?
+              <span className="text-primary">Reforma Tributária</span>?
             </h1>
             
             <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
