@@ -41,6 +41,10 @@ const Landing = () => {
         <div className="relative container mx-auto px-4 py-20 lg:py-32">
           <div className="max-w-4xl mx-auto text-center space-y-8">
             
+            <Badge className="bg-primary/10 text-primary border-primary/20 px-4 py-2 text-sm font-medium">
+              🎁 14 dias de teste grátis • Sem cartão de crédito
+            </Badge>
+            
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-foreground">
               Sua empresa está preparada para a{" "}
               <span className="text-primary">Reforma Tributária</span>?
