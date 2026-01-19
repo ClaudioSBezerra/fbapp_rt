@@ -436,6 +436,7 @@ export type Database = {
       participantes: {
         Row: {
           cnpj: string | null
+          cnpj_normalizado: string | null
           cod_mun: string | null
           cod_part: string
           cpf: string | null
@@ -448,6 +449,7 @@ export type Database = {
         }
         Insert: {
           cnpj?: string | null
+          cnpj_normalizado?: string | null
           cod_mun?: string | null
           cod_part: string
           cpf?: string | null
@@ -460,6 +462,7 @@ export type Database = {
         }
         Update: {
           cnpj?: string | null
+          cnpj_normalizado?: string | null
           cod_mun?: string | null
           cod_part?: string
           cpf?: string | null
@@ -617,23 +620,77 @@ export type Database = {
           },
         ]
       }
+      subscription_plans: {
+        Row: {
+          created_at: string
+          features: Json
+          id: string
+          is_active: boolean
+          name: string
+          price_monthly: number
+          stripe_price_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          features?: Json
+          id?: string
+          is_active?: boolean
+          name: string
+          price_monthly?: number
+          stripe_price_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          features?: Json
+          id?: string
+          is_active?: boolean
+          name?: string
+          price_monthly?: number
+          stripe_price_id?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       tenants: {
         Row: {
           created_at: string
           id: string
           nome: string
+          stripe_customer_id: string | null
+          stripe_subscription_id: string | null
+          subscription_status:
+            | Database["public"]["Enums"]["subscription_status"]
+            | null
+          trial_ends_at: string | null
+          trial_started_at: string | null
           updated_at: string
         }
         Insert: {
           created_at?: string
           id?: string
           nome?: string
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          subscription_status?:
+            | Database["public"]["Enums"]["subscription_status"]
+            | null
+          trial_ends_at?: string | null
+          trial_started_at?: string | null
           updated_at?: string
         }
         Update: {
           created_at?: string
           id?: string
           nome?: string
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          subscription_status?:
+            | Database["public"]["Enums"]["subscription_status"]
+            | null
+          trial_ends_at?: string | null
+          trial_started_at?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -800,6 +857,24 @@ export type Database = {
         Returns: number
       }
       exec_sql: { Args: { sql: string }; Returns: undefined }
+      get_cnpjs_mercadorias_pendentes: {
+        Args: { p_tenant_id: string }
+        Returns: {
+          cnpj: string
+          nome: string
+          quantidade_docs: number
+          valor_total: number
+        }[]
+      }
+      get_cnpjs_uso_consumo_pendentes: {
+        Args: { p_tenant_id: string }
+        Returns: {
+          cnpj: string
+          nome: string
+          quantidade_docs: number
+          valor_total: number
+        }[]
+      }
       get_mercadorias_participante_lista: {
         Args: never
         Returns: {
@@ -1060,6 +1135,37 @@ export type Database = {
               valor: number
             }[]
           }
+      get_simples_counts: {
+        Args: never
+        Returns: {
+          mercadorias_count: number
+          uso_consumo_count: number
+        }[]
+      }
+      get_simples_link_stats:
+        | {
+            Args: never
+            Returns: {
+              optantes_vinculados: number
+              total_simples: number
+              vinculados_mercadorias: number
+              vinculados_uso_consumo: number
+            }[]
+          }
+        | { Args: { p_tenant_id: string }; Returns: Json }
+      get_tenant_subscription_info: {
+        Args: { p_user_id: string }
+        Returns: {
+          can_write: boolean
+          is_expired: boolean
+          subscription_status: Database["public"]["Enums"]["subscription_status"]
+          tenant_id: string
+          tenant_nome: string
+          trial_days_left: number
+          trial_ends_at: string
+          trial_started_at: string
+        }[]
+      }
       has_empresa_access: {
         Args: { _empresa_id: string; _user_id: string }
         Returns: boolean
@@ -1084,6 +1190,12 @@ export type Database = {
     }
     Enums: {
       app_role: "admin" | "user" | "viewer"
+      subscription_status:
+        | "trial"
+        | "active"
+        | "past_due"
+        | "cancelled"
+        | "expired"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1212,6 +1324,13 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin", "user", "viewer"],
+      subscription_status: [
+        "trial",
+        "active",
+        "past_due",
+        "cancelled",
+        "expired",
+      ],
     },
   },
 } as const
