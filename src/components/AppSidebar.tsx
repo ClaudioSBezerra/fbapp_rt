@@ -124,35 +124,54 @@ export function AppSidebar() {
 
       <SidebarFooter className="border-t border-sidebar-border p-4">
         {!collapsed && user && (
-          <div className="mb-3 px-2 space-y-1">
-            {/* Informações da sessão */}
-            <div className="text-xs space-y-0.5">
-              {/* Ambiente e Grupo na mesma linha */}
-              {(tenantNome || grupoNome) && (
-                <p className="text-sidebar-foreground/80">
-                  {tenantNome}
-                  {tenantNome && grupoNome && ' | '}
-                  {grupoNome}
-                </p>
-              )}
-              
-              {/* Empresa em itálico e negrito */}
-              {empresas.length > 0 && (
-                <p className="font-semibold italic text-sidebar-foreground truncate">
-                  {isAdmin 
-                    ? `Todas (${empresas.length})` 
-                    : empresas.map(e => e.nome).join(', ')}
-                </p>
+          <div className="mb-3 space-y-3">
+            {/* Card do Usuário */}
+            <div className="bg-sidebar-accent/30 rounded-lg p-3 space-y-1.5">
+              <p className="font-medium text-sm text-sidebar-foreground truncate">
+                {user.user_metadata?.full_name || 'Usuário'}
+              </p>
+              <p className="text-xs text-sidebar-foreground/60 truncate">
+                {user.email}
+              </p>
+              {isAdmin && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary/20 text-primary">
+                  Administrador
+                </span>
               )}
             </div>
             
-            {/* Separador */}
-            <div className="border-t border-sidebar-border/50 my-2" />
-            
-            {/* Email do usuário */}
-            <p className="text-xs text-sidebar-foreground/60 truncate">
-              {user.email}
-            </p>
+            {/* Grupo e Empresas */}
+            {grupoNome && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-xs text-sidebar-foreground/80">
+                  <Building2 className="h-3.5 w-3.5" />
+                  <span className="font-medium">{grupoNome}</span>
+                </div>
+                
+                {empresas.length > 0 && (
+                  <div className="pl-5 space-y-0.5">
+                    {isAdmin ? (
+                      <p className="text-xs text-sidebar-foreground/60 italic">
+                        Acesso a todas ({empresas.length} empresas)
+                      </p>
+                    ) : (
+                      <>
+                        {empresas.slice(0, 3).map((e) => (
+                          <p key={e.id} className="text-xs text-sidebar-foreground/60 truncate">
+                            • {e.nome}
+                          </p>
+                        ))}
+                        {empresas.length > 3 && (
+                          <p className="text-xs text-sidebar-foreground/50 italic">
+                            +{empresas.length - 3} outras
+                          </p>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
         <Button
