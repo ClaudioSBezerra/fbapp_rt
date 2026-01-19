@@ -204,13 +204,12 @@ serve(async (req) => {
       }
     }
 
-    // Deletar import_jobs das filiais com import_scope = 'icms_uso_consumo'
-    // CORREÇÃO: usar filial_id em vez de user_id para garantir limpeza de todos os jobs do tenant
-    console.log("Deleting import_jobs (icms_uso_consumo) for filiais...");
+    // Deletar import_jobs do usuário com import_scope = 'icms_uso_consumo'
+    console.log("Deleting import_jobs (icms_uso_consumo)...");
     const { error: jobsError, count: jobsCount } = await supabaseAdmin
       .from('import_jobs')
       .delete({ count: 'exact' })
-      .in('filial_id', filialIds)
+      .eq('user_id', userId)
       .eq('import_scope', 'icms_uso_consumo');
 
     if (jobsError) {

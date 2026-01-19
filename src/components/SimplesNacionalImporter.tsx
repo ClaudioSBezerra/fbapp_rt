@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,10 +9,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   Upload, FileSpreadsheet, CheckCircle, XCircle, Trash2, 
-  AlertCircle, Loader2, Download, Link2, Unlink, FileDown, RefreshCw
+  AlertCircle, Loader2, RefreshCw, Download
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -31,93 +30,17 @@ interface Stats {
   naoOptantes: number;
 }
 
-interface AreaStats {
-  total_participantes: number;
-  vinculados: number;
-  pendentes: number;
-  optantes_simples: number;
-  nao_optantes: number;
-}
-
-interface LinkStats {
-  mercadorias: AreaStats;
-  uso_consumo: AreaStats;
-  total_simples_nacional: number;
-}
-
-interface PendingCnpj {
-  cnpj: string;
-  nome: string;
-  quantidade_docs: number;
-  valor_total: number;
-}
-
-interface RefreshResult {
-  success: boolean;
-  views_refreshed: string[];
-  views_failed: string[];
-  duration_ms: number;
-  error?: string;
-  validation?: {
-    simples_vinculados_uso_consumo: number;
-    simples_vinculados_mercadorias: number;
-  };
-}
-
 export function SimplesNacionalImporter() {
   const { user } = useAuth();
   const [file, setFile] = useState<File | null>(null);
   const [parsedData, setParsedData] = useState<ParsedRow[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
-  const [linkStats, setLinkStats] = useState<LinkStats | null>(null);
-  const [pendingCnpjsUsoConsumo, setPendingCnpjsUsoConsumo] = useState<PendingCnpj[]>([]);
-  const [pendingCnpjsMercadorias, setPendingCnpjsMercadorias] = useState<PendingCnpj[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
   const [showPreview, setShowPreview] = useState(false);
   const [replaceExisting, setReplaceExisting] = useState(false);
   const [tenantId, setTenantId] = useState<string | null>(null);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isLoadingPending, setIsLoadingPending] = useState(false);
-  const [activeTab, setActiveTab] = useState<string>('mercadorias');
-  const [lastRefreshValidation, setLastRefreshValidation] = useState<RefreshResult['validation'] | null>(null);
-
-  // Carregar estatísticas de vinculação (nova função com JSONB)
-  const loadLinkStats = useCallback(async (tid: string) => {
-    try {
-      const { data, error } = await supabase.rpc('get_simples_link_stats', { p_tenant_id: tid });
-      if (!error && data) {
-        setLinkStats(data as unknown as LinkStats);
-      }
-    } catch (err) {
-      console.error('Erro ao carregar estatísticas de vinculação:', err);
-    }
-  }, []);
-
-  // Carregar CNPJs pendentes de Uso/Consumo e Mercadorias
-  const loadPendingCnpjs = useCallback(async (tid: string) => {
-    setIsLoadingPending(true);
-    try {
-      // Carregar ambas as listas em paralelo
-      const [usoConsumoResult, mercadoriasResult] = await Promise.all([
-        supabase.rpc('get_cnpjs_uso_consumo_pendentes', { p_tenant_id: tid }),
-        supabase.rpc('get_cnpjs_mercadorias_pendentes', { p_tenant_id: tid })
-      ]);
-      
-      if (!usoConsumoResult.error && usoConsumoResult.data) {
-        setPendingCnpjsUsoConsumo(usoConsumoResult.data as PendingCnpj[]);
-      }
-      
-      if (!mercadoriasResult.error && mercadoriasResult.data) {
-        setPendingCnpjsMercadorias(mercadoriasResult.data as PendingCnpj[]);
-      }
-    } catch (err) {
-      console.error('Erro ao carregar CNPJs pendentes:', err);
-    } finally {
-      setIsLoadingPending(false);
-    }
-  }, []);
 
   // Carregar dados existentes e tenant
   const loadExistingData = useCallback(async () => {
@@ -135,7 +58,7 @@ export function SimplesNacionalImporter() {
       if (tenantData) {
         setTenantId(tenantData.tenant_id);
         
-        // Buscar estatísticas básicas
+        // Buscar estatísticas
         const { data: simplesData, error } = await supabase
           .from('simples_nacional')
           .select('is_simples')
@@ -149,24 +72,18 @@ export function SimplesNacionalImporter() {
             naoOptantes: simplesData.length - optantes
           });
         }
-        
-        // Carregar estatísticas de vinculação e CNPJs pendentes
-        await Promise.all([
-          loadLinkStats(tenantData.tenant_id),
-          loadPendingCnpjs(tenantData.tenant_id)
-        ]);
       }
     } catch (err) {
       console.error('Erro ao carregar dados:', err);
     } finally {
       setIsLoading(false);
     }
-  }, [user, loadLinkStats, loadPendingCnpjs]);
+  }, [user]);
 
   // Carregar dados ao montar
-  useEffect(() => {
+  useState(() => {
     loadExistingData();
-  }, [loadExistingData]);
+  });
 
   // Parsear arquivo CSV
   const parseCSV = (content: string): ParsedRow[] => {
@@ -241,28 +158,6 @@ export function SimplesNacionalImporter() {
     }
   };
 
-  // Função robusta de refresh via edge function
-  const refreshViewsViaEdge = async (): Promise<RefreshResult | null> => {
-    try {
-      const { data, error } = await supabase.functions.invoke('refresh-views', {
-        body: { 
-          validate: true,
-          priority_views: ['extensions.mv_uso_consumo_detailed', 'extensions.mv_mercadorias_participante']
-        }
-      });
-      
-      if (error) {
-        console.error('Edge function error:', error);
-        return null;
-      }
-      
-      return data as RefreshResult;
-    } catch (err) {
-      console.error('Failed to call refresh-views edge function:', err);
-      return null;
-    }
-  };
-
   // Importar dados
   const handleImport = async () => {
     if (!tenantId || parsedData.length === 0) return;
@@ -275,7 +170,6 @@ export function SimplesNacionalImporter() {
     
     setIsImporting(true);
     setImportProgress(0);
-    setLastRefreshValidation(null);
     
     try {
       // Se substituir existente, limpar primeiro
@@ -307,78 +201,23 @@ export function SimplesNacionalImporter() {
         if (error) throw error;
         
         imported += batch.length;
-        setImportProgress(Math.round((imported / validRows.length) * 80)); // 80% para importação
+        setImportProgress(Math.round((imported / validRows.length) * 100));
       }
       
-      // Refresh materialized views via edge function (mais robusto)
-      setIsRefreshing(true);
-      setImportProgress(85);
+      // Refresh materialized views
+      await supabase.rpc('refresh_materialized_views');
       
-      const refreshResult = await refreshViewsViaEdge();
-      
-      setImportProgress(95);
-      
-      if (refreshResult) {
-        setLastRefreshValidation(refreshResult.validation || null);
-        
-        if (refreshResult.success) {
-          const vinculados = (refreshResult.validation?.simples_vinculados_uso_consumo || 0) + 
-                            (refreshResult.validation?.simples_vinculados_mercadorias || 0);
-          toast.success(`${imported} registros importados! Views atualizadas. ${vinculados} vínculos ativos.`);
-        } else if (refreshResult.views_failed.length > 0) {
-          toast.warning(`${imported} registros importados. Algumas views falharam: ${refreshResult.views_failed.join(', ')}`);
-        }
-      } else {
-        // Fallback para RPC direto se edge function falhar
-        console.warn('Edge function failed, trying RPC fallback...');
-        let fallbackSuccess = false;
-        for (let attempt = 0; attempt < 3; attempt++) {
-          const { error: rpcError } = await supabase.rpc('refresh_materialized_views');
-          if (!rpcError) {
-            fallbackSuccess = true;
-            break;
-          }
-          await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
-        }
-        toast.success(`${imported} registros importados! ${fallbackSuccess ? 'Views atualizadas.' : 'Views pendentes.'}`);
-      }
-      
-      setIsRefreshing(false);
-      setImportProgress(100);
-      
+      toast.success(`${imported} registros importados com sucesso!`);
       setShowPreview(false);
       setFile(null);
       setParsedData([]);
-      await loadExistingData();
+      loadExistingData();
     } catch (err: any) {
       console.error('Erro ao importar:', err);
       toast.error('Erro ao importar: ' + err.message);
     } finally {
       setIsImporting(false);
       setImportProgress(0);
-    }
-  };
-
-  // Função para reprocessar views manualmente
-  const handleManualRefresh = async () => {
-    setIsRefreshing(true);
-    try {
-      const result = await refreshViewsViaEdge();
-      if (result) {
-        setLastRefreshValidation(result.validation || null);
-        if (result.success) {
-          toast.success(`Views atualizadas em ${result.duration_ms}ms`);
-        } else {
-          toast.warning(`Algumas views falharam: ${result.views_failed.join(', ')}`);
-        }
-        await loadExistingData();
-      } else {
-        toast.error('Falha ao atualizar views');
-      }
-    } catch (err: any) {
-      toast.error('Erro: ' + err.message);
-    } finally {
-      setIsRefreshing(false);
     }
   };
 
@@ -404,9 +243,6 @@ export function SimplesNacionalImporter() {
       
       toast.success('Dados removidos com sucesso');
       setStats({ total: 0, optantes: 0, naoOptantes: 0 });
-      setLinkStats(null);
-      setPendingCnpjsUsoConsumo([]);
-      setPendingCnpjsMercadorias([]);
     } catch (err: any) {
       toast.error('Erro ao remover dados: ' + err.message);
     } finally {
@@ -426,76 +262,8 @@ export function SimplesNacionalImporter() {
     URL.revokeObjectURL(url);
   };
 
-  // Exportar CNPJs pendentes para CSV (parametrizado para cada área)
-  const handleExportPending = (area: 'uso_consumo' | 'mercadorias') => {
-    const pendingList = area === 'uso_consumo' ? pendingCnpjsUsoConsumo : pendingCnpjsMercadorias;
-    const areaName = area === 'uso_consumo' ? 'uso_consumo' : 'mercadorias';
-    
-    if (pendingList.length === 0) {
-      toast.info('Nenhum CNPJ pendente para exportar');
-      return;
-    }
-    
-    const header = 'CNPJ;NOME;QTD_DOCS;VALOR_TOTAL;SIMPLES\n';
-    const rows = pendingList.map(p => 
-      `${p.cnpj};${p.nome?.replace(/;/g, ',') || ''};${p.quantidade_docs};${p.valor_total?.toFixed(2) || '0'};`
-    ).join('\n');
-    
-    const blob = new Blob([header + rows], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `cnpjs_pendentes_${areaName}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
-    
-    toast.success(`${pendingList.length} CNPJs exportados para consulta`);
-  };
-
   const validCount = parsedData.filter(r => r.valid).length;
   const invalidCount = parsedData.filter(r => !r.valid).length;
-  
-  const formatCurrency = (value: number) => 
-    new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
-
-  const formatCnpj = (cnpj: string) => 
-    cnpj.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
-
-  // Renderizar estatísticas de uma área
-  const renderAreaStats = (area: AreaStats, title: string, color: string) => (
-    <div className="p-4 rounded-lg border bg-card">
-      <h4 className="font-medium mb-3">{title}</h4>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <div className="text-xs text-muted-foreground">Total fornecedores</div>
-          <div className={`text-xl font-bold text-${color}-600`}>{area.total_participantes}</div>
-        </div>
-        <div>
-          <div className="text-xs text-muted-foreground">Cadastrados</div>
-          <div className="text-xl font-bold text-green-600">{area.vinculados}</div>
-        </div>
-        <div>
-          <div className="text-xs text-muted-foreground">Pendentes</div>
-          <div className="text-xl font-bold text-amber-600">{area.pendentes}</div>
-        </div>
-        <div>
-          <div className="text-xs text-muted-foreground">Optantes Simples</div>
-          <div className="text-xl font-bold text-blue-600">{area.optantes_simples}</div>
-        </div>
-      </div>
-      {area.total_participantes > 0 && (
-        <div className="mt-3">
-          <Progress 
-            value={(area.vinculados / area.total_participantes) * 100} 
-            className="h-2"
-          />
-          <div className="text-xs text-muted-foreground mt-1">
-            {Math.round((area.vinculados / area.total_participantes) * 100)}% cobertura
-          </div>
-        </div>
-      )}
-    </div>
-  );
 
   return (
     <Card className="border-border/50">
@@ -536,197 +304,6 @@ export function SimplesNacionalImporter() {
               <Trash2 className="h-4 w-4 mr-1" />
               Limpar tudo
             </Button>
-          </div>
-        )}
-
-        {/* Botão de reprocessar views */}
-        {lastRefreshValidation && (
-          <Alert className="border-blue-200 bg-blue-50 dark:bg-blue-950/20">
-            <CheckCircle className="h-4 w-4 text-blue-600" />
-            <AlertDescription className="text-blue-800 dark:text-blue-200">
-              Vínculos ativos: <strong>{lastRefreshValidation.simples_vinculados_uso_consumo}</strong> em Uso/Consumo, 
-              <strong> {lastRefreshValidation.simples_vinculados_mercadorias}</strong> em Mercadorias
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {/* Estatísticas de vinculação por área */}
-        {linkStats && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Link2 className="h-4 w-4 text-primary" />
-                <span className="font-medium">Cobertura de Vinculação</span>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleManualRefresh}
-                disabled={isRefreshing}
-              >
-                {isRefreshing ? (
-                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-4 w-4 mr-1" />
-                )}
-                Reprocessar views
-              </Button>
-            </div>
-            
-            <Tabs value={activeTab} onValueChange={setActiveTab}>
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="mercadorias">Mercadorias</TabsTrigger>
-                <TabsTrigger value="uso_consumo">Uso e Consumo</TabsTrigger>
-              </TabsList>
-              
-              <TabsContent value="mercadorias" className="mt-4 space-y-4">
-                {linkStats.mercadorias && renderAreaStats(linkStats.mercadorias, 'Mercadorias', 'purple')}
-                
-                {/* CNPJs pendentes de Mercadorias */}
-                {pendingCnpjsMercadorias.length > 0 && (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        <Unlink className="h-4 w-4 text-amber-600" />
-                        <span className="font-medium text-amber-800 dark:text-amber-200">
-                          {pendingCnpjsMercadorias.length} CNPJs pendentes de cadastro
-                        </span>
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleExportPending('mercadorias')}
-                        className="border-amber-300 hover:bg-amber-100"
-                      >
-                        <FileDown className="h-4 w-4 mr-2" />
-                        Exportar para CSV
-                      </Button>
-                    </div>
-                    <p className="text-xs text-amber-700 dark:text-amber-300 mb-3">
-                      Exporte a lista para consultar no portal da Receita Federal e depois importe de volta com o status de Simples Nacional.
-                    </p>
-                    <ScrollArea className="h-[150px]">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>CNPJ</TableHead>
-                            <TableHead>Nome</TableHead>
-                            <TableHead className="text-right">Docs</TableHead>
-                            <TableHead className="text-right">Valor</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {pendingCnpjsMercadorias.slice(0, 20).map((p, idx) => (
-                            <TableRow key={idx}>
-                              <TableCell className="font-mono text-xs">
-                                {formatCnpj(p.cnpj)}
-                              </TableCell>
-                              <TableCell className="text-xs truncate max-w-[150px]">
-                                {p.nome || '-'}
-                              </TableCell>
-                              <TableCell className="text-right text-xs">
-                                {p.quantidade_docs}
-                              </TableCell>
-                              <TableCell className="text-right text-xs">
-                                {formatCurrency(p.valor_total || 0)}
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                          {pendingCnpjsMercadorias.length > 20 && (
-                            <TableRow>
-                              <TableCell colSpan={4} className="text-center text-xs text-muted-foreground">
-                                ... e mais {pendingCnpjsMercadorias.length - 20} CNPJs
-                              </TableCell>
-                            </TableRow>
-                          )}
-                        </TableBody>
-                      </Table>
-                    </ScrollArea>
-                  </div>
-                )}
-                
-                {pendingCnpjsMercadorias.length === 0 && linkStats.mercadorias?.pendentes === 0 && linkStats.mercadorias?.total_participantes > 0 && (
-                  <div className="flex items-center gap-2 text-green-600 text-sm">
-                    <CheckCircle className="h-4 w-4" />
-                    Todos os fornecedores de Mercadorias estão cadastrados!
-                  </div>
-                )}
-              </TabsContent>
-              
-              <TabsContent value="uso_consumo" className="mt-4 space-y-4">
-                {linkStats.uso_consumo && renderAreaStats(linkStats.uso_consumo, 'Uso e Consumo / Imobilizado', 'blue')}
-                
-                {/* CNPJs pendentes de Uso/Consumo */}
-                {pendingCnpjsUsoConsumo.length > 0 && (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        <Unlink className="h-4 w-4 text-amber-600" />
-                        <span className="font-medium text-amber-800 dark:text-amber-200">
-                          {pendingCnpjsUsoConsumo.length} CNPJs pendentes de cadastro
-                        </span>
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleExportPending('uso_consumo')}
-                        className="border-amber-300 hover:bg-amber-100"
-                      >
-                        <FileDown className="h-4 w-4 mr-2" />
-                        Exportar para CSV
-                      </Button>
-                    </div>
-                    <p className="text-xs text-amber-700 dark:text-amber-300 mb-3">
-                      Exporte a lista para consultar no portal da Receita Federal e depois importe de volta com o status de Simples Nacional.
-                    </p>
-                    <ScrollArea className="h-[150px]">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>CNPJ</TableHead>
-                            <TableHead>Nome</TableHead>
-                            <TableHead className="text-right">Docs</TableHead>
-                            <TableHead className="text-right">Valor</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {pendingCnpjsUsoConsumo.slice(0, 20).map((p, idx) => (
-                            <TableRow key={idx}>
-                              <TableCell className="font-mono text-xs">
-                                {formatCnpj(p.cnpj)}
-                              </TableCell>
-                              <TableCell className="text-xs truncate max-w-[150px]">
-                                {p.nome || '-'}
-                              </TableCell>
-                              <TableCell className="text-right text-xs">
-                                {p.quantidade_docs}
-                              </TableCell>
-                              <TableCell className="text-right text-xs">
-                                {formatCurrency(p.valor_total || 0)}
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                          {pendingCnpjsUsoConsumo.length > 20 && (
-                            <TableRow>
-                              <TableCell colSpan={4} className="text-center text-xs text-muted-foreground">
-                                ... e mais {pendingCnpjsUsoConsumo.length - 20} CNPJs
-                              </TableCell>
-                            </TableRow>
-                          )}
-                        </TableBody>
-                      </Table>
-                    </ScrollArea>
-                  </div>
-                )}
-                
-                {pendingCnpjsUsoConsumo.length === 0 && linkStats.uso_consumo?.pendentes === 0 && linkStats.uso_consumo?.total_participantes > 0 && (
-                  <div className="flex items-center gap-2 text-green-600 text-sm">
-                    <CheckCircle className="h-4 w-4" />
-                    Todos os fornecedores de Uso/Consumo estão cadastrados!
-                  </div>
-                )}
-              </TabsContent>
-            </Tabs>
           </div>
         )}
 
@@ -810,7 +387,7 @@ export function SimplesNacionalImporter() {
                   {parsedData.slice(0, 50).map((row, idx) => (
                     <TableRow key={idx}>
                       <TableCell className="font-mono text-xs">
-                        {row.cnpj ? formatCnpj(row.cnpj) : '-'}
+                        {row.cnpj ? row.cnpj.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5') : '-'}
                       </TableCell>
                       <TableCell>
                         {row.valid && (

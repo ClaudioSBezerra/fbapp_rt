@@ -21,7 +21,6 @@ import {
   Truck,
   Lightbulb
 } from "lucide-react";
-import logoFortesBezerra from "@/assets/logo-fortes-bezerra.png";
 
 const Landing = () => {
   const navigate = useNavigate();
@@ -32,54 +31,15 @@ const Landing = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="fixed top-0 left-0 right-0 z-50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
-        <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-          {/* Logo */}
-          <a 
-            href="https://www.fortesbezerra.com.br" 
-            target="_blank" 
-            rel="noopener noreferrer"
-            className="flex items-center gap-3"
-          >
-            <img 
-              src={logoFortesBezerra} 
-              alt="Fortes Bezerra Tecnologia" 
-              className="h-10 w-auto"
-            />
-            <span className="font-semibold text-lg hidden sm:block text-foreground">
-              Fortes Bezerra
-            </span>
-          </a>
-
-          {/* Navegação + CTA */}
-          <div className="flex items-center gap-6">
-            <nav className="hidden md:flex items-center gap-6">
-              <a 
-                href="#como-funciona" 
-                className="text-muted-foreground hover:text-foreground transition-colors"
-              >
-                Como Funciona
-              </a>
-              <a 
-                href="#faq" 
-                className="text-muted-foreground hover:text-foreground transition-colors"
-              >
-                FAQ
-              </a>
-            </nav>
-            <Button onClick={handleCTA}>
-              Acessar Plataforma
-            </Button>
-          </div>
-        </div>
-      </header>
-
       {/* Hero Section */}
-      <section className="relative overflow-hidden pt-16">
+      <section className="relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-background to-background" />
         <div className="relative container mx-auto px-4 py-20 lg:py-32">
           <div className="max-w-4xl mx-auto text-center space-y-8">
+            <Badge variant="destructive" className="text-sm px-4 py-1.5">
+              <Clock className="w-4 h-4 mr-2" />
+              EC 132/2023 - Transição inicia em 2027
+            </Badge>
             
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-foreground">
               Sua empresa está preparada para a{" "}

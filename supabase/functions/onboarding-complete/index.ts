@@ -105,15 +105,11 @@ Deno.serve(async (req) => {
       )
     }
 
-    // Step 1: Create Tenant (com trial de 14 dias - definido pelos defaults da tabela)
+    // Step 1: Create Tenant
     console.log('Creating tenant:', tenantNome)
     const { data: tenant, error: tenantError } = await supabaseAdmin
       .from('tenants')
-      .insert({ 
-        nome: tenantNome.trim(),
-        // trial_started_at e trial_ends_at usam defaults da tabela
-        // subscription_status usa default 'trial'
-      })
+      .insert({ nome: tenantNome.trim() })
       .select()
       .single()
 

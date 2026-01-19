@@ -4,7 +4,6 @@ import { useAuth } from '@/hooks/useAuth';
 import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/components/AppSidebar';
 import { Skeleton } from '@/components/ui/skeleton';
-import { TrialBanner } from '@/components/TrialBanner';
 
 export default function AppLayout() {
   const { user, loading } = useAuth();
@@ -34,19 +33,16 @@ export default function AppLayout() {
 
   return (
     <SidebarProvider>
-      <div className="min-h-screen flex flex-col w-full">
-        <TrialBanner />
-        <div className="flex flex-1">
-          <AppSidebar />
-          <main className="flex-1 flex flex-col">
-            <header className="h-14 border-b border-border flex items-center px-4 bg-card">
-              <SidebarTrigger />
-            </header>
-            <div className="flex-1 p-3 sm:p-4 md:p-6 overflow-auto">
-              <Outlet />
-            </div>
-          </main>
-        </div>
+      <div className="min-h-screen flex w-full">
+        <AppSidebar />
+        <main className="flex-1 flex flex-col">
+          <header className="h-14 border-b border-border flex items-center px-4 bg-card">
+            <SidebarTrigger />
+          </header>
+          <div className="flex-1 p-3 sm:p-4 md:p-6 overflow-auto">
+            <Outlet />
+          </div>
+        </main>
       </div>
     </SidebarProvider>
   );
