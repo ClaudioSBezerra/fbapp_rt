@@ -23,6 +23,7 @@ import ImportarEFD from "./pages/ImportarEFD";
 import ImportarEFDIcms from "./pages/ImportarEFDIcms";
 import UsoConsumoImobilizado from "./pages/UsoConsumoImobilizado";
 import DashboardUsoConsumo from "./pages/DashboardUsoConsumo";
+import Planos from "./pages/Planos";
 import NotFound from "./pages/NotFound";
 import AppLayout from "./components/AppLayout";
 
@@ -41,6 +42,7 @@ const App = () => (
             <Route path="/auth" element={<Auth />} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/onboarding" element={<Onboarding />} />
+            <Route path="/planos" element={<Planos />} />
             <Route element={<AppLayout />}>
               <Route path="/configuracoes" element={<AdminRoute><Configuracoes /></AdminRoute>} />
               <Route path="/empresas" element={<AdminRoute><Empresas /></AdminRoute>} />
