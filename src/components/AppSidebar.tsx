@@ -10,12 +10,15 @@ import {
   Truck,
   Upload,
   FileText,
-  Users
+  Users,
+  Clock
 } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { useAuth } from '@/hooks/useAuth';
 import { useRole } from '@/hooks/useRole';
 import { useSessionInfo } from '@/hooks/useSessionInfo';
+import { useDemoStatus } from '@/hooks/useDemoStatus';
+import { Progress } from '@/components/ui/progress';
 import { useLocation } from 'react-router-dom';
 import {
   Sidebar,
@@ -63,6 +66,7 @@ export function AppSidebar() {
   const { signOut, user } = useAuth();
   const { isAdmin } = useRole();
   const { tenantNome, grupoNome, empresas } = useSessionInfo();
+  const { isDemo, daysRemaining, trialExpired, isLoading: demoLoading } = useDemoStatus();
 
   const isActive = (path: string) => location.pathname === path;
 
@@ -170,6 +174,45 @@ export function AppSidebar() {
                     )}
                   </div>
                 )}
+              </div>
+            )}
+            
+            {/* Demo Trial Status */}
+            {isDemo && !demoLoading && (
+              <div className={`rounded-lg p-2 ${
+                trialExpired 
+                  ? 'bg-destructive/10 border border-destructive/20' 
+                  : daysRemaining <= 3 
+                    ? 'bg-warning/10 border border-warning/20' 
+                    : 'bg-amber-500/10 border border-amber-500/20'
+              }`}>
+                <div className="flex items-center gap-2 mb-1">
+                  <Clock className={`h-3 w-3 ${
+                    trialExpired ? 'text-destructive' : daysRemaining <= 3 ? 'text-warning' : 'text-amber-600'
+                  }`} />
+                  <span className={`px-1.5 py-0.5 text-[10px] font-bold rounded ${
+                    trialExpired 
+                      ? 'bg-destructive/20 text-destructive' 
+                      : daysRemaining <= 3 
+                        ? 'bg-warning/20 text-warning' 
+                        : 'bg-amber-500/20 text-amber-600'
+                  }`}>
+                    SIMULAÇÃO
+                  </span>
+                </div>
+                <p className={`text-[10px] ${
+                  trialExpired ? 'text-destructive' : daysRemaining <= 3 ? 'text-warning' : 'text-amber-600'
+                }`}>
+                  {trialExpired 
+                    ? 'Período expirado' 
+                    : daysRemaining === 0 
+                      ? 'Último dia!' 
+                      : `${daysRemaining} dia${daysRemaining > 1 ? 's' : ''} restante${daysRemaining > 1 ? 's' : ''}`}
+                </p>
+                <Progress 
+                  value={trialExpired ? 100 : Math.max(0, ((14 - daysRemaining) / 14) * 100)} 
+                  className={`h-1 mt-1 ${trialExpired ? '[&>div]:bg-destructive' : daysRemaining <= 3 ? '[&>div]:bg-warning' : '[&>div]:bg-amber-500'}`}
+                />
               </div>
             )}
           </div>

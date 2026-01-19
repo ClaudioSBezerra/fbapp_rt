@@ -16,6 +16,7 @@ import { useSessionInfo } from '@/hooks/useSessionInfo';
 import { useUploadQueue, QueuedFile } from '@/hooks/useUploadQueue';
 import { MultiUploadProgress } from '@/components/MultiUploadProgress';
 import { toast } from 'sonner';
+import { useDemoStatus, DemoTrialBanner, DemoLimitsBanner } from '@/hooks/useDemoStatus';
 
 interface ImportCounts {
   uso_consumo_imobilizado: number;
@@ -141,6 +142,7 @@ export default function ImportarEFDIcms() {
   const { isAdmin } = useRole();
   const { empresas: userEmpresas, isLoading: sessionLoading } = useSessionInfo();
   const navigate = useNavigate();
+  const { isDemo, daysRemaining, trialExpired, importCounts, limits, isLoading: demoLoading } = useDemoStatus();
 
   // Trigger parse-efd-icms after upload
   const triggerParseEfdIcms = useCallback(async (queuedFile: QueuedFile, filePath: string) => {
@@ -425,6 +427,21 @@ export default function ImportarEFDIcms() {
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
+      {/* Demo Trial Banners */}
+      {isDemo && !demoLoading && (
+        <div className="space-y-4">
+          <DemoTrialBanner 
+            daysRemaining={daysRemaining} 
+            trialExpired={trialExpired}
+          />
+          <DemoLimitsBanner
+            importType="icms"
+            currentCount={importCounts.efd_icms}
+            maxCount={limits.efd_icms}
+          />
+        </div>
+      )}
+      
       <AlertDialog open={showClearConfirm} onOpenChange={(open) => { if (!isClearing) { setShowClearConfirm(open); if (!open) setClearProgress(null); } }}>
         <AlertDialogContent>
           <AlertDialogHeader>

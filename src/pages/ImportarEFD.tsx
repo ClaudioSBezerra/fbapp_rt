@@ -18,6 +18,7 @@ import { useUploadQueue, QueuedFile } from '@/hooks/useUploadQueue';
 import { MultiUploadProgress } from '@/components/MultiUploadProgress';
 import { toast } from 'sonner';
 import { formatCNPJMasked } from '@/lib/formatFilial';
+import { useDemoStatus, DemoTrialBanner, DemoLimitsBanner } from '@/hooks/useDemoStatus';
 
 interface ImportCounts {
   mercadorias: number;
@@ -152,6 +153,7 @@ export default function ImportarEFD() {
   const { isAdmin } = useRole();
   const { empresas: userEmpresas, isLoading: sessionLoading } = useSessionInfo();
   const navigate = useNavigate();
+  const { isDemo, daysRemaining, trialExpired, importCounts, limits, isLoading: demoLoading } = useDemoStatus();
 
   // Trigger parse-efd after upload completes
   const triggerParseEfd = useCallback(async (queuedFile: QueuedFile, filePath: string) => {
@@ -610,6 +612,21 @@ export default function ImportarEFD() {
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
+      {/* Demo Trial Banners */}
+      {isDemo && !demoLoading && (
+        <div className="space-y-4">
+          <DemoTrialBanner 
+            daysRemaining={daysRemaining} 
+            trialExpired={trialExpired}
+          />
+          <DemoLimitsBanner
+            importType="contrib"
+            currentCount={importCounts.efd_contrib}
+            maxCount={limits.efd_contrib}
+          />
+        </div>
+      )}
+      
       {/* Clear Database Confirmation Dialog */}
       <AlertDialog open={showClearConfirm} onOpenChange={(open) => {
         if (!isClearing) {
