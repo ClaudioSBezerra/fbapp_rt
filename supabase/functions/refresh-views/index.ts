@@ -83,25 +83,25 @@ async function refreshViewWithRetry(
 // Validar que os vínculos Simples Nacional estão refletidos nas views
 async function validateSimplesBind(supabase: any): Promise<{ uso_consumo: number; mercadorias: number }> {
   try {
-    // Contar registros is_simples=true na mv_uso_consumo_detailed
-    const { data: usoData } = await supabase.rpc('exec_sql', {
-      sql: `SELECT COUNT(*)::int as cnt FROM extensions.mv_uso_consumo_detailed WHERE is_simples = true`
-    });
+    // Usar RPC dedicada para obter contagens das views materializadas
+    const { data, error } = await supabase.rpc('get_simples_counts');
     
-    // Contar registros is_simples=true na mv_mercadorias_participante (se tiver essa coluna)
-    const { data: mercData } = await supabase.rpc('exec_sql', {
-      sql: `SELECT COUNT(*)::int as cnt FROM extensions.mv_mercadorias_participante WHERE is_simples = true`
-    });
+    if (error) {
+      console.warn('[refresh-views] Validation RPC error:', error.message);
+      return { uso_consumo: -1, mercadorias: -1 };
+    }
     
-    console.log('[refresh-views] Validation - uso_consumo is_simples=true:', usoData);
-    console.log('[refresh-views] Validation - mercadorias is_simples=true:', mercData);
+    const result = data?.[0] || { uso_consumo_count: 0, mercadorias_count: 0 };
+    
+    console.log('[refresh-views] Validation - uso_consumo is_simples=true:', result.uso_consumo_count);
+    console.log('[refresh-views] Validation - mercadorias is_simples=true:', result.mercadorias_count);
     
     return {
-      uso_consumo: usoData?.[0]?.cnt || 0,
-      mercadorias: mercData?.[0]?.cnt || 0
+      uso_consumo: result.uso_consumo_count || 0,
+      mercadorias: result.mercadorias_count || 0
     };
   } catch (err: any) {
-    console.warn('[refresh-views] Validation query failed:', err.message);
+    console.warn('[refresh-views] Validation exception:', err.message);
     return { uso_consumo: -1, mercadorias: -1 };
   }
 }
