@@ -511,31 +511,31 @@ export default function Configuracoes() {
   return (
     <div className="space-y-6 animate-fade-in">
       <div>
-        <h1 className="text-2xl font-bold text-foreground">Configurações e Parâmetros Gerais</h1>
-        <p className="text-muted-foreground">
+        <h1 className="text-xl font-bold text-foreground">Configurações e Parâmetros Gerais</h1>
+        <p className="text-sm text-muted-foreground">
           Gerencie suas preferências, dados da conta e parâmetros do sistema
         </p>
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
         <Card className="border-border/50">
-          <CardHeader>
+          <CardHeader className="pb-3">
             <div className="flex items-center gap-2">
-              <User className="h-5 w-5 text-muted-foreground" />
+              <User className="h-4 w-4 text-muted-foreground" />
               <div>
-                <CardTitle>Perfil</CardTitle>
-                <CardDescription>Informações da sua conta</CardDescription>
+                <CardTitle className="text-base">Perfil</CardTitle>
+                <CardDescription className="text-xs">Informações da sua conta</CardDescription>
               </div>
             </div>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-3">
             <div>
-              <p className="text-sm text-muted-foreground">E-mail</p>
-              <p className="font-medium">{user?.email}</p>
+              <p className="text-xs text-muted-foreground">E-mail</p>
+              <p className="text-sm font-medium">{user?.email}</p>
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">ID do Usuário</p>
-              <code className="text-xs bg-muted px-2 py-1 rounded">
+              <p className="text-xs text-muted-foreground">ID do Usuário</p>
+              <code className="text-[10px] bg-muted px-2 py-1 rounded">
                 {user?.id}
               </code>
             </div>
@@ -543,19 +543,19 @@ export default function Configuracoes() {
         </Card>
 
         <Card className="border-border/50">
-          <CardHeader>
+          <CardHeader className="pb-3">
             <div className="flex items-center gap-2">
-              <Shield className="h-5 w-5 text-muted-foreground" />
+              <Shield className="h-4 w-4 text-muted-foreground" />
               <div>
-                <CardTitle>Segurança</CardTitle>
-                <CardDescription>Configurações de acesso</CardDescription>
+                <CardTitle className="text-base">Segurança</CardTitle>
+                <CardDescription className="text-xs">Configurações de acesso</CardDescription>
               </div>
             </div>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-3">
             <div>
-              <p className="text-sm text-muted-foreground">Último acesso</p>
-              <p className="font-medium">
+              <p className="text-xs text-muted-foreground">Último acesso</p>
+              <p className="text-sm font-medium">
                 {user?.last_sign_in_at
                   ? new Date(user.last_sign_in_at).toLocaleString('pt-BR')
                   : 'Primeiro acesso'}
@@ -652,21 +652,21 @@ export default function Configuracoes() {
       {/* Admin: Data Cleanup */}
       {isAdmin && (
         <Card className="border-destructive/30 bg-destructive/5">
-          <CardHeader>
+          <CardHeader className="pb-3">
             <div className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-destructive" />
+              <AlertTriangle className="h-4 w-4 text-destructive" />
               <div>
-                <CardTitle className="text-destructive">Limpeza de Dados</CardTitle>
-                <CardDescription>
+                <CardTitle className="text-base text-destructive">Limpeza de Dados</CardTitle>
+                <CardDescription className="text-xs">
                   Ações destrutivas - remova dados transacionais de empresas ou grupos. 
                   A estrutura organizacional será mantida.
                 </CardDescription>
               </div>
             </div>
           </CardHeader>
-          <CardContent className="space-y-6">
+          <CardContent className="space-y-4">
             <Alert variant="default" className="border-muted bg-muted/50">
-              <AlertDescription className="text-sm">
+              <AlertDescription className="text-xs">
                 <strong>O que será removido:</strong> Mercadorias, Serviços, Fretes, Energia/Água, Uso e Consumo, Participantes, Jobs de Importação e Filiais.
                 <br />
                 <strong>O que será preservado:</strong> Alíquotas, Estrutura de Tenant/Grupo/Empresa, Usuários e Permissões, Simples Nacional.
@@ -674,8 +674,8 @@ export default function Configuracoes() {
             </Alert>
 
             {/* Clear Empresa */}
-            <div className="space-y-3">
-              <Label className="text-base font-medium">Limpar dados de uma Empresa</Label>
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Limpar dados de uma Empresa</Label>
               <div className="flex flex-col sm:flex-row gap-3">
                 <Select
                   value={selectedEmpresaForClear}
@@ -768,8 +768,8 @@ export default function Configuracoes() {
             <div className="border-t border-border/50" />
 
             {/* Clear Grupo */}
-            <div className="space-y-3">
-              <Label className="text-base font-medium">Limpar dados de um Grupo (todas as empresas)</Label>
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Limpar dados de um Grupo (todas as empresas)</Label>
               <div className="flex flex-col sm:flex-row gap-3">
                 <Select
                   value={selectedGrupoForClear}
@@ -865,12 +865,12 @@ export default function Configuracoes() {
       {/* Admin: Role Management */}
       {isAdmin && (
         <Card className="border-border/50">
-          <CardHeader>
+          <CardHeader className="pb-3">
             <div className="flex items-center gap-2">
-              <UserCog className="h-5 w-5 text-muted-foreground" />
+              <UserCog className="h-4 w-4 text-muted-foreground" />
               <div>
-                <CardTitle>Gerenciamento de Administradores</CardTitle>
-                <CardDescription>
+                <CardTitle className="text-base">Gerenciamento de Administradores</CardTitle>
+                <CardDescription className="text-xs">
                   Promova ou rebaixe usuários do seu ambiente. Administradores têm acesso completo a todas as funcionalidades.
                 </CardDescription>
               </div>
@@ -883,30 +883,30 @@ export default function Configuracoes() {
                 <Skeleton className="h-16 w-full" />
               </div>
             ) : users.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <Users className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                <p>Nenhum outro usuário no ambiente.</p>
-                <p className="text-sm">Quando outros usuários entrarem, você poderá gerenciar suas permissões aqui.</p>
+              <div className="text-center py-6 text-muted-foreground">
+                <Users className="h-10 w-10 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">Nenhum outro usuário no ambiente.</p>
+                <p className="text-xs">Quando outros usuários entrarem, você poderá gerenciar suas permissões aqui.</p>
               </div>
             ) : (
               <div className="space-y-3">
                 {users.map((u) => (
                   <div 
                     key={u.id} 
-                    className="flex items-center justify-between p-4 border border-border/50 rounded-lg hover:bg-muted/30 transition-colors"
+                    className="flex items-center justify-between p-3 border border-border/50 rounded-lg hover:bg-muted/30 transition-colors"
                   >
-                    <div className="flex items-center gap-3">
-                      <div className={`p-2 rounded-full ${u.role === 'admin' ? 'bg-primary/10' : 'bg-muted'}`}>
-                        <User className={`h-5 w-5 ${u.role === 'admin' ? 'text-primary' : 'text-muted-foreground'}`} />
+                    <div className="flex items-center gap-2">
+                      <div className={`p-1.5 rounded-full ${u.role === 'admin' ? 'bg-primary/10' : 'bg-muted'}`}>
+                        <User className={`h-4 w-4 ${u.role === 'admin' ? 'text-primary' : 'text-muted-foreground'}`} />
                       </div>
                       <div>
-                        <p className="font-medium">{u.full_name || u.email}</p>
-                        <p className="text-sm text-muted-foreground">{u.email}</p>
+                        <p className="text-sm font-medium">{u.full_name || u.email}</p>
+                        <p className="text-xs text-muted-foreground">{u.email}</p>
                       </div>
                     </div>
                     
-                    <div className="flex items-center gap-3">
-                      <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
+                    <div className="flex items-center gap-2">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${
                         u.role === 'admin' 
                           ? 'bg-primary/10 text-primary border border-primary/20' 
                           : 'bg-muted text-muted-foreground'
@@ -947,8 +947,8 @@ export default function Configuracoes() {
               </div>
             )}
             
-            <Alert variant="default" className="mt-4 border-muted bg-muted/50">
-              <AlertDescription className="text-sm">
+            <Alert variant="default" className="mt-3 border-muted bg-muted/50">
+              <AlertDescription className="text-xs">
                 <strong>Administradores</strong> têm acesso total: visualizam todas as empresas, gerenciam usuários, 
                 importam dados e podem executar ações de limpeza.
               </AlertDescription>
@@ -1104,12 +1104,12 @@ export default function Configuracoes() {
       {/* Admin: User-Empresa Management */}
       {isAdmin && (
         <Card className="border-border/50">
-          <CardHeader>
+          <CardHeader className="pb-3">
             <div className="flex items-center gap-2">
-              <Building2 className="h-5 w-5 text-muted-foreground" />
+              <Building2 className="h-4 w-4 text-muted-foreground" />
               <div>
-                <CardTitle>Permissões por Empresa</CardTitle>
-                <CardDescription>
+                <CardTitle className="text-base">Permissões por Empresa</CardTitle>
+                <CardDescription className="text-xs">
                   Defina quais empresas cada usuário pode acessar. Administradores têm acesso a todas.
                 </CardDescription>
               </div>
@@ -1122,25 +1122,25 @@ export default function Configuracoes() {
                 <Skeleton className="h-20 w-full" />
               </div>
             ) : users.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <Users className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                <p>Nenhum outro usuário no ambiente.</p>
-                <p className="text-sm">Quando outros usuários entrarem, você poderá gerenciar suas permissões aqui.</p>
+              <div className="text-center py-6 text-muted-foreground">
+                <Users className="h-10 w-10 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">Nenhum outro usuário no ambiente.</p>
+                <p className="text-xs">Quando outros usuários entrarem, você poderá gerenciar suas permissões aqui.</p>
               </div>
             ) : empresas.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <Building2 className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                <p>Nenhuma empresa cadastrada.</p>
+              <div className="text-center py-6 text-muted-foreground">
+                <Building2 className="h-10 w-10 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">Nenhuma empresa cadastrada.</p>
               </div>
             ) : (
               <div className="space-y-6">
                 {users.map((u) => (
-                  <div key={u.id} className="border border-border/50 rounded-lg p-4">
-                    <div className="flex items-center justify-between mb-4">
+                  <div key={u.id} className="border border-border/50 rounded-lg p-3">
+                    <div className="flex items-center justify-between mb-3">
                       <div>
-                        <p className="font-medium">{u.full_name || u.email}</p>
-                        <p className="text-sm text-muted-foreground">{u.email}</p>
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-muted text-muted-foreground mt-1">
+                        <p className="text-sm font-medium">{u.full_name || u.email}</p>
+                        <p className="text-xs text-muted-foreground">{u.email}</p>
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground mt-1">
                           {u.role === 'admin' ? 'Administrador' : u.role === 'viewer' ? 'Visualizador' : 'Usuário'}
                         </span>
                       </div>
@@ -1161,15 +1161,15 @@ export default function Configuracoes() {
                     </div>
                     
                     {u.role === 'admin' ? (
-                      <p className="text-sm text-muted-foreground italic">
+                      <p className="text-xs text-muted-foreground italic">
                         Administradores têm acesso a todas as empresas automaticamente.
                       </p>
                     ) : (
                       <div className="space-y-4">
                         {/* Group Selector */}
                         {grupos.length > 1 && (
-                          <div className="space-y-2">
-                            <Label className="text-sm font-medium">Grupo de Empresas</Label>
+                          <div className="space-y-1.5">
+                            <Label className="text-xs font-medium">Grupo de Empresas</Label>
                             <Select
                               value={getUserCurrentGrupo(u.id)}
                               onValueChange={(val) => handleGrupoChangeRequest(u.id, val, u.full_name || u.email)}
@@ -1187,8 +1187,8 @@ export default function Configuracoes() {
                         )}
                         
                         {/* Empresas filtered by selected group */}
-                        <div className="space-y-2">
-                          <Label className="text-sm font-medium">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs font-medium">
                             Empresas {grupos.length > 1 ? 'do grupo selecionado' : ''}
                           </Label>
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1200,15 +1200,16 @@ export default function Configuracoes() {
                               .map((empresa) => (
                                 <label
                                   key={empresa.id}
-                                  className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/50 cursor-pointer"
+                                  className="flex items-center gap-2 p-1.5 rounded-md hover:bg-muted/50 cursor-pointer"
                                 >
                                   <Checkbox
                                     checked={isUserLinked(u.id, empresa.id)}
                                     onCheckedChange={(checked) => 
                                       handleToggleEmpresa(u.id, empresa.id, checked as boolean)
                                     }
+                                    className="h-3.5 w-3.5"
                                   />
-                                  <span className="text-sm">{empresa.nome}</span>
+                                  <span className="text-xs">{empresa.nome}</span>
                                 </label>
                               ))}
                           </div>
