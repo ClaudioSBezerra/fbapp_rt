@@ -51,9 +51,9 @@ const allMenuItems: MenuItem[] = [
   { title: 'Energia e Água', url: '/energia-agua', icon: Zap },
   { title: 'Fretes', url: '/fretes', icon: Truck },
   { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard },
-  { title: 'Importar EFD Contribuições', url: '/importar-efd', icon: Upload },
-  { title: 'Importação de EFD ICMS/IPI', url: '/importar-efd-icms', icon: Upload },
-  { title: 'Uso Consumo e Imobilizado', url: '/uso-consumo', icon: Package },
+  { title: 'Importar EFD', subtitle: 'Contribuições', url: '/importar-efd', icon: Upload },
+  { title: 'Importar EFD', subtitle: 'ICMS/IPI', url: '/importar-efd-icms', icon: Upload },
+  { title: 'Uso Consumo', subtitle: 'e Imobilizado', url: '/uso-consumo', icon: Package },
   { title: 'Dashboard Uso Consumo', url: '/dashboard-uso-consumo', icon: LayoutDashboard },
 ];
 
