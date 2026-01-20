@@ -699,7 +699,7 @@ export default function Onboarding() {
                 </div>
 
                 <Button className="w-full" onClick={() => navigate('/mercadorias')}>
-                  Ir para Mercadorias
+                  Ir para Operações de Compra e Venda
                   <ArrowRight className="h-4 w-4 ml-2" />
                 </Button>
               </CardContent>

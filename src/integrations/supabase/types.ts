@@ -86,25 +86,297 @@ export type Database = {
         }
         Relationships: []
       }
+      efd_raw_a100: {
+        Row: {
+          cofins: number
+          created_at: string | null
+          filial_id: string
+          id: string
+          import_job_id: string
+          iss: number | null
+          mes_ano: string
+          pis: number
+          tipo: string
+          valor: number
+        }
+        Insert: {
+          cofins?: number
+          created_at?: string | null
+          filial_id: string
+          id?: string
+          import_job_id: string
+          iss?: number | null
+          mes_ano: string
+          pis?: number
+          tipo: string
+          valor?: number
+        }
+        Update: {
+          cofins?: number
+          created_at?: string | null
+          filial_id?: string
+          id?: string
+          import_job_id?: string
+          iss?: number | null
+          mes_ano?: string
+          pis?: number
+          tipo?: string
+          valor?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "efd_raw_a100_filial_id_fkey"
+            columns: ["filial_id"]
+            isOneToOne: false
+            referencedRelation: "filiais"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "efd_raw_a100_import_job_id_fkey"
+            columns: ["import_job_id"]
+            isOneToOne: false
+            referencedRelation: "import_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      efd_raw_c100: {
+        Row: {
+          cod_part: string | null
+          cofins: number
+          created_at: string | null
+          filial_id: string
+          icms: number | null
+          id: string
+          import_job_id: string
+          ipi: number | null
+          mes_ano: string
+          pis: number
+          tipo: string
+          valor: number
+        }
+        Insert: {
+          cod_part?: string | null
+          cofins?: number
+          created_at?: string | null
+          filial_id: string
+          icms?: number | null
+          id?: string
+          import_job_id: string
+          ipi?: number | null
+          mes_ano: string
+          pis?: number
+          tipo: string
+          valor?: number
+        }
+        Update: {
+          cod_part?: string | null
+          cofins?: number
+          created_at?: string | null
+          filial_id?: string
+          icms?: number | null
+          id?: string
+          import_job_id?: string
+          ipi?: number | null
+          mes_ano?: string
+          pis?: number
+          tipo?: string
+          valor?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "efd_raw_c100_filial_id_fkey"
+            columns: ["filial_id"]
+            isOneToOne: false
+            referencedRelation: "filiais"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "efd_raw_c100_import_job_id_fkey"
+            columns: ["import_job_id"]
+            isOneToOne: false
+            referencedRelation: "import_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      efd_raw_c500: {
+        Row: {
+          cnpj_fornecedor: string | null
+          cofins: number
+          created_at: string | null
+          filial_id: string
+          icms: number | null
+          id: string
+          import_job_id: string
+          mes_ano: string
+          pis: number
+          tipo_operacao: string
+          tipo_servico: string
+          valor: number
+        }
+        Insert: {
+          cnpj_fornecedor?: string | null
+          cofins?: number
+          created_at?: string | null
+          filial_id: string
+          icms?: number | null
+          id?: string
+          import_job_id: string
+          mes_ano: string
+          pis?: number
+          tipo_operacao: string
+          tipo_servico: string
+          valor?: number
+        }
+        Update: {
+          cnpj_fornecedor?: string | null
+          cofins?: number
+          created_at?: string | null
+          filial_id?: string
+          icms?: number | null
+          id?: string
+          import_job_id?: string
+          mes_ano?: string
+          pis?: number
+          tipo_operacao?: string
+          tipo_servico?: string
+          valor?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "efd_raw_c500_filial_id_fkey"
+            columns: ["filial_id"]
+            isOneToOne: false
+            referencedRelation: "filiais"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "efd_raw_c500_import_job_id_fkey"
+            columns: ["import_job_id"]
+            isOneToOne: false
+            referencedRelation: "import_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      efd_raw_fretes: {
+        Row: {
+          cnpj_transportadora: string | null
+          cofins: number
+          created_at: string | null
+          filial_id: string
+          icms: number | null
+          id: string
+          import_job_id: string
+          mes_ano: string
+          pis: number
+          tipo: string
+          valor: number
+        }
+        Insert: {
+          cnpj_transportadora?: string | null
+          cofins?: number
+          created_at?: string | null
+          filial_id: string
+          icms?: number | null
+          id?: string
+          import_job_id: string
+          mes_ano: string
+          pis?: number
+          tipo: string
+          valor?: number
+        }
+        Update: {
+          cnpj_transportadora?: string | null
+          cofins?: number
+          created_at?: string | null
+          filial_id?: string
+          icms?: number | null
+          id?: string
+          import_job_id?: string
+          mes_ano?: string
+          pis?: number
+          tipo?: string
+          valor?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "efd_raw_fretes_filial_id_fkey"
+            columns: ["filial_id"]
+            isOneToOne: false
+            referencedRelation: "filiais"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "efd_raw_fretes_import_job_id_fkey"
+            columns: ["import_job_id"]
+            isOneToOne: false
+            referencedRelation: "import_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      efd_raw_lines: {
+        Row: {
+          block_type: string
+          content: string
+          created_at: string
+          id: number
+          job_id: string
+          line_number: number
+        }
+        Insert: {
+          block_type: string
+          content: string
+          created_at?: string
+          id?: number
+          job_id: string
+          line_number: number
+        }
+        Update: {
+          block_type?: string
+          content?: string
+          created_at?: string
+          id?: number
+          job_id?: string
+          line_number?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "efd_raw_lines_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "import_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       empresas: {
         Row: {
           created_at: string
+          demo_owner_id: string | null
           grupo_id: string
           id: string
+          is_demo: boolean
           nome: string
           updated_at: string
         }
         Insert: {
           created_at?: string
+          demo_owner_id?: string | null
           grupo_id: string
           id?: string
+          is_demo?: boolean
           nome: string
           updated_at?: string
         }
         Update: {
           created_at?: string
+          demo_owner_id?: string | null
           grupo_id?: string
           id?: string
+          is_demo?: boolean
           nome?: string
           updated_at?: string
         }
@@ -294,6 +566,7 @@ export type Database = {
           completed_at: string | null
           counts: Json
           created_at: string
+          current_phase: string | null
           empresa_id: string
           error_message: string | null
           file_name: string
@@ -303,10 +576,16 @@ export type Database = {
           id: string
           import_scope: string
           mes_ano: string | null
+          parsing_offset: number | null
+          parsing_total_lines: number | null
           progress: number
           record_limit: number | null
           started_at: string | null
           status: string
+          temp_block0_lines: string[] | null
+          temp_blocka_lines: string[] | null
+          temp_blockc_lines: string[] | null
+          temp_blockd_lines: string[] | null
           total_lines: number
           updated_at: string
           user_id: string
@@ -317,6 +596,7 @@ export type Database = {
           completed_at?: string | null
           counts?: Json
           created_at?: string
+          current_phase?: string | null
           empresa_id: string
           error_message?: string | null
           file_name: string
@@ -326,10 +606,16 @@ export type Database = {
           id?: string
           import_scope?: string
           mes_ano?: string | null
+          parsing_offset?: number | null
+          parsing_total_lines?: number | null
           progress?: number
           record_limit?: number | null
           started_at?: string | null
           status?: string
+          temp_block0_lines?: string[] | null
+          temp_blocka_lines?: string[] | null
+          temp_blockc_lines?: string[] | null
+          temp_blockd_lines?: string[] | null
           total_lines?: number
           updated_at?: string
           user_id: string
@@ -340,6 +626,7 @@ export type Database = {
           completed_at?: string | null
           counts?: Json
           created_at?: string
+          current_phase?: string | null
           empresa_id?: string
           error_message?: string | null
           file_name?: string
@@ -349,10 +636,16 @@ export type Database = {
           id?: string
           import_scope?: string
           mes_ano?: string | null
+          parsing_offset?: number | null
+          parsing_total_lines?: number | null
           progress?: number
           record_limit?: number | null
           started_at?: string | null
           status?: string
+          temp_block0_lines?: string[] | null
+          temp_blocka_lines?: string[] | null
+          temp_blockc_lines?: string[] | null
+          temp_blockd_lines?: string[] | null
           total_lines?: number
           updated_at?: string
           user_id?: string
@@ -436,6 +729,7 @@ export type Database = {
       participantes: {
         Row: {
           cnpj: string | null
+          cnpj_normalizado: string | null
           cod_mun: string | null
           cod_part: string
           cpf: string | null
@@ -448,6 +742,7 @@ export type Database = {
         }
         Insert: {
           cnpj?: string | null
+          cnpj_normalizado?: string | null
           cod_mun?: string | null
           cod_part: string
           cpf?: string | null
@@ -460,6 +755,7 @@ export type Database = {
         }
         Update: {
           cnpj?: string | null
+          cnpj_normalizado?: string | null
           cod_mun?: string | null
           cod_part?: string
           cpf?: string | null
@@ -509,7 +805,9 @@ export type Database = {
       }
       profiles: {
         Row: {
+          account_type: Database["public"]["Enums"]["account_type"]
           created_at: string
+          demo_trial_ends_at: string | null
           email: string
           full_name: string | null
           id: string
@@ -518,7 +816,9 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          account_type?: Database["public"]["Enums"]["account_type"]
           created_at?: string
+          demo_trial_ends_at?: string | null
           email: string
           full_name?: string | null
           id: string
@@ -527,7 +827,9 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          account_type?: Database["public"]["Enums"]["account_type"]
           created_at?: string
+          demo_trial_ends_at?: string | null
           email?: string
           full_name?: string | null
           id?: string
@@ -617,23 +919,77 @@ export type Database = {
           },
         ]
       }
+      subscription_plans: {
+        Row: {
+          created_at: string
+          features: Json
+          id: string
+          is_active: boolean
+          name: string
+          price_monthly: number
+          stripe_price_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          features?: Json
+          id?: string
+          is_active?: boolean
+          name: string
+          price_monthly?: number
+          stripe_price_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          features?: Json
+          id?: string
+          is_active?: boolean
+          name?: string
+          price_monthly?: number
+          stripe_price_id?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       tenants: {
         Row: {
           created_at: string
           id: string
           nome: string
+          stripe_customer_id: string | null
+          stripe_subscription_id: string | null
+          subscription_status:
+            | Database["public"]["Enums"]["subscription_status"]
+            | null
+          trial_ends_at: string | null
+          trial_started_at: string | null
           updated_at: string
         }
         Insert: {
           created_at?: string
           id?: string
           nome?: string
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          subscription_status?:
+            | Database["public"]["Enums"]["subscription_status"]
+            | null
+          trial_ends_at?: string | null
+          trial_started_at?: string | null
           updated_at?: string
         }
         Update: {
           created_at?: string
           id?: string
           nome?: string
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          subscription_status?:
+            | Database["public"]["Enums"]["subscription_status"]
+            | null
+          trial_ends_at?: string | null
+          trial_started_at?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -775,6 +1131,44 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      check_demo_import_limits: {
+        Args: { _empresa_id: string; _file_type: string; _mes_ano: string }
+        Returns: Json
+      }
+      cleanup_orphaned_raw_data: { Args: never; Returns: undefined }
+      consolidar_energia_agua: { Args: { p_job_id: string }; Returns: Json }
+      consolidar_fretes: { Args: { p_job_id: string }; Returns: Json }
+      consolidar_import_job: { Args: { p_job_id: string }; Returns: Json }
+      consolidar_mercadorias: { Args: { p_job_id: string }; Returns: Json }
+      consolidar_mercadorias_batch: {
+        Args: { p_batch_size?: number; p_job_id: string }
+        Returns: Json
+      }
+      consolidar_mercadorias_single_batch: {
+        Args: { p_batch_size?: number; p_job_id: string }
+        Returns: Json
+      }
+      consolidar_raw_a100_batch: {
+        Args: { p_batch_size?: number }
+        Returns: Json
+      }
+      consolidar_raw_c100_batch: {
+        Args: { p_batch_size?: number }
+        Returns: Json
+      }
+      consolidar_raw_c500_batch: {
+        Args: { p_batch_size?: number }
+        Returns: Json
+      }
+      consolidar_raw_fretes_batch: {
+        Args: { p_batch_size?: number }
+        Returns: Json
+      }
+      consolidar_servicos: { Args: { p_job_id: string }; Returns: Json }
+      delete_efd_raw_lines_batch: {
+        Args: { _batch_size?: number; _job_ids: string[] }
+        Returns: number
+      }
       delete_energia_agua_batch: {
         Args: { _batch_size?: number; _filial_ids: string[]; _user_id: string }
         Returns: number
@@ -800,6 +1194,25 @@ export type Database = {
         Returns: number
       }
       exec_sql: { Args: { sql: string }; Returns: undefined }
+      get_cnpjs_mercadorias_pendentes: {
+        Args: { p_tenant_id: string }
+        Returns: {
+          cnpj: string
+          nome: string
+          quantidade_docs: number
+          valor_total: number
+        }[]
+      }
+      get_cnpjs_uso_consumo_pendentes: {
+        Args: { p_tenant_id: string }
+        Returns: {
+          cnpj: string
+          nome: string
+          quantidade_docs: number
+          valor_total: number
+        }[]
+      }
+      get_demo_status: { Args: { _user_id: string }; Returns: Json }
       get_mercadorias_participante_lista: {
         Args: never
         Returns: {
@@ -1060,6 +1473,37 @@ export type Database = {
               valor: number
             }[]
           }
+      get_simples_counts: {
+        Args: never
+        Returns: {
+          mercadorias_count: number
+          uso_consumo_count: number
+        }[]
+      }
+      get_simples_link_stats:
+        | {
+            Args: never
+            Returns: {
+              optantes_vinculados: number
+              total_simples: number
+              vinculados_mercadorias: number
+              vinculados_uso_consumo: number
+            }[]
+          }
+        | { Args: { p_tenant_id: string }; Returns: Json }
+      get_tenant_subscription_info: {
+        Args: { p_user_id: string }
+        Returns: {
+          can_write: boolean
+          is_expired: boolean
+          subscription_status: Database["public"]["Enums"]["subscription_status"]
+          tenant_id: string
+          tenant_nome: string
+          trial_days_left: number
+          trial_ends_at: string
+          trial_started_at: string
+        }[]
+      }
       has_empresa_access: {
         Args: { _empresa_id: string; _user_id: string }
         Returns: boolean
@@ -1079,11 +1523,19 @@ export type Database = {
         Args: { _tenant_id: string; _user_id: string }
         Returns: boolean
       }
+      refresh_all_materialized_views: { Args: never; Returns: Json }
       refresh_materialized_views: { Args: never; Returns: undefined }
       refresh_materialized_views_async: { Args: never; Returns: undefined }
     }
     Enums: {
+      account_type: "standard" | "demo" | "paid"
       app_role: "admin" | "user" | "viewer"
+      subscription_status:
+        | "trial"
+        | "active"
+        | "past_due"
+        | "cancelled"
+        | "expired"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1211,7 +1663,15 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      account_type: ["standard", "demo", "paid"],
       app_role: ["admin", "user", "viewer"],
+      subscription_status: [
+        "trial",
+        "active",
+        "past_due",
+        "cancelled",
+        "expired",
+      ],
     },
   },
 } as const
