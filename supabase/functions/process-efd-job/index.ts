@@ -1500,17 +1500,58 @@ async function refreshMaterializedViews(supabase: any, jobId: string): Promise<n
 // ============================================================================
 
 async function cleanupRawLines(supabase: any, jobId: string): Promise<void> {
-  console.log(`Job ${jobId}: Cleaning up efd_raw_lines...`);
-  const { error } = await supabase
-    .from('efd_raw_lines')
-    .delete()
-    .eq('job_id', jobId);
+  console.log(`Job ${jobId}: Cleaning up efd_raw_lines in batches...`);
   
-  if (error) {
-    console.warn(`Job ${jobId}: Failed to cleanup raw lines:`, error.message);
-  } else {
-    console.log(`Job ${jobId}: Raw lines cleaned up successfully`);
+  const CLEANUP_BATCH_SIZE = 50000;
+  let totalDeleted = 0;
+  let hasMore = true;
+  let batchNumber = 0;
+  
+  while (hasMore) {
+    batchNumber++;
+    
+    // Get IDs of records to delete (using limit)
+    const { data: idsToDelete, error: selectError } = await supabase
+      .from('efd_raw_lines')
+      .select('id')
+      .eq('job_id', jobId)
+      .limit(CLEANUP_BATCH_SIZE);
+    
+    if (selectError) {
+      console.warn(`Job ${jobId}: Failed to select raw lines for cleanup (batch ${batchNumber}):`, selectError.message);
+      break;
+    }
+    
+    if (!idsToDelete || idsToDelete.length === 0) {
+      hasMore = false;
+      break;
+    }
+    
+    const ids = idsToDelete.map((row: any) => row.id);
+    
+    const { error: deleteError } = await supabase
+      .from('efd_raw_lines')
+      .delete()
+      .in('id', ids);
+    
+    if (deleteError) {
+      console.warn(`Job ${jobId}: Failed to delete cleanup batch ${batchNumber}:`, deleteError.message);
+      break;
+    }
+    
+    totalDeleted += ids.length;
+    console.log(`Job ${jobId}: Cleanup batch ${batchNumber} - deleted ${ids.length} rows (total: ${totalDeleted})`);
+    
+    // Small delay to avoid overwhelming the database
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    // If we got less than the batch size, we're done
+    if (ids.length < CLEANUP_BATCH_SIZE) {
+      hasMore = false;
+    }
   }
+  
+  console.log(`Job ${jobId}: Raw lines cleanup complete - ${totalDeleted} rows deleted in ${batchNumber} batches`);
 }
 
 // ============================================================================
@@ -1573,7 +1614,7 @@ serve(async (req) => {
       );
     }
 
-    const currentPhase = (job.current_phase || 'pending') as ProcessingPhase;
+    let currentPhase = (job.current_phase || 'pending') as ProcessingPhase;
     const recordLimit = job.record_limit || 0;
     const importScope = (job.import_scope || 'all') as ImportScope;
     const validPrefixes = getValidPrefixes(importScope);
@@ -1692,14 +1733,29 @@ serve(async (req) => {
         parsing_total_lines: result.nextLineNumber
       }).eq("id", jobId);
 
-      // Continue to block_0 processing in same invocation
+      // IMPORTANT: Self-invoke for block_0 phase to ensure fresh execution context
+      // This prevents the "Unknown phase" bug caused by stale currentPhase variable
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      EdgeRuntime.waitUntil(selfInvokeWithRetry(supabaseUrl, supabaseKey, jobId, supabase));
+      
+      console.log(`Job ${jobId}: Parsing complete, self-invoking for block_0 phase`);
+      
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          message: `Parsing complete (${finalBytesProcessed} bytes, ${result.nextLineNumber} lines), advancing to block_0`,
+          phase: "block_0",
+          blockCounts: result.blockCounts
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     // ===========================================================================
     // PHASE 2: BLOCK 0 - Process cadastros (period, filiais, participantes)
     // Reads from efd_raw_lines table
     // ===========================================================================
-    if (currentPhase === 'block_0' || (currentPhase === 'pending' && job.status === 'processing')) {
+    if (currentPhase === 'block_0') {
       console.log(`Job ${jobId}: Starting Block 0 processing from table...`);
       
       const context = await processBlock0FromTable(supabase, job, jobId, counts);
