@@ -1088,13 +1088,9 @@ serve(async (req) => {
         mercadorias: 'filial_id,mes_ano,tipo,descricao,valor,pis,cofins,icms,ipi',
         fretes: 'filial_id,mes_ano,tipo,valor,pis,cofins,icms',
         energia_agua: 'filial_id,mes_ano,tipo_operacao,tipo_servico,valor,pis,cofins,icms',
-        // Servicos now has a unique index idx_servicos_unique_content
-        // Note: The index covers (filial_id, mes_ano, tipo, COALESCE(descricao, ''), valor, pis, cofins, iss)
-        // For upsert to work, we need to target the constraint name or the columns
-        // Since we created a unique index (not constraint), we might need to rely on the index inference
-        // or explicitly name the constraint if we added one. 
-        // Postgres infers the conflict target from columns.
-        servicos: 'filial_id,mes_ano,tipo,descricao,valor,pis,cofins,iss', 
+        // Servicos now has a proper unique constraint 'idx_servicos_upsert_key'
+        // We reference it by name to be explicit and avoid column inference issues
+        servicos: 'idx_servicos_upsert_key', 
         participantes: 'filial_id,cod_part',
       };
       
@@ -1102,6 +1098,9 @@ serve(async (req) => {
       
       // If we have a conflict target defined, try upsert
       if (conflictTarget) {
+        // Check if target is a constraint name (single string without commas) or column list
+        const isConstraintName = !conflictTarget.includes(',');
+        
         const { error } = await supabase.from(table).upsert(batches[table], { 
           onConflict: conflictTarget,
           ignoreDuplicates: true 
