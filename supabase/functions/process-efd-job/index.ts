@@ -218,8 +218,20 @@ function allLimitsReached(limits: BlockLimits): boolean {
 
 function parseNumber(value: string | undefined): number {
   if (!value) return 0;
-  // Valores no EFD usam vírgula como separador decimal (ex: "1092,82" = R$ 1.092,82)
-  return parseFloat(value.replace(",", ".")) || 0;
+  // Replace comma with dot for decimal parsing
+  // Also trim whitespace to avoid invalid syntax errors
+  const normalized = value.trim().replace(",", ".");
+  if (normalized === "" || normalized === ".") return 0;
+  const num = parseFloat(normalized);
+  return isNaN(num) ? 0 : num;
+}
+
+// Helper to sanitize nullable UUIDs/Strings to avoid "invalid input syntax"
+function parseNullableString(value: string | undefined): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  // Return null for empty strings or strings that are just whitespace
+  return trimmed === "" ? null : trimmed;
 }
 
 // Detecta o tipo de EFD baseado na estrutura do registro 0000
@@ -379,13 +391,22 @@ function processLine(
         
         if (codPart && nome) {
           // Still add to map for lookup purposes (cod_part -> nome)
-          context.participantesMap.set(codPart, { codPart, nome, cnpj, cpf, ie, codMun });
+          const pData = { 
+            codPart, 
+            nome, 
+            cnpj: parseNullableString(fields[5]), 
+            cpf: parseNullableString(fields[6]), 
+            ie: parseNullableString(fields[7]), 
+            codMun: parseNullableString(fields[8]) 
+          };
+          
+          context.participantesMap.set(codPart, pData);
           
           // Return as a special participante record for batch processing
           return {
             record: null,
             context,
-            participanteData: { codPart, nome, cnpj, cpf, ie, codMun }
+            participanteData: pData
           };
         }
       }
@@ -569,7 +590,7 @@ function processLine(
               data: {
                 tipo_operacao: "credito", // EFD Contribuições C500 é sempre crédito
                 tipo_servico: tipoServico,
-                cnpj_fornecedor: cnpjFornecedor,
+                cnpj_fornecedor: parseNullableString(cnpjFornecedor),
                 descricao: `${tipoLabel} - Doc ${fields[7] || ""}`.trim().substring(0, 200),
                 mes_ano: context.currentPeriod,
                 valor: valorDoc,
@@ -603,7 +624,7 @@ function processLine(
               data: {
                 tipo_operacao: tipoOperacao,
                 tipo_servico: tipoServico,
-                cnpj_fornecedor: cnpjFornecedor,
+                cnpj_fornecedor: parseNullableString(cnpjFornecedor),
                 descricao: `${tipoLabel} - ${fields[7] || ""}`.trim().substring(0, 200),
                 mes_ano: context.currentPeriod,
                 valor: valorDoc,
@@ -673,7 +694,7 @@ function processLine(
                   mes_ano: context.currentPeriod,
                   ncm: null,
                   descricao: `CT-e ${fields[10] || fields[9] || ""}`.trim().substring(0, 200) || "Conhecimento de Transporte",
-                  cnpj_transportadora: cnpjTransportadora,
+                  cnpj_transportadora: parseNullableString(cnpjTransportadora),
                   valor: valorDoc,
                   pis: 0,      // Will be filled by D101
                   cofins: 0,   // Will be filled by D105
@@ -702,7 +723,7 @@ function processLine(
                 mes_ano: context.currentPeriod,
                 ncm: null,
                 descricao: `CT-e ${fields[8] || ""}`.trim().substring(0, 200) || "Conhecimento de Transporte",
-                cnpj_transportadora: cnpjTransportadora,
+                cnpj_transportadora: parseNullableString(cnpjTransportadora),
                 valor: valorDoc,
                 pis: parseNumber(fields[24]),
                 cofins: parseNumber(fields[26]),
@@ -770,7 +791,7 @@ function processLine(
                   mes_ano: context.currentPeriod,
                   ncm: null,
                   descricao: `Telecom/Comunicação ${fields[9] || ""}`.trim().substring(0, 200) || "Serviço de Comunicação",
-                  cnpj_transportadora: cnpjFornecedor,
+                  cnpj_transportadora: parseNullableString(cnpjFornecedor),
                   valor: valorDoc,
                   pis: 0,      // Will be filled by D501
                   cofins: 0,   // Will be filled by D505
@@ -799,7 +820,7 @@ function processLine(
                 mes_ano: context.currentPeriod,
                 ncm: null,
                 descricao: `Telecom/Comunicação ${fields[7] || ""}`.trim().substring(0, 200) || "Serviço de Comunicação",
-                cnpj_transportadora: cnpjFornecedor,
+                cnpj_transportadora: parseNullableString(cnpjFornecedor),
                 valor: valorDoc,
                 pis: parseNumber(fields[17]),
                 cofins: parseNumber(fields[19]),
