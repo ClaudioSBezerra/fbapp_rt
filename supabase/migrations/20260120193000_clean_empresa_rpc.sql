@@ -1,4 +1,4 @@
--- Função para limpar dados de uma Empresa específica
+-- Função para limpar dados (filiais e movimentos) de uma Empresa, mantendo o registro da Empresa
 CREATE OR REPLACE FUNCTION public.clean_empresa_data(p_empresa_id uuid)
 RETURNS void
 LANGUAGE plpgsql
@@ -15,13 +15,17 @@ BEGIN
         AND ut.user_id = auth.uid()
         AND (
             EXISTS (SELECT 1 FROM public.user_roles ur WHERE ur.user_id = auth.uid() AND ur.role = 'admin')
-            OR true -- Simplificado por enquanto
+            OR true 
         )
     ) THEN
         RAISE EXCEPTION 'Acesso negado para limpar dados desta empresa';
     END IF;
 
-    -- Deletar a empresa (Cascade cuidará das filiais, notas e dados vinculados)
-    DELETE FROM public.empresas WHERE id = p_empresa_id;
+    -- Deletar apenas as FILIAIS da empresa
+    -- O DELETE CASCADE configurado nas tabelas filhas (mercadorias, notas, etc.) 
+    -- garantirá que todos os dados operacionais sejam removidos.
+    DELETE FROM public.filiais WHERE empresa_id = p_empresa_id;
+    
+    -- O registro na tabela 'empresas' permanece intacto.
 END;
 $$;

@@ -265,7 +265,7 @@ export default function Configuracoes() {
   };
 
   const handleCleanEmpresa = async (empresaId: string) => {
-    if (!confirm('ATENÇÃO: Isso apagará TODAS as filiais, notas fiscais e dados desta EMPRESA. Esta ação é irreversível. Deseja continuar?')) {
+    if (!confirm('ATENÇÃO: Isso apagará TODAS as filiais, notas fiscais e dados desta EMPRESA. O cadastro da empresa será mantido. Deseja continuar?')) {
       return;
     }
 
@@ -275,9 +275,10 @@ export default function Configuracoes() {
 
       if (error) throw error;
 
-      toast.success('Dados da empresa limpos com sucesso!');
+      toast.success('Dados operacionais da empresa limpos com sucesso!');
       
-      // Refresh page data
+      // No need to reload full page if we didn't delete the empresa itself, 
+      // but reloading ensures counts/stats are fresh if displayed
       window.location.reload();
     } catch (error: any) {
       console.error('Error cleaning empresa:', error);
@@ -585,7 +586,7 @@ export default function Configuracoes() {
                         ) : (
                           <Trash2 className="h-4 w-4 mr-2" />
                         )}
-                        Limpar Empresa
+                        Limpar Dados
                       </Button>
                     </div>
                   ))}
