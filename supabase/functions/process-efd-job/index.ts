@@ -426,8 +426,10 @@ function processLine(
         
         // Validação de COD_PART: Se não informado ou não existir no mapa, usar padrão
         let codPart = codPartRaw;
-        // Se estiver vazio, nulo, ou não tiver sido processado no 0150
-        if (!codPartRaw || codPartRaw.trim() === '' || (codPartRaw !== '0' && !context.participantesMap.has(codPartRaw))) {
+        // Se estiver vazio ou nulo (removemos a verificação do mapa para evitar problemas com chunks)
+        // Se o participante existir no banco mas não no mapa (chunk anterior), o insert vai funcionar
+        // Se não existir no banco, o tratamento de erro de FK no flushBatch criará o placeholder
+        if (!codPartRaw || codPartRaw.trim() === '') {
           // Usa 9999999999 para saídas (Consumidor) e 8888888888 para entradas (Fornecedor)
           codPart = tipo === 'saida' ? '9999999999' : '8888888888';
         }
@@ -469,9 +471,9 @@ function processLine(
           const tipo = indOper === "0" ? "entrada" : "saida";
           const codPartRaw = fields[4] || null;
           
-          // Validação de COD_PART: Se não informado ou não existir no mapa, usar padrão
+          // Validação de COD_PART: Se não informado, usar padrão
           let codPart = codPartRaw;
-          if (!codPartRaw || codPartRaw.trim() === '' || codPartRaw === '0' || !context.participantesMap.has(codPartRaw)) {
+          if (!codPartRaw || codPartRaw.trim() === '' || codPartRaw === '0') {
              codPart = tipo === 'saida' ? '9999999999' : '8888888888';
           }
           
@@ -503,9 +505,9 @@ function processLine(
           const tipo = indOper === "0" ? "entrada" : "saida";
           const codPartRaw = fields[4] || null;
           
-          // Validação de COD_PART: Se não informado ou não existir no mapa, usar padrão
+          // Validação de COD_PART: Se não informado, usar padrão
           let codPart = codPartRaw;
-          if (!codPartRaw || codPartRaw.trim() === '' || codPartRaw === '0' || !context.participantesMap.has(codPartRaw)) {
+          if (!codPartRaw || codPartRaw.trim() === '' || codPartRaw === '0') {
              codPart = tipo === 'saida' ? '9999999999' : '8888888888';
           }
           
