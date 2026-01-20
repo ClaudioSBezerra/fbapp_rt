@@ -16,6 +16,7 @@ const BATCH_SIZE = 1000;
 const PROGRESS_UPDATE_INTERVAL = 5000;
 const BLOCK_C_CHUNK_SIZE = 50000; // Process Block C in chunks to avoid timeout
 const PARSING_CHUNK_SIZE = 150000; // Lines per parsing invocation for chunked streaming
+const RAW_LINES_INSERT_BATCH_SIZE = 500; // Batch size for inserting into efd_raw_lines
 const SELF_INVOKE_MAX_RETRIES = 3;
 const SELF_INVOKE_BASE_DELAY_MS = 2000;
 
@@ -83,7 +84,7 @@ const ONLY_C_PREFIXES = ["|0000|", "|0140|", "|0150|", "|C010|", "|C100|", "|C50
 const ONLY_D_PREFIXES = ["|0000|", "|0140|", "|0150|", "|D010|", "|D100|", "|D101|", "|D105|", "|D500|", "|D501|", "|D505|"];
 
 type ImportScope = 'all' | 'only_a' | 'only_c' | 'only_d';
-type ProcessingPhase = 'pending' | 'parsing' | 'block_0' | 'block_d' | 'block_c' | 'consolidating' | 'refreshing_views' | 'completed' | 'failed';
+type ProcessingPhase = 'pending' | 'parsing' | 'block_0' | 'block_d' | 'block_a' | 'block_c' | 'consolidating' | 'refreshing_views' | 'completed' | 'failed';
 
 function getValidPrefixes(scope: ImportScope): string[] {
   switch (scope) {
@@ -219,74 +220,41 @@ function getPeriodFromHeader(fields: string[], efdType: EFDType): string {
 }
 
 // ============================================================================
-// BLOCK SEPARATION FUNCTIONS
+// NEW: CHUNKED PARSING WITH DIRECT DB INSERTION
+// Inserts lines directly into efd_raw_lines table during streaming
 // ============================================================================
 
-interface SeparatedBlocks {
-  block0Lines: string[];
-  blockALines: string[];
-  blockCLines: string[];
-  blockDLines: string[];
-  totalLines: number;
-}
-
-function separateBlocks(fileContent: string, validPrefixes: string[]): SeparatedBlocks {
-  const allLines = fileContent.split('\n');
-  const block0Lines: string[] = [];
-  const blockALines: string[] = [];
-  const blockCLines: string[] = [];
-  const blockDLines: string[] = [];
-
-  for (const line of allLines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    
-    // Check if line starts with any valid prefix
-    if (!validPrefixes.some(p => trimmed.startsWith(p))) continue;
-
-    if (trimmed.startsWith('|0')) {
-      block0Lines.push(trimmed);
-    } else if (trimmed.startsWith('|A')) {
-      blockALines.push(trimmed);
-    } else if (trimmed.startsWith('|C')) {
-      blockCLines.push(trimmed);
-    } else if (trimmed.startsWith('|D')) {
-      blockDLines.push(trimmed);
-    }
-  }
-
-  return {
-    block0Lines,
-    blockALines,
-    blockCLines,
-    blockDLines,
-    totalLines: allLines.length,
-  };
-}
-
-// Chunked streaming version - processes file in chunks to avoid CPU timeout
-// Returns hasMore=true if there are more lines to process
-interface ChunkedParsingResult {
-  blocks: SeparatedBlocks;
+interface ChunkedInsertResult {
   hasMore: boolean;
   nextOffset: number;
   processedInChunk: number;
+  blockCounts: { block0: number; blockA: number; blockC: number; blockD: number };
 }
 
-async function separateBlocksChunked(
-  fetchResponse: Response, 
+async function separateBlocksChunkedWithInsert(
+  fetchResponse: Response,
   validPrefixes: string[],
   skipLines: number,
-  maxLines: number
-): Promise<ChunkedParsingResult> {
-  const block0Lines: string[] = [];
-  const blockALines: string[] = [];
-  const blockCLines: string[] = [];
-  const blockDLines: string[] = [];
+  maxLines: number,
+  jobId: string,
+  supabase: any
+): Promise<ChunkedInsertResult> {
+  const INSERT_BATCH_SIZE = RAW_LINES_INSERT_BATCH_SIZE;
+  let currentBatch: { job_id: string; block_type: string; line_number: number; content: string }[] = [];
   let lineCount = 0;
   let processedInChunk = 0;
+  const blockCounts = { block0: 0, blockA: 0, blockC: 0, blockD: 0 };
 
-  console.log(`separateBlocksChunked: Starting at offset ${skipLines}, max lines ${maxLines}`);
+  const flushBatch = async () => {
+    if (currentBatch.length === 0) return;
+    const { error } = await supabase.from('efd_raw_lines').insert(currentBatch);
+    if (error) {
+      console.error(`Job ${jobId}: Insert batch error (${currentBatch.length} lines):`, error.message);
+    }
+    currentBatch = [];
+  };
+
+  console.log(`Job ${jobId}: separateBlocksChunkedWithInsert starting at offset ${skipLines}, max lines ${maxLines}`);
 
   const lineStream = fetchResponse.body!
     .pipeThrough(new TextDecoderStream())
@@ -303,18 +271,13 @@ async function separateBlocksChunked(
     
     // Check chunk limit - if we've processed maxLines, return early
     if (processedInChunk >= maxLines) {
-      console.log(`separateBlocksChunked: Chunk limit reached at line ${lineCount}, returning early`);
+      await flushBatch();
+      console.log(`Job ${jobId}: Chunk limit reached at line ${lineCount}, inserted block counts:`, blockCounts);
       return {
-        blocks: { 
-          block0Lines, 
-          blockALines, 
-          blockCLines, 
-          blockDLines, 
-          totalLines: lineCount - 1 // Approximate, will be updated
-        },
         hasMore: true,
-        nextOffset: lineCount - 1, // Next chunk starts here
-        processedInChunk
+        nextOffset: lineCount - 1,
+        processedInChunk,
+        blockCounts
       };
     }
     
@@ -323,46 +286,74 @@ async function separateBlocksChunked(
     // Check if line starts with any valid prefix
     if (!validPrefixes.some(p => trimmed.startsWith(p))) continue;
 
-    if (trimmed.startsWith('|0')) {
-      block0Lines.push(trimmed);
-    } else if (trimmed.startsWith('|A')) {
-      blockALines.push(trimmed);
-    } else if (trimmed.startsWith('|C')) {
-      blockCLines.push(trimmed);
-    } else if (trimmed.startsWith('|D')) {
-      blockDLines.push(trimmed);
+    let blockType = '';
+    if (trimmed.startsWith('|0')) { 
+      blockType = '0'; 
+      blockCounts.block0++;
+    } else if (trimmed.startsWith('|A')) { 
+      blockType = 'A'; 
+      blockCounts.blockA++;
+    } else if (trimmed.startsWith('|C')) { 
+      blockType = 'C'; 
+      blockCounts.blockC++;
+    } else if (trimmed.startsWith('|D')) { 
+      blockType = 'D'; 
+      blockCounts.blockD++;
+    }
+    
+    if (blockType) {
+      currentBatch.push({ 
+        job_id: jobId, 
+        block_type: blockType, 
+        line_number: lineCount, 
+        content: trimmed 
+      });
+      if (currentBatch.length >= INSERT_BATCH_SIZE) {
+        await flushBatch();
+      }
     }
   }
 
-  console.log(`separateBlocksChunked: Completed - total ${lineCount} lines, processed ${processedInChunk} in this chunk`);
+  await flushBatch();
+  console.log(`Job ${jobId}: Parsing complete - total ${lineCount} lines, processed ${processedInChunk} in this chunk, block counts:`, blockCounts);
 
   return {
-    blocks: { 
-      block0Lines, 
-      blockALines, 
-      blockCLines, 
-      blockDLines, 
-      totalLines: lineCount 
-    },
     hasMore: false,
     nextOffset: lineCount,
-    processedInChunk
+    processedInChunk,
+    blockCounts
   };
 }
 
 // ============================================================================
 // BLOCK 0 PROCESSING - Extract context (period, filiais, participantes)
+// NEW: Reads from efd_raw_lines table instead of in-memory array
 // ============================================================================
 
-async function processBlock0(
-  lines: string[],
+async function processBlock0FromTable(
   supabase: any,
   job: any,
   jobId: string,
   counts: InsertCounts
 ): Promise<BlockContext> {
-  console.log(`Job ${jobId}: Processing Block 0 - ${lines.length} lines`);
+  console.log(`Job ${jobId}: Processing Block 0 from efd_raw_lines table`);
   
+  // Fetch Block 0 lines from the table
+  const { data: rawLines, error: fetchError } = await supabase
+    .from('efd_raw_lines')
+    .select('content')
+    .eq('job_id', jobId)
+    .eq('block_type', '0')
+    .order('line_number', { ascending: true });
+
+  if (fetchError) {
+    console.error(`Job ${jobId}: Error fetching Block 0 lines:`, fetchError);
+    throw new Error(`Failed to fetch Block 0 lines: ${fetchError.message}`);
+  }
+
+  const lines = rawLines?.map((r: { content: string }) => r.content) || [];
+  console.log(`Job ${jobId}: Found ${lines.length} Block 0 lines in table`);
+
   const context: BlockContext = {
     period: '',
     efdType: null,
@@ -494,15 +485,30 @@ async function processBlock0(
 
 // ============================================================================
 // BLOCK 0 QUICK - Extract context only (no inserts) for resumption
+// NEW: Reads from efd_raw_lines table
 // ============================================================================
 
-async function processBlock0Quick(
-  lines: string[],
+async function processBlock0QuickFromTable(
   supabase: any,
   empresaId: string,
   jobId: string
 ): Promise<BlockContext> {
-  console.log(`Job ${jobId}: Quick processing Block 0 for context - ${lines.length} lines`);
+  console.log(`Job ${jobId}: Quick processing Block 0 for context from table`);
+  
+  // Fetch Block 0 lines from the table
+  const { data: rawLines, error: fetchError } = await supabase
+    .from('efd_raw_lines')
+    .select('content')
+    .eq('job_id', jobId)
+    .eq('block_type', '0')
+    .order('line_number', { ascending: true });
+
+  if (fetchError) {
+    console.error(`Job ${jobId}: Error fetching Block 0 lines for context:`, fetchError);
+    throw new Error(`Failed to fetch Block 0 lines: ${fetchError.message}`);
+  }
+
+  const lines = rawLines?.map((r: { content: string }) => r.content) || [];
   
   const context: BlockContext = {
     period: '',
@@ -570,17 +576,33 @@ async function processBlock0Quick(
 
 // ============================================================================
 // BLOCK A PROCESSING - Serviços (A100)
+// NEW: Reads from efd_raw_lines table
 // ============================================================================
 
-async function processBlockA(
-  lines: string[],
+async function processBlockAFromTable(
   supabase: any,
   context: BlockContext,
   jobId: string,
   recordLimit: number,
   counts: InsertCounts
 ): Promise<void> {
-  console.log(`Job ${jobId}: Processing Block A - ${lines.length} lines`);
+  console.log(`Job ${jobId}: Processing Block A from efd_raw_lines table`);
+  
+  // Fetch Block A lines from the table
+  const { data: rawLines, error: fetchError } = await supabase
+    .from('efd_raw_lines')
+    .select('content')
+    .eq('job_id', jobId)
+    .eq('block_type', 'A')
+    .order('line_number', { ascending: true });
+
+  if (fetchError) {
+    console.error(`Job ${jobId}: Error fetching Block A lines:`, fetchError);
+    throw new Error(`Failed to fetch Block A lines: ${fetchError.message}`);
+  }
+
+  const lines = rawLines?.map((r: { content: string }) => r.content) || [];
+  console.log(`Job ${jobId}: Found ${lines.length} Block A lines in table`);
   
   const batch: RawA100Record[] = [];
   let currentFilialId: string | null = null;
@@ -642,6 +664,7 @@ async function processBlockA(
 
 // ============================================================================
 // BLOCK D PROCESSING - Fretes (D100, D500)
+// NEW: Reads from efd_raw_lines table
 // ============================================================================
 
 interface PendingDRecord {
@@ -650,15 +673,30 @@ interface PendingDRecord {
   cofins: number;
 }
 
-async function processBlockD(
-  lines: string[],
+async function processBlockDFromTable(
   supabase: any,
   context: BlockContext,
   jobId: string,
   recordLimit: number,
   counts: InsertCounts
 ): Promise<void> {
-  console.log(`Job ${jobId}: Processing Block D - ${lines.length} lines`);
+  console.log(`Job ${jobId}: Processing Block D from efd_raw_lines table`);
+  
+  // Fetch Block D lines from the table
+  const { data: rawLines, error: fetchError } = await supabase
+    .from('efd_raw_lines')
+    .select('content')
+    .eq('job_id', jobId)
+    .eq('block_type', 'D')
+    .order('line_number', { ascending: true });
+
+  if (fetchError) {
+    console.error(`Job ${jobId}: Error fetching Block D lines:`, fetchError);
+    throw new Error(`Failed to fetch Block D lines: ${fetchError.message}`);
+  }
+
+  const lines = rawLines?.map((r: { content: string }) => r.content) || [];
+  console.log(`Job ${jobId}: Found ${lines.length} Block D lines in table`);
   
   const batch: RawFretesRecord[] = [];
   let currentFilialId: string | null = null;
@@ -864,18 +902,47 @@ async function processBlockD(
 
 // ============================================================================
 // BLOCK C PROCESSING - Mercadorias (C100, C600) and Energia/Agua (C500)
+// NEW: Reads from efd_raw_lines table with chunked processing
 // ============================================================================
 
-async function processBlockC(
-  lines: string[],
+async function processBlockCFromTable(
   supabase: any,
   context: BlockContext,
   jobId: string,
   recordLimit: number,
-  counts: InsertCounts
-): Promise<void> {
-  console.log(`Job ${jobId}: Processing Block C - ${lines.length} lines`);
+  counts: InsertCounts,
+  lineOffset: number = 0,
+  maxLines: number = 0
+): Promise<{ processedLines: number; hasMore: boolean }> {
+  console.log(`Job ${jobId}: Processing Block C from efd_raw_lines table, offset: ${lineOffset}, maxLines: ${maxLines}`);
   
+  // Build query for Block C lines
+  let query = supabase
+    .from('efd_raw_lines')
+    .select('content, line_number')
+    .eq('job_id', jobId)
+    .eq('block_type', 'C')
+    .order('line_number', { ascending: true });
+
+  // Apply pagination if maxLines > 0
+  if (maxLines > 0) {
+    query = query.range(lineOffset, lineOffset + maxLines - 1);
+  }
+
+  const { data: rawLines, error: fetchError } = await query;
+
+  if (fetchError) {
+    console.error(`Job ${jobId}: Error fetching Block C lines:`, fetchError);
+    throw new Error(`Failed to fetch Block C lines: ${fetchError.message}`);
+  }
+
+  const lines = rawLines?.map((r: { content: string }) => r.content) || [];
+  console.log(`Job ${jobId}: Fetched ${lines.length} Block C lines from table (offset: ${lineOffset})`);
+  
+  if (lines.length === 0) {
+    return { processedLines: 0, hasMore: false };
+  }
+
   const c100Batch: RawC100Record[] = [];
   const c500Batch: RawC500Record[] = [];
   let currentFilialId: string | null = null;
@@ -1098,7 +1165,12 @@ async function processBlockC(
   await flushC100();
   await flushC500();
   
-  console.log(`Job ${jobId}: Block C completed - C100: ${c100Count}, C500: ${c500Count}, C600: ${c600Count}`);
+  console.log(`Job ${jobId}: Block C chunk completed - C100: ${c100Count}, C500: ${c500Count}, C600: ${c600Count}`);
+  
+  // Determine if there are more lines to process
+  const hasMore = maxLines > 0 && lines.length === maxLines;
+  
+  return { processedLines: lines.length, hasMore };
 }
 
 // ============================================================================
@@ -1338,6 +1410,24 @@ async function refreshMaterializedViews(supabase: any, jobId: string): Promise<n
 }
 
 // ============================================================================
+// CLEANUP RAW LINES - Delete temporary lines after processing
+// ============================================================================
+
+async function cleanupRawLines(supabase: any, jobId: string): Promise<void> {
+  console.log(`Job ${jobId}: Cleaning up efd_raw_lines...`);
+  const { error } = await supabase
+    .from('efd_raw_lines')
+    .delete()
+    .eq('job_id', jobId);
+  
+  if (error) {
+    console.warn(`Job ${jobId}: Failed to cleanup raw lines:`, error.message);
+  } else {
+    console.log(`Job ${jobId}: Raw lines cleaned up successfully`);
+  }
+}
+
+// ============================================================================
 // MAIN HANDLER
 // ============================================================================
 
@@ -1381,7 +1471,8 @@ serve(async (req) => {
     }
 
     if (job.status === "cancelled") {
-      console.log(`Job ${jobId}: Already cancelled`);
+      console.log(`Job ${jobId}: Already cancelled, cleaning up...`);
+      await cleanupRawLines(supabase, jobId);
       return new Response(
         JSON.stringify({ success: false, message: "Job was cancelled" }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -1417,8 +1508,8 @@ serve(async (req) => {
     };
 
     // ===========================================================================
-    // PHASE 1: PARSING - Download and separate file into blocks (CHUNKED)
-    // Uses chunked streaming to avoid CPU timeout on large files
+    // PHASE 1: PARSING - Download and insert lines directly into efd_raw_lines
+    // Uses chunked streaming with direct DB insertion
     // ===========================================================================
     if (currentPhase === 'pending' || currentPhase === 'parsing') {
       await supabase.from("import_jobs").update({ 
@@ -1429,12 +1520,6 @@ serve(async (req) => {
 
       // Get current parsing offset from job
       const parsingOffset = (job as any).parsing_offset || 0;
-      
-      // Get temporary block arrays from previous chunks (if any)
-      const tempBlock0 = (job as any).temp_block0_lines || [];
-      const tempBlockA = (job as any).temp_blocka_lines || [];
-      const tempBlockC = (job as any).temp_blockc_lines || [];
-      const tempBlockD = (job as any).temp_blockd_lines || [];
 
       // Get signed URL for file
       const { data: signedUrlData, error: signedUrlError } = await supabase.storage
@@ -1445,88 +1530,75 @@ serve(async (req) => {
         throw new Error("Failed to get file URL");
       }
 
-      console.log(`Job ${jobId}: Starting chunked parsing at offset ${parsingOffset}...`);
+      console.log(`Job ${jobId}: Starting chunked parsing with DB insertion at offset ${parsingOffset}...`);
       const fetchResponse = await fetch(signedUrlData.signedUrl);
       
       if (!fetchResponse.ok) {
         throw new Error(`Failed to fetch file: ${fetchResponse.status} ${fetchResponse.statusText}`);
       }
 
-      // Use chunked streaming to process large files
-      const result = await separateBlocksChunked(fetchResponse, validPrefixes, parsingOffset, PARSING_CHUNK_SIZE);
+      // Use new chunked streaming with direct DB insertion
+      const result = await separateBlocksChunkedWithInsert(
+        fetchResponse, 
+        validPrefixes, 
+        parsingOffset, 
+        PARSING_CHUNK_SIZE, 
+        jobId, 
+        supabase
+      );
       
-      console.log(`Job ${jobId}: Chunk processed - Block0: ${result.blocks.block0Lines.length}, BlockA: ${result.blocks.blockALines.length}, BlockC: ${result.blocks.blockCLines.length}, BlockD: ${result.blocks.blockDLines.length}, hasMore: ${result.hasMore}`);
+      console.log(`Job ${jobId}: Chunk processed - hasMore: ${result.hasMore}, blockCounts:`, result.blockCounts);
 
       if (result.hasMore) {
-        // More lines to parse - save progress and self-invoke
-        const newBlock0 = [...tempBlock0, ...result.blocks.block0Lines];
-        const newBlockA = [...tempBlockA, ...result.blocks.blockALines];
-        const newBlockC = [...tempBlockC, ...result.blocks.blockCLines];
-        const newBlockD = [...tempBlockD, ...result.blocks.blockDLines];
-        
-        // Estimate progress based on file size
-        const estimatedTotalLines = job.file_size / 100; // rough estimate: ~100 bytes per line
+        // More lines to parse - save progress (lightweight update) and self-invoke
+        const estimatedTotalLines = job.file_size / 100;
         const progress = Math.min(9, Math.floor((result.nextOffset / estimatedTotalLines) * 9));
         
         await supabase.from("import_jobs").update({ 
           progress,
           parsing_offset: result.nextOffset,
-          parsing_total_lines: result.nextOffset,
-          temp_block0_lines: newBlock0,
-          temp_blocka_lines: newBlockA,
-          temp_blockc_lines: newBlockC,
-          temp_blockd_lines: newBlockD
+          parsing_total_lines: result.nextOffset
         }).eq("id", jobId);
         
-        console.log(`Job ${jobId}: Parsing chunk done, offset now ${result.nextOffset}, firing next chunk...`);
-        
-        // Add delay before self-invoke to prevent rate limiting
+        // Fire-and-forget for next chunk
         await new Promise(resolve => setTimeout(resolve, 1000));
+        EdgeRuntime.waitUntil(selfInvokeWithRetry(supabaseUrl, supabaseKey, jobId, supabase));
         
-        // Fire-and-forget for next chunk with retry mechanism
-        EdgeRuntime.waitUntil(
-          selfInvokeWithRetry(supabaseUrl, supabaseKey, jobId, supabase)
-        );
+        console.log(`Job ${jobId}: Parsing chunk complete, self-invoking for next chunk at offset ${result.nextOffset}`);
         
         return new Response(
           JSON.stringify({ 
             success: true, 
             message: `Parsing chunk processed, offset: ${result.nextOffset}`,
-            hasMore: true
+            hasMore: true,
+            blockCounts: result.blockCounts
           }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
-      // Parsing complete - merge all temp arrays with final chunk
-      const blocks: SeparatedBlocks = {
-        block0Lines: [...tempBlock0, ...result.blocks.block0Lines],
-        blockALines: [...tempBlockA, ...result.blocks.blockALines],
-        blockCLines: [...tempBlockC, ...result.blocks.blockCLines],
-        blockDLines: [...tempBlockD, ...result.blocks.blockDLines],
-        totalLines: result.blocks.totalLines
-      };
+      // Parsing complete - advance to block_0
+      console.log(`Job ${jobId}: Parsing complete, advancing to block_0 phase`);
       
-      console.log(`Job ${jobId}: Parsing complete - Block0: ${blocks.block0Lines.length}, BlockA: ${blocks.blockALines.length}, BlockC: ${blocks.blockCLines.length}, BlockD: ${blocks.blockDLines.length}, Total lines: ${blocks.totalLines}`);
-
-      // Clear temp arrays
       await supabase.from("import_jobs").update({ 
         progress: 10,
-        total_lines: blocks.totalLines,
+        total_lines: result.nextOffset,
         current_phase: "block_0",
         parsing_offset: 0,
-        parsing_total_lines: blocks.totalLines,
-        temp_block0_lines: [],
-        temp_blocka_lines: [],
-        temp_blockc_lines: [],
-        temp_blockd_lines: []
+        parsing_total_lines: result.nextOffset
       }).eq("id", jobId);
 
-      // ===========================================================================
-      // PHASE 2: BLOCK 0 - Process cadastros (period, filiais, participantes)
-      // ===========================================================================
-      console.log(`Job ${jobId}: Starting Block 0 processing...`);
-      const context = await processBlock0(blocks.block0Lines, supabase, job, jobId, counts);
+      // Continue to block_0 processing in same invocation
+    }
+
+    // ===========================================================================
+    // PHASE 2: BLOCK 0 - Process cadastros (period, filiais, participantes)
+    // Reads from efd_raw_lines table
+    // ===========================================================================
+    if (currentPhase === 'block_0' || (currentPhase === 'pending' && job.status === 'processing')) {
+      console.log(`Job ${jobId}: Starting Block 0 processing from table...`);
+      
+      const context = await processBlock0FromTable(supabase, job, jobId, counts);
       
       await supabase.from("import_jobs").update({ 
         progress: 20,
@@ -1539,48 +1611,56 @@ serve(async (req) => {
       // PHASE 3: BLOCK D - Process fretes (D100, D500)
       // ===========================================================================
       if (importScope === 'all' || importScope === 'only_d') {
-        console.log(`Job ${jobId}: Starting Block D processing...`);
-        await processBlockD(blocks.blockDLines, supabase, context, jobId, recordLimit, counts);
+        console.log(`Job ${jobId}: Starting Block D processing from table...`);
+        await processBlockDFromTable(supabase, context, jobId, recordLimit, counts);
       }
       
       await supabase.from("import_jobs").update({ 
         progress: 35,
         counts,
-        current_phase: "block_c"
+        current_phase: "block_a"
       }).eq("id", jobId);
 
       // ===========================================================================
       // PHASE 4: BLOCK A - Process serviços (A100)
       // ===========================================================================
       if (importScope === 'all' || importScope === 'only_a') {
-        console.log(`Job ${jobId}: Starting Block A processing...`);
-        await processBlockA(blocks.blockALines, supabase, context, jobId, recordLimit, counts);
+        console.log(`Job ${jobId}: Starting Block A processing from table...`);
+        await processBlockAFromTable(supabase, context, jobId, recordLimit, counts);
       }
 
       await supabase.from("import_jobs").update({ 
         progress: 50,
-        counts
+        counts,
+        current_phase: "block_c"
       }).eq("id", jobId);
 
       // ===========================================================================
       // PHASE 5: BLOCK C - Process mercadorias and energia/agua (C100, C500, C600)
-      // With chunking for large files to avoid timeout
+      // With chunking for large datasets
       // ===========================================================================
       if (importScope === 'all' || importScope === 'only_c') {
-        const totalBlockCLines = blocks.blockCLines.length;
-        counts.block_c_total_lines = totalBlockCLines;
+        // Get total Block C lines count
+        const { count: totalBlockCLines } = await supabase
+          .from('efd_raw_lines')
+          .select('*', { count: 'exact', head: true })
+          .eq('job_id', jobId)
+          .eq('block_type', 'C');
         
-        if (totalBlockCLines > BLOCK_C_CHUNK_SIZE) {
+        counts.block_c_total_lines = totalBlockCLines || 0;
+        
+        if ((totalBlockCLines || 0) > BLOCK_C_CHUNK_SIZE) {
           // Large Block C - process first chunk and fire-and-forget for remaining
           console.log(`Job ${jobId}: Block C has ${totalBlockCLines} lines, processing in chunks...`);
           
-          const firstChunk = blocks.blockCLines.slice(0, BLOCK_C_CHUNK_SIZE);
-          await processBlockC(firstChunk, supabase, context, jobId, recordLimit, counts);
+          const { processedLines } = await processBlockCFromTable(
+            supabase, context, jobId, recordLimit, counts, 0, BLOCK_C_CHUNK_SIZE
+          );
           
-          counts.block_c_line_offset = BLOCK_C_CHUNK_SIZE;
+          counts.block_c_line_offset = processedLines;
           
           await supabase.from("import_jobs").update({ 
-            progress: 50 + Math.floor((BLOCK_C_CHUNK_SIZE / totalBlockCLines) * 15),
+            progress: 50 + Math.floor((processedLines / (totalBlockCLines || 1)) * 15),
             counts
           }).eq("id", jobId);
           
@@ -1597,12 +1677,12 @@ serve(async (req) => {
             }).catch(err => console.error(`Job ${jobId}: Failed to invoke next chunk: ${err}`))
           );
           
-          console.log(`Job ${jobId}: First Block C chunk processed (${BLOCK_C_CHUNK_SIZE} lines), fire-and-forget for next chunk`);
+          console.log(`Job ${jobId}: First Block C chunk processed (${processedLines} lines), fire-and-forget for next chunk`);
           
           return new Response(
             JSON.stringify({ 
               success: true, 
-              message: `Block C chunk 0-${BLOCK_C_CHUNK_SIZE} processed, continuing...`,
+              message: `Block C chunk 0-${processedLines} processed, continuing...`,
               counts
             }),
             { headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -1610,7 +1690,7 @@ serve(async (req) => {
         } else {
           // Small Block C - process all at once
           console.log(`Job ${jobId}: Starting Block C processing (${totalBlockCLines} lines)...`);
-          await processBlockC(blocks.blockCLines, supabase, context, jobId, recordLimit, counts);
+          await processBlockCFromTable(supabase, context, jobId, recordLimit, counts, 0, 0);
         }
       }
 
@@ -1652,6 +1732,10 @@ serve(async (req) => {
       // ===========================================================================
       // PHASE 8: FINALIZATION
       // ===========================================================================
+      
+      // Cleanup raw lines
+      await cleanupRawLines(supabase, jobId);
+      
       await supabase.from("import_jobs").update({ 
         status: "completed",
         progress: 100,
@@ -1709,44 +1793,31 @@ serve(async (req) => {
     // ===========================================================================
     if (currentPhase === 'block_c') {
       const lineOffset = counts.block_c_line_offset || 0;
-      const totalLines = counts.block_c_total_lines || 0;
       
-      console.log(`Job ${jobId}: Resuming Block C from line ${lineOffset} of ${totalLines}`);
+      console.log(`Job ${jobId}: Resuming Block C from offset ${lineOffset}`);
 
-      // Re-download file and re-extract context
-      const { data: signedUrlData, error: signedUrlError } = await supabase.storage
-        .from("efd-files")
-        .createSignedUrl(job.file_path, 3600);
-
-      if (signedUrlError || !signedUrlData) {
-        throw new Error("Failed to get file URL for resumption");
-      }
-
-      const fetchResponse = await fetch(signedUrlData.signedUrl);
-      if (!fetchResponse.ok) {
-        throw new Error(`Failed to fetch file: ${fetchResponse.status}`);
-      }
-
-      // Use chunked streaming for resumption (full parse needed for context)
-      console.log(`Job ${jobId}: Streaming file for Block C resumption...`);
-      const parseResult = await separateBlocksChunked(fetchResponse, validPrefixes, 0, 999999999);
-      const blocks = parseResult.blocks;
+      // Get context from Block 0 lines in table
+      const context = await processBlock0QuickFromTable(supabase, job.empresa_id, jobId);
       
-      // Quick processing of Block 0 to restore context (no inserts)
-      const context = await processBlock0Quick(blocks.block0Lines, supabase, job.empresa_id, jobId);
+      // Get total Block C lines count
+      const { count: totalBlockCLines } = await supabase
+        .from('efd_raw_lines')
+        .select('*', { count: 'exact', head: true })
+        .eq('job_id', jobId)
+        .eq('block_type', 'C');
       
-      const actualTotalLines = blocks.blockCLines.length;
-      const chunkEnd = Math.min(lineOffset + BLOCK_C_CHUNK_SIZE, actualTotalLines);
+      const actualTotalLines = totalBlockCLines || 0;
       
-      console.log(`Job ${jobId}: Processing Block C chunk ${lineOffset}-${chunkEnd} of ${actualTotalLines}`);
+      console.log(`Job ${jobId}: Processing Block C chunk from offset ${lineOffset}, total lines: ${actualTotalLines}`);
       
-      const chunk = blocks.blockCLines.slice(lineOffset, chunkEnd);
-      await processBlockC(chunk, supabase, context, jobId, recordLimit, counts);
+      const { processedLines, hasMore } = await processBlockCFromTable(
+        supabase, context, jobId, recordLimit, counts, lineOffset, BLOCK_C_CHUNK_SIZE
+      );
       
-      if (chunkEnd < actualTotalLines) {
+      if (hasMore) {
         // More chunks to process
-        counts.block_c_line_offset = chunkEnd;
-        const progress = 50 + Math.floor((chunkEnd / actualTotalLines) * 15);
+        counts.block_c_line_offset = lineOffset + processedLines;
+        const progress = 50 + Math.floor(((lineOffset + processedLines) / actualTotalLines) * 15);
         
         await supabase.from("import_jobs").update({ 
           progress,
@@ -1766,12 +1837,12 @@ serve(async (req) => {
           }).catch(err => console.error(`Job ${jobId}: Failed to invoke next chunk: ${err}`))
         );
         
-        console.log(`Job ${jobId}: Block C chunk ${lineOffset}-${chunkEnd} processed, fire-and-forget for next`);
+        console.log(`Job ${jobId}: Block C chunk ${lineOffset}-${lineOffset + processedLines} processed, fire-and-forget for next`);
         
         return new Response(
           JSON.stringify({ 
             success: true, 
-            message: `Block C chunk ${lineOffset}-${chunkEnd} processed, continuing...`,
+            message: `Block C chunk ${lineOffset}-${lineOffset + processedLines} processed, continuing...`,
             counts
           }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -1808,6 +1879,9 @@ serve(async (req) => {
       }).eq("id", jobId);
 
       const viewsRefreshed = await refreshMaterializedViews(supabase, jobId);
+
+      // Cleanup raw lines
+      await cleanupRawLines(supabase, jobId);
 
       await supabase.from("import_jobs").update({ 
         status: "completed",
@@ -1866,6 +1940,9 @@ serve(async (req) => {
 
       const viewsRefreshed = await refreshMaterializedViews(supabase, jobId);
 
+      // Cleanup raw lines
+      await cleanupRawLines(supabase, jobId);
+
       await supabase.from("import_jobs").update({ 
         status: "completed",
         progress: 100,
@@ -1885,6 +1962,9 @@ serve(async (req) => {
       
       const viewsRefreshed = await refreshMaterializedViews(supabase, jobId);
 
+      // Cleanup raw lines
+      await cleanupRawLines(supabase, jobId);
+
       await supabase.from("import_jobs").update({ 
         status: "completed",
         progress: 100,
@@ -1901,6 +1981,7 @@ serve(async (req) => {
 
     // Unknown phase
     console.warn(`Job ${jobId}: Unknown phase ${currentPhase}, marking as failed`);
+    await cleanupRawLines(supabase, jobId);
     await supabase.from("import_jobs").update({ 
       status: "failed",
       current_phase: "failed",
@@ -1917,6 +1998,9 @@ serve(async (req) => {
     console.error(`Job ${jobId}: Error:`, error);
     
     if (jobId) {
+      // Cleanup raw lines on error
+      await cleanupRawLines(supabase, jobId);
+      
       await supabase
         .from("import_jobs")
         .update({ 
