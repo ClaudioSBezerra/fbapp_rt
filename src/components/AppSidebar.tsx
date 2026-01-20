@@ -35,6 +35,7 @@ import { TrendingUp } from 'lucide-react';
 
 interface MenuItem {
   title: string;
+  subtitle?: string;
   url: string;
   icon: React.ComponentType<{ className?: string }>;
   adminOnly?: boolean;
@@ -44,7 +45,7 @@ const allMenuItems: MenuItem[] = [
   { title: 'Configurações e Parâmetros Gerais', url: '/configuracoes', icon: Settings, adminOnly: true },
   { title: 'Empresas', url: '/empresas', icon: Building2, adminOnly: true },
   { title: 'Alíquotas', url: '/aliquotas', icon: Calculator },
-  { title: 'Operações de Compra e Venda', url: '/mercadorias', icon: Package },
+  { title: 'Operações', subtitle: 'de Compra e Venda', url: '/mercadorias', icon: Package },
   { title: 'Compra e Venda por Participante', url: '/mercadorias-participante', icon: Users },
   { title: 'Serviços', url: '/servicos', icon: FileText },
   { title: 'Energia e Água', url: '/energia-agua', icon: Zap },
@@ -112,7 +113,14 @@ export function AppSidebar() {
                       activeClassName="bg-sidebar-accent text-sidebar-accent-foreground"
                     >
                       <item.icon className="h-4 w-4 shrink-0" />
-                      <span className="truncate">{item.title}</span>
+                      {item.subtitle ? (
+                        <div className="flex flex-col min-w-0">
+                          <span className="truncate leading-tight">{item.title}</span>
+                          <span className="text-[10px] text-sidebar-foreground/60 truncate leading-tight">{item.subtitle}</span>
+                        </div>
+                      ) : (
+                        <span className="truncate">{item.title}</span>
+                      )}
                     </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
