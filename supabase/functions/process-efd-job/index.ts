@@ -1510,154 +1510,142 @@ async function consolidateData(
 }
 
 // ============================================================================
-// REFRESH MATERIALIZED VIEWS
+// REFRESH MATERIALIZED VIEWS - Uses centralized RPC for consistency
 // ============================================================================
 
 async function refreshMaterializedViews(supabase: any, jobId: string): Promise<number> {
-  console.log(`Job ${jobId}: Refreshing materialized views...`);
+  console.log(`Job ${jobId}: Refreshing materialized views via centralized RPC...`);
   
-  const viewsToRefresh = [
-    'extensions.mv_mercadorias_aggregated',
-    'extensions.mv_fretes_aggregated',
-    'extensions.mv_energia_agua_aggregated',
-    'extensions.mv_servicos_aggregated',
-    'extensions.mv_mercadorias_participante',
-    'extensions.mv_dashboard_stats',
-    'extensions.mv_uso_consumo_aggregated',
-    'extensions.mv_uso_consumo_detailed',
-    'extensions.mv_fretes_detailed',
-    'extensions.mv_energia_agua_detailed',
-    'extensions.mv_participantes_cache',
-  ];
-
-  const totalViews = viewsToRefresh.length;
-  const failedViews: string[] = [];
   const startedAt = new Date().toISOString();
 
   // Inicializa status de refresh
   await supabase.from("import_jobs").update({ 
     view_refresh_status: {
-      views_total: totalViews,
+      views_total: 11,
       views_completed: 0,
-      current_view: viewsToRefresh[0].replace('extensions.', ''),
+      current_view: 'Starting...',
       started_at: startedAt,
       failed_views: []
     }
   }).eq("id", jobId);
 
-  let viewsRefreshed = 0;
-  for (let i = 0; i < viewsToRefresh.length; i++) {
-    const view = viewsToRefresh[i];
-    const viewName = view.replace('extensions.', '');
+  try {
+    // Use centralized RPC that knows all 11 views in correct order
+    const { data: result, error } = await supabase.rpc('refresh_all_materialized_views');
+
+    if (error) {
+      console.error(`Job ${jobId}: Failed to refresh views via RPC:`, error.message);
+      
+      await supabase.from("import_jobs").update({ 
+        view_refresh_status: {
+          views_total: 11,
+          views_completed: 0,
+          current_view: null,
+          started_at: startedAt,
+          failed_views: ['RPC error']
+        }
+      }).eq("id", jobId);
+      
+      return 0;
+    }
+
+    const refreshResult = result as {
+      success: boolean;
+      views_refreshed: string[];
+      views_failed: Array<{ view: string; error: string }>;
+      total_views: number;
+      refreshed_count: number;
+      failed_count: number;
+      duration_ms: number;
+    };
+
+    console.log(`Job ${jobId}: Views refreshed in ${refreshResult.duration_ms}ms - ${refreshResult.refreshed_count}/${refreshResult.total_views}`);
     
-    // Atualiza status com view atual e progresso (90-99%)
-    const progressPercent = Math.round(90 + ((i / totalViews) * 9));
+    if (refreshResult.failed_count > 0) {
+      console.warn(`Job ${jobId}: Failed views:`, refreshResult.views_failed);
+    }
+
+    // Atualiza status final
     await supabase.from("import_jobs").update({ 
-      progress: progressPercent,
+      progress: 99,
       view_refresh_status: {
-        views_total: totalViews,
-        views_completed: i,
-        current_view: viewName,
+        views_total: refreshResult.total_views,
+        views_completed: refreshResult.refreshed_count,
+        current_view: null,
         started_at: startedAt,
-        failed_views: failedViews
+        failed_views: refreshResult.views_failed.map(v => v.view)
       }
     }).eq("id", jobId);
+    
+    // Limpa view_refresh_status ao finalizar
+    await supabase.from("import_jobs").update({ 
+      view_refresh_status: null 
+    }).eq("id", jobId);
+    
+    return refreshResult.refreshed_count;
 
-    try {
-      const { error } = await supabase.rpc('exec_sql', {
-        sql: `REFRESH MATERIALIZED VIEW ${view}`
-      });
-      if (error) {
-        console.warn(`Job ${jobId}: Failed to refresh ${view}:`, error.message);
-        failedViews.push(viewName);
-      } else {
-        viewsRefreshed++;
-        console.log(`Job ${jobId}: Refreshed ${view} (${i + 1}/${totalViews})`);
-      }
-    } catch (err) {
-      console.warn(`Job ${jobId}: Exception refreshing ${view}:`, err);
-      failedViews.push(viewName);
-    }
+  } catch (err) {
+    console.error(`Job ${jobId}: Exception refreshing views:`, err);
+    
+    await supabase.from("import_jobs").update({ 
+      view_refresh_status: null 
+    }).eq("id", jobId);
+    
+    return 0;
   }
-
-  // Atualiza status final
-  await supabase.from("import_jobs").update({ 
-    progress: 99,
-    view_refresh_status: {
-      views_total: totalViews,
-      views_completed: totalViews,
-      current_view: null,
-      started_at: startedAt,
-      failed_views: failedViews
-    }
-  }).eq("id", jobId);
-  
-  // Limpa view_refresh_status ao finalizar
-  await supabase.from("import_jobs").update({ 
-    view_refresh_status: null 
-  }).eq("id", jobId);
-  
-  console.log(`Job ${jobId}: Refreshed ${viewsRefreshed}/${totalViews} views`);
-  return viewsRefreshed;
 }
 
 // ============================================================================
-// CLEANUP RAW LINES - Delete temporary lines after processing
+// CLEANUP RAW LINES - Delete temporary lines after processing using RPC
 // ============================================================================
 
 async function cleanupRawLines(supabase: any, jobId: string): Promise<void> {
-  console.log(`Job ${jobId}: Cleaning up efd_raw_lines in batches...`);
+  console.log(`Job ${jobId}: Cleaning up efd_raw_lines using batch RPC...`);
   
-  const CLEANUP_BATCH_SIZE = 50000;
+  const BATCH_SIZE = 50000;
+  const MAX_ITERATIONS = 100; // Safety limit to prevent infinite loops
   let totalDeleted = 0;
   let hasMore = true;
-  let batchNumber = 0;
+  let iteration = 0;
   
-  while (hasMore) {
-    batchNumber++;
+  while (hasMore && iteration < MAX_ITERATIONS) {
+    iteration++;
     
-    // Get IDs of records to delete (using limit)
-    const { data: idsToDelete, error: selectError } = await supabase
-      .from('efd_raw_lines')
-      .select('id')
-      .eq('job_id', jobId)
-      .limit(CLEANUP_BATCH_SIZE);
-    
-    if (selectError) {
-      console.warn(`Job ${jobId}: Failed to select raw lines for cleanup (batch ${batchNumber}):`, selectError.message);
+    try {
+      // Use the RPC that efficiently deletes in batches with internal LIMIT
+      const { data: deletedCount, error } = await supabase.rpc('delete_efd_raw_lines_batch', {
+        _job_ids: [jobId],
+        _batch_size: BATCH_SIZE
+      });
+      
+      if (error) {
+        console.warn(`Job ${jobId}: Cleanup RPC error (iteration ${iteration}):`, error.message);
+        break;
+      }
+      
+      if (!deletedCount || deletedCount === 0) {
+        hasMore = false;
+      } else {
+        totalDeleted += deletedCount;
+        console.log(`Job ${jobId}: Cleanup iteration ${iteration}: ${deletedCount} rows (total: ${totalDeleted})`);
+      }
+    } catch (err) {
+      console.warn(`Job ${jobId}: Cleanup exception (iteration ${iteration}):`, err);
       break;
-    }
-    
-    if (!idsToDelete || idsToDelete.length === 0) {
-      hasMore = false;
-      break;
-    }
-    
-    const ids = idsToDelete.map((row: any) => row.id);
-    
-    const { error: deleteError } = await supabase
-      .from('efd_raw_lines')
-      .delete()
-      .in('id', ids);
-    
-    if (deleteError) {
-      console.warn(`Job ${jobId}: Failed to delete cleanup batch ${batchNumber}:`, deleteError.message);
-      break;
-    }
-    
-    totalDeleted += ids.length;
-    console.log(`Job ${jobId}: Cleanup batch ${batchNumber} - deleted ${ids.length} rows (total: ${totalDeleted})`);
-    
-    // Small delay to avoid overwhelming the database
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
-    // If we got less than the batch size, we're done
-    if (ids.length < CLEANUP_BATCH_SIZE) {
-      hasMore = false;
     }
   }
   
-  console.log(`Job ${jobId}: Raw lines cleanup complete - ${totalDeleted} rows deleted in ${batchNumber} batches`);
+  // Verify cleanup was complete
+  const { count: remainingLines } = await supabase
+    .from('efd_raw_lines')
+    .select('*', { count: 'exact', head: true })
+    .eq('job_id', jobId);
+  
+  if (remainingLines && remainingLines > 0) {
+    console.warn(`Job ${jobId}: WARNING - ${remainingLines} raw lines still remaining after cleanup`);
+  } else {
+    console.log(`Job ${jobId}: Raw lines cleanup complete - ${totalDeleted} rows deleted, verified clean`);
+  }
 }
 
 // ============================================================================
