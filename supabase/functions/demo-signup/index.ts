@@ -34,7 +34,42 @@ serve(async (req) => {
 
     console.log(`Setting up demo environment for user: ${user_id}, name: ${full_name}`);
 
-    // 1. Update profile with demo account type and trial end date
+    // 1. Wait for profile to exist (created by auth trigger)
+    // The on_auth_user_created trigger creates the profile asynchronously
+    let profileExists = false;
+    const maxAttempts = 6;
+    
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      console.log(`Checking for profile existence, attempt ${attempt}/${maxAttempts}`);
+      
+      const { data: profile, error: checkError } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("id", user_id)
+        .maybeSingle();
+      
+      if (checkError) {
+        console.error(`Error checking profile (attempt ${attempt}):`, checkError);
+      }
+      
+      if (profile) {
+        profileExists = true;
+        console.log("Profile found, proceeding with update");
+        break;
+      }
+      
+      if (attempt < maxAttempts) {
+        console.log("Profile not found yet, waiting 500ms...");
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+
+    if (!profileExists) {
+      console.error("Profile not found after maximum attempts");
+      throw new Error("Profile not created in time. Please try again.");
+    }
+
+    // 2. Update profile with demo account type and trial end date
     const trialEndDate = new Date();
     trialEndDate.setDate(trialEndDate.getDate() + 14);
 
@@ -52,7 +87,7 @@ serve(async (req) => {
       throw new Error(`Failed to update profile: ${profileError.message}`);
     }
 
-    console.log("Profile updated with demo account type");
+    console.log("Profile updated with demo account type and trial end date");
 
     // 2. Check if TENANT_DEMO exists
     const { data: tenant, error: tenantError } = await supabase
@@ -73,7 +108,7 @@ serve(async (req) => {
         .insert({
           id: TENANT_DEMO_ID,
           nome: "TENANT_DEMO",
-          plano: "trial",
+          subscription_status: "trial",
         });
 
       if (createTenantError && !createTenantError.message.includes("duplicate")) {
