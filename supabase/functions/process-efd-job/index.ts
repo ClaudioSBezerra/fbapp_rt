@@ -783,23 +783,28 @@ async function processBlockDFromTable(
   jobId: string,
   recordLimit: number,
   counts: InsertCounts,
-  lineOffset: number = 0,
+  lastCursor: number = 0,  // Last processed id (cursor), 0 = start from beginning
   maxLines: number = 0
-): Promise<{ processedLines: number; hasMore: boolean }> {
-  console.log(`Job ${jobId}: Processing Block D from efd_raw_lines table, offset: ${lineOffset}, maxLines: ${maxLines}`);
+): Promise<{ processedLines: number; hasMore: boolean; lastId: number }> {
+  console.log(`Job ${jobId}: Processing Block D from efd_raw_lines table, cursor: ${lastCursor}, maxLines: ${maxLines}`);
   
-  // Use id-based pagination for efficiency (id is auto-increment with PK index)
-  // This avoids expensive ORDER BY line_number on large datasets
+  // Use cursor-based pagination for better performance on large tables
+  // lastCursor is the id of the last processed record, 0 means start from beginning
   let query = supabase
     .from('efd_raw_lines')
     .select('content, id')
     .eq('job_id', jobId)
-    .eq('block_type', 'D')
-    .order('id', { ascending: true });
+    .eq('block_type', 'D');
   
-  // Apply range if chunking (using Supabase range which is offset-based)
+  // Apply cursor if not first chunk
+  if (lastCursor > 0) {
+    query = query.gt('id', lastCursor);
+  }
+  
+  // Order by id and limit
+  query = query.order('id', { ascending: true });
   if (maxLines > 0) {
-    query = query.range(lineOffset, lineOffset + maxLines - 1);
+    query = query.limit(maxLines);
   }
 
   const { data: rawLines, error: fetchError } = await query;
@@ -809,8 +814,16 @@ async function processBlockDFromTable(
     throw new Error(`Failed to fetch Block D lines: ${fetchError.message}`);
   }
 
-  const lines = rawLines?.map((r: { content: string }) => r.content) || [];
-  console.log(`Job ${jobId}: Found ${lines.length} Block D lines in table (offset: ${lineOffset})`);
+  // Extract content and track last id for cursor-based pagination
+  const lines: string[] = [];
+  let lastId = 0;
+  if (rawLines) {
+    for (const row of rawLines as { content: string; id: number }[]) {
+      lines.push(row.content);
+      lastId = row.id;
+    }
+  }
+  console.log(`Job ${jobId}: Found ${lines.length} Block D lines in table (cursor: ${lastCursor}, lastId: ${lastId})`);
   
   const batch: RawFretesRecord[] = [];
   let currentFilialId: string | null = null;
@@ -1014,9 +1027,9 @@ async function processBlockDFromTable(
   await flushBatch();
   
   const hasMore = maxLines > 0 && lines.length === maxLines;
-  console.log(`Job ${jobId}: Block D chunk completed - ${recordCount} frete records, processedLines: ${processedLines}, hasMore: ${hasMore}`);
+  console.log(`Job ${jobId}: Block D chunk completed - ${recordCount} frete records, processedLines: ${processedLines}, hasMore: ${hasMore}, lastId: ${lastId}`);
   
-  return { processedLines, hasMore };
+  return { processedLines, hasMore, lastId };
 }
 
 // ============================================================================
@@ -1816,15 +1829,15 @@ serve(async (req) => {
           // Large Block D - process first chunk and fire-and-forget for remaining
           console.log(`Job ${jobId}: Block D has ${totalBlockDLines} lines, processing in chunks...`);
           
-          const { processedLines, hasMore } = await processBlockDFromTable(
+          const { processedLines, hasMore, lastId } = await processBlockDFromTable(
             supabase, context, jobId, recordLimit, counts, 0, BLOCK_D_CHUNK_SIZE
           );
           
           if (hasMore) {
-            // Save progress and self-invoke for next chunk
+            // Save progress and self-invoke for next chunk (using lastId as cursor)
             await supabase.from("import_jobs").update({ 
               progress: 20 + Math.floor((processedLines / (totalBlockDLines || 1)) * 15),
-              counts: { ...counts, block_d_line_offset: processedLines, block_d_total_lines: totalBlockDLines },
+              counts: { ...counts, block_d_cursor: lastId, block_d_total_lines: totalBlockDLines },
               current_phase: "block_d"
             }).eq("id", jobId);
             
@@ -2027,9 +2040,9 @@ serve(async (req) => {
     // RESUMPTION: BLOCK D - Continue processing remaining chunks
     // ===========================================================================
     if (currentPhase === 'block_d') {
-      const lineOffset = (counts as any).block_d_line_offset || 0;
+      const cursor = (counts as any).block_d_cursor || 0;
       
-      console.log(`Job ${jobId}: Resuming Block D from offset ${lineOffset}`);
+      console.log(`Job ${jobId}: Resuming Block D from cursor ${cursor}`);
 
       // Get context from Block 0 lines in table
       const context = await processBlock0QuickFromTable(supabase, job.empresa_id, jobId);
@@ -2043,32 +2056,32 @@ serve(async (req) => {
       
       const actualTotalLines = totalBlockDLines || 0;
       
-      console.log(`Job ${jobId}: Processing Block D chunk from offset ${lineOffset}, total lines: ${actualTotalLines}`);
+      console.log(`Job ${jobId}: Processing Block D chunk from cursor ${cursor}, total lines: ${actualTotalLines}`);
       
-      const { processedLines, hasMore } = await processBlockDFromTable(
-        supabase, context, jobId, recordLimit, counts, lineOffset, BLOCK_D_CHUNK_SIZE
+      const { processedLines, hasMore, lastId } = await processBlockDFromTable(
+        supabase, context, jobId, recordLimit, counts, cursor, BLOCK_D_CHUNK_SIZE
       );
       
       if (hasMore) {
         // More chunks to process
-        const newOffset = lineOffset + processedLines;
-        const progress = 20 + Math.floor((newOffset / actualTotalLines) * 15);
+        // Calculate approximate progress based on cursor position
+        const progress = 20 + Math.floor(15 * (lastId > 0 ? 0.5 : 0)); // Rough estimate
         
         await supabase.from("import_jobs").update({ 
           progress,
-          counts: { ...counts, block_d_line_offset: newOffset }
+          counts: { ...counts, block_d_cursor: lastId }
         }).eq("id", jobId);
         
         // Fire-and-forget for next chunk
         await new Promise(resolve => setTimeout(resolve, 1000));
         EdgeRuntime.waitUntil(selfInvokeWithRetry(supabaseUrl, supabaseKey, jobId, supabase));
         
-        console.log(`Job ${jobId}: Block D chunk ${lineOffset}-${newOffset} processed, self-invoking for next`);
+        console.log(`Job ${jobId}: Block D chunk processed (cursor: ${cursor}->${lastId}), self-invoking for next`);
         
         return new Response(
           JSON.stringify({ 
             success: true, 
-            message: `Block D chunk ${lineOffset}-${newOffset} processed, continuing...`,
+            message: `Block D chunk processed, continuing...`,
             counts
           }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
