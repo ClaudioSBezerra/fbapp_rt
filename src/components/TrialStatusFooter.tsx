@@ -1,6 +1,5 @@
 import { Clock, Sparkles } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
-import { Badge } from '@/components/ui/badge';
 
 interface TrialStatusFooterProps {
   daysRemaining: number;
@@ -16,9 +15,9 @@ export function TrialStatusFooter({ daysRemaining, trialExpired }: TrialStatusFo
     return (
       <div className="px-2 py-3 rounded-lg bg-destructive/20 border border-destructive/30">
         <div className="flex items-center gap-2 mb-1">
-          <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
+          <span className="text-[10px] px-1.5 py-0 rounded font-medium bg-destructive text-destructive-foreground">
             EXPIRADO
-          </Badge>
+          </span>
         </div>
         <p className="text-[10px] text-destructive">
           Período de teste encerrado
@@ -37,16 +36,15 @@ export function TrialStatusFooter({ daysRemaining, trialExpired }: TrialStatusFo
     }`}>
       <div className="flex items-center gap-2 mb-2">
         <Sparkles className={`h-3 w-3 ${isEnding ? 'text-warning' : 'text-sidebar-primary'}`} />
-        <Badge 
-          variant="secondary" 
-          className={`text-[10px] px-1.5 py-0 ${
+        <span 
+          className={`text-[10px] px-1.5 py-0 rounded font-medium ${
             isEnding 
-              ? 'bg-warning/30 text-warning border-warning/50' 
+              ? 'bg-warning/30 text-warning border border-warning/50' 
               : 'bg-sidebar-primary/20 text-sidebar-primary'
           }`}
         >
           SIMULAÇÃO
-        </Badge>
+        </span>
       </div>
       
       <div className="space-y-1.5">
