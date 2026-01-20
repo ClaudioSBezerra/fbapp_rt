@@ -541,10 +541,16 @@ export type Database = {
           id: string
           import_scope: string
           mes_ano: string | null
+          parsing_offset: number | null
+          parsing_total_lines: number | null
           progress: number
           record_limit: number | null
           started_at: string | null
           status: string
+          temp_block0_lines: string[] | null
+          temp_blocka_lines: string[] | null
+          temp_blockc_lines: string[] | null
+          temp_blockd_lines: string[] | null
           total_lines: number
           updated_at: string
           user_id: string
@@ -565,10 +571,16 @@ export type Database = {
           id?: string
           import_scope?: string
           mes_ano?: string | null
+          parsing_offset?: number | null
+          parsing_total_lines?: number | null
           progress?: number
           record_limit?: number | null
           started_at?: string | null
           status?: string
+          temp_block0_lines?: string[] | null
+          temp_blocka_lines?: string[] | null
+          temp_blockc_lines?: string[] | null
+          temp_blockd_lines?: string[] | null
           total_lines?: number
           updated_at?: string
           user_id: string
@@ -589,10 +601,16 @@ export type Database = {
           id?: string
           import_scope?: string
           mes_ano?: string | null
+          parsing_offset?: number | null
+          parsing_total_lines?: number | null
           progress?: number
           record_limit?: number | null
           started_at?: string | null
           status?: string
+          temp_block0_lines?: string[] | null
+          temp_blocka_lines?: string[] | null
+          temp_blockc_lines?: string[] | null
+          temp_blockd_lines?: string[] | null
           total_lines?: number
           updated_at?: string
           user_id?: string
