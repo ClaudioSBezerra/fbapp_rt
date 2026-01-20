@@ -9,7 +9,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useRole } from '@/hooks/useRole';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Settings, User, Shield, Building2, Users, Save, Loader2, Lock, Eye, EyeOff } from 'lucide-react';
+import { Settings, User, Shield, Building2, Users, Save, Loader2, Lock, Eye, EyeOff, Trash2, AlertTriangle } from 'lucide-react';
 
 interface UserEmpresa {
   user_id: string;
@@ -24,6 +24,11 @@ interface UserProfile {
   empresas: string[];
 }
 
+interface GrupoEmpresa {
+  id: string;
+  nome: string;
+}
+
 interface Empresa {
   id: string;
   nome: string;
@@ -35,10 +40,12 @@ export default function Configuracoes() {
   
   // Admin management state
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const [grupos, setGrupos] = useState<GrupoEmpresa[]>([]);
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [userEmpresas, setUserEmpresas] = useState<UserEmpresa[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
+  const [cleaning, setCleaning] = useState<string | null>(null);
 
   // Password change state
   const [showPasswordForm, setShowPasswordForm] = useState(false);
@@ -123,10 +130,11 @@ export default function Configuracoes() {
         // Fetch empresas in this tenant
         const { data: gruposData } = await supabase
           .from('grupos_empresas')
-          .select('id')
+          .select('id, nome')
           .eq('tenant_id', tenantId);
 
         if (gruposData && gruposData.length > 0) {
+          setGrupos(gruposData);
           const grupoIds = gruposData.map(g => g.id);
           
           const { data: empresasData } = await supabase
@@ -230,6 +238,29 @@ export default function Configuracoes() {
       toast.error('Erro ao salvar permissões');
     } finally {
       setSaving(null);
+    }
+  };
+
+  const handleCleanGroup = async (grupoId: string) => {
+    if (!confirm('ATENÇÃO: Isso apagará TODAS as empresas, filiais e dados deste grupo. Esta ação é irreversível. Deseja continuar?')) {
+      return;
+    }
+
+    setCleaning(grupoId);
+    try {
+      const { error } = await supabase.rpc('clean_group_data', { p_grupo_id: grupoId });
+
+      if (error) throw error;
+
+      toast.success('Dados do grupo limpos com sucesso!');
+      
+      // Refresh page data
+      window.location.reload();
+    } catch (error: any) {
+      console.error('Error cleaning group:', error);
+      toast.error('Erro ao limpar dados: ' + error.message);
+    } finally {
+      setCleaning(null);
     }
   };
 
@@ -460,6 +491,57 @@ export default function Configuracoes() {
                 ))}
               </div>
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Admin: Danger Zone */}
+      {isAdmin && (
+        <Card className="border-red-200 bg-red-50/30">
+          <CardHeader>
+            <div className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="h-5 w-5" />
+              <div>
+                <CardTitle>Zona de Perigo</CardTitle>
+                <CardDescription className="text-red-600/80">
+                  Ações destrutivas e irreversíveis
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <div>
+                <h3 className="font-medium mb-2">Limpar Dados por Grupo</h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Isso excluirá todas as empresas, filiais, notas fiscais e cadastros vinculados ao grupo selecionado.
+                  Use com extrema cautela.
+                </p>
+                <div className="space-y-2">
+                  {grupos.map(grupo => (
+                    <div key={grupo.id} className="flex items-center justify-between p-3 border border-red-200 rounded-md bg-white">
+                      <span className="font-medium">{grupo.nome}</span>
+                      <Button 
+                        variant="destructive" 
+                        size="sm"
+                        onClick={() => handleCleanGroup(grupo.id)}
+                        disabled={cleaning === grupo.id}
+                      >
+                        {cleaning === grupo.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        ) : (
+                          <Trash2 className="h-4 w-4 mr-2" />
+                        )}
+                        Limpar Tudo
+                      </Button>
+                    </div>
+                  ))}
+                  {grupos.length === 0 && !loading && (
+                    <p className="text-sm italic text-muted-foreground">Nenhum grupo encontrado.</p>
+                  )}
+                </div>
+              </div>
+            </div>
           </CardContent>
         </Card>
       )}
