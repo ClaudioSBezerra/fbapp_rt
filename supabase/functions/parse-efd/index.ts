@@ -272,27 +272,6 @@ serve(async (req) => {
           { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-
-      // DEMO ACCOUNT LIMIT CHECK
-      const { data: limitCheck, error: limitError } = await supabase.rpc("check_demo_import_limits", {
-        _empresa_id: empresaId,
-        _file_type: "contrib",
-        _mes_ano: mesAno,
-      });
-
-      if (!limitError && limitCheck && !limitCheck.allowed) {
-        console.log(`Demo limit reached for empresa ${empresaId}: ${limitCheck.reason}`);
-        await supabase.storage.from("efd-files").remove([filePath]);
-        return new Response(
-          JSON.stringify({ 
-            error: limitCheck.reason,
-            demo_limit: true,
-            current_count: limitCheck.current_count,
-            max_allowed: limitCheck.max_allowed,
-          }),
-          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
     }
 
     // Create import job with mes_ano

@@ -8,7 +8,6 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from "recharts";
 import { Loader2, TrendingDown, TrendingUp, AlertCircle, RefreshCw, Settings } from "lucide-react";
 import { formatFilialDisplayFormatted } from "@/lib/formatFilial";
-import { useDemoStatus, DemoTrialBanner } from "@/hooks/useDemoStatus";
 
 
 interface Aliquota {
@@ -44,9 +43,8 @@ export default function Dashboard() {
   const [filiais, setFiliais] = useState<Filial[]>([]);
   const [filialSelecionada, setFilialSelecionada] = useState<string>("todas");
   const [totais, setTotais] = useState({ icms: 0, pis: 0, cofins: 0, valor: 0 });
+
   const [loadError, setLoadError] = useState<string | null>(null);
-  
-  const { isDemo, daysRemaining, trialExpired, isLoading: demoLoading } = useDemoStatus();
 
   // Carregar dados iniciais: períodos, filiais e alíquotas
   useEffect(() => {
@@ -278,14 +276,6 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Banner de Trial para usuários demo */}
-      {isDemo && !demoLoading && (
-        <DemoTrialBanner 
-          daysRemaining={daysRemaining} 
-          trialExpired={trialExpired}
-        />
-      )}
-      
       {/* Alerta de erro/timeout */}
       {loadError && (
         <Alert variant="destructive" className="mb-4">

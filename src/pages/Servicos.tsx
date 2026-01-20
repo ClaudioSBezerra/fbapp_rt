@@ -567,11 +567,10 @@ export default function Servicos() {
               <div className="border-t pt-2 flex justify-between text-sm font-medium">
                 <span>Diferença:</span>
                 <span className={
-                  (() => {
-                    const diff = (totals.saidas.ibsCbsProj - totals.entradas.ibsCbsProj) - 
-                                 (totals.saidas.pisCofins - totals.entradas.pisCofins);
-                    return diff > 0 ? 'text-destructive' : diff < 0 ? 'text-green-600' : 'text-muted-foreground';
-                  })()
+                  ((totals.saidas.ibsCbsProj - totals.entradas.ibsCbsProj) - 
+                   (totals.saidas.pisCofins - totals.entradas.pisCofins)) < 0
+                    ? 'text-destructive'
+                    : 'text-green-600'
                 }>
                   {formatCurrency(
                     (totals.saidas.ibsCbsProj - totals.entradas.ibsCbsProj) - 

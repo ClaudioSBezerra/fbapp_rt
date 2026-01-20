@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Loader2, CheckCircle, FileText, ArrowRight, AlertCircle, Upload, Clock, XCircle, RefreshCw, Zap, Trash2, AlertTriangle, Shield, Files, Pause, Download, Database, Package, Truck, Layers } from 'lucide-react';
+import { Loader2, CheckCircle, FileText, ArrowRight, AlertCircle, Upload, Clock, XCircle, RefreshCw, Zap, Trash2, AlertTriangle, Shield, Files } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -18,7 +18,6 @@ import { useUploadQueue, QueuedFile } from '@/hooks/useUploadQueue';
 import { MultiUploadProgress } from '@/components/MultiUploadProgress';
 import { toast } from 'sonner';
 import { formatCNPJMasked } from '@/lib/formatFilial';
-import { useDemoStatus, DemoTrialBanner, DemoLimitsBanner } from '@/hooks/useDemoStatus';
 
 interface ImportCounts {
   mercadorias: number;
@@ -28,19 +27,6 @@ interface ImportCounts {
   participantes?: number;
   estabelecimentos?: number;
   refresh_success?: boolean;
-  // Campos da arquitetura 3 camadas (raw tables)
-  raw_c100?: number;
-  raw_c500?: number;
-  raw_fretes?: number;
-  raw_a100?: number;
-  // Resultados da consolidação
-  consolidation?: {
-    mercadorias?: { inserted: number; raw_count: number };
-    energia_agua?: { inserted: number; raw_count: number };
-    fretes?: { inserted: number; raw_count: number };
-    servicos?: { inserted: number; raw_count: number };
-    success?: boolean;
-  };
   seen?: {
     a100?: number;
     c100?: number;
@@ -55,43 +41,6 @@ interface ImportCounts {
   };
 }
 
-// Helper para obter contadores exibíveis (compatível com arquitetura 3 camadas)
-function getDisplayCounts(counts: ImportCounts) {
-  // Durante processamento usa raw counts; após consolidação usa consolidation ou fallback
-  const mercadorias = counts.consolidation?.mercadorias?.inserted ?? counts.mercadorias ?? counts.raw_c100 ?? 0;
-  const energiaAgua = counts.consolidation?.energia_agua?.inserted ?? counts.energia_agua ?? counts.raw_c500 ?? 0;
-  const fretes = counts.consolidation?.fretes?.inserted ?? counts.fretes ?? counts.raw_fretes ?? 0;
-  const servicos = counts.consolidation?.servicos?.inserted ?? counts.servicos ?? counts.raw_a100 ?? 0;
-  
-  // Para exibição durante processamento, mostra raw counts
-  const rawMercadorias = counts.raw_c100 ?? 0;
-  const rawEnergiaAgua = counts.raw_c500 ?? 0;
-  const rawFretes = counts.raw_fretes ?? 0;
-  const rawServicos = counts.raw_a100 ?? 0;
-  
-  return {
-    mercadorias,
-    energiaAgua,
-    fretes,
-    servicos,
-    participantes: counts.participantes ?? 0,
-    estabelecimentos: counts.estabelecimentos ?? 0,
-    rawMercadorias,
-    rawEnergiaAgua,
-    rawFretes,
-    rawServicos,
-    isConsolidated: !!counts.consolidation?.success,
-  };
-}
-
-
-interface ViewRefreshStatus {
-  views_total: number;
-  views_completed: number;
-  current_view: string | null;
-  started_at: string;
-  failed_views?: string[];
-}
 
 interface ImportJob {
   id: string;
@@ -101,7 +50,7 @@ interface ImportJob {
   file_path: string;
   file_name: string;
   file_size: number;
-  status: 'pending' | 'processing' | 'paused' | 'generating' | 'refreshing_views' | 'completed' | 'failed' | 'cancelled';
+  status: 'pending' | 'processing' | 'generating' | 'refreshing_views' | 'completed' | 'failed' | 'cancelled';
   progress: number;
   total_lines: number;
   counts: ImportCounts;
@@ -112,86 +61,6 @@ interface ImportJob {
   updated_at: string;
   bytes_processed: number | null;
   chunk_number: number | null;
-  current_phase?: 'pending' | 'parsing' | 'block_0' | 'block_d' | 'block_a' | 'block_c' | 'consolidating' | 'refreshing_views' | 'completed' | 'failed' | null;
-  view_refresh_status?: ViewRefreshStatus | null;
-}
-
-// Phase configuration for visual display
-const PHASES = ['parsing', 'block_0', 'block_a', 'block_c', 'block_d', 'consolidating', 'refreshing_views'] as const;
-
-function getPhaseInfo(phase: string | null | undefined): { 
-  label: string; 
-  description: string; 
-  icon: typeof Download;
-  colorClass: string;
-  bgClass: string;
-} {
-  switch (phase) {
-    case 'parsing':
-      return { 
-        label: 'Leitura do Arquivo', 
-        description: 'Baixando e processando linhas do arquivo EFD',
-        icon: Download,
-        colorClass: 'text-blue-500',
-        bgClass: 'bg-blue-500'
-      };
-    case 'block_0':
-      return { 
-        label: 'Registros Básicos', 
-        description: 'Processando período, filiais e participantes',
-        icon: Database,
-        colorClass: 'text-cyan-500',
-        bgClass: 'bg-cyan-500'
-      };
-    case 'block_a':
-      return { 
-        label: 'Bloco A - Serviços', 
-        description: 'Processando notas fiscais de serviço (ISS)',
-        icon: FileText,
-        colorClass: 'text-purple-500',
-        bgClass: 'bg-purple-500'
-      };
-    case 'block_c':
-      return { 
-        label: 'Bloco C - Mercadorias', 
-        description: 'Processando NF-e e operações de energia/água',
-        icon: Package,
-        colorClass: 'text-amber-500',
-        bgClass: 'bg-amber-500'
-      };
-    case 'block_d':
-      return { 
-        label: 'Bloco D - Fretes', 
-        description: 'Processando CT-e e telecomunicações',
-        icon: Truck,
-        colorClass: 'text-green-500',
-        bgClass: 'bg-green-500'
-      };
-    case 'consolidating':
-      return { 
-        label: 'Consolidação', 
-        description: 'Agregando dados nas tabelas finais',
-        icon: Layers,
-        colorClass: 'text-indigo-500',
-        bgClass: 'bg-indigo-500'
-      };
-    case 'refreshing_views':
-      return { 
-        label: 'Atualizando Painéis', 
-        description: 'Atualizando visualizações do dashboard',
-        icon: RefreshCw,
-        colorClass: 'text-purple-500',
-        bgClass: 'bg-purple-500'
-      };
-    default:
-      return { 
-        label: 'Processando', 
-        description: 'Em processamento...',
-        icon: Loader2,
-        colorClass: 'text-primary',
-        bgClass: 'bg-primary'
-      };
-  }
 }
 
 interface Empresa {
@@ -246,8 +115,6 @@ function getStatusInfo(status: ImportJob['status']) {
       return { label: 'Aguardando', color: 'bg-muted text-muted-foreground', icon: Clock };
     case 'processing':
       return { label: 'Processando', color: 'bg-primary/10 text-primary', icon: Loader2 };
-    case 'paused':
-      return { label: 'Pausado', color: 'bg-warning/10 text-warning', icon: Pause };
     case 'generating':
       return { label: 'Gerando dados...', color: 'bg-blue-500/10 text-blue-500', icon: Loader2 };
     case 'refreshing_views':
@@ -285,7 +152,6 @@ export default function ImportarEFD() {
   const { isAdmin } = useRole();
   const { empresas: userEmpresas, isLoading: sessionLoading } = useSessionInfo();
   const navigate = useNavigate();
-  const { isDemo, daysRemaining, trialExpired, importCounts, limits, isLoading: demoLoading } = useDemoStatus();
 
   // Trigger parse-efd after upload completes
   const triggerParseEfd = useCallback(async (queuedFile: QueuedFile, filePath: string) => {
@@ -467,7 +333,6 @@ export default function ImportarEFD() {
         ...job,
         counts: (job.counts as unknown) as ImportCounts,
         status: job.status as ImportJob['status'],
-        current_phase: job.current_phase as ImportJob['current_phase'],
       })));
     }
   }, [session?.user?.id]);
@@ -543,7 +408,7 @@ export default function ImportarEFD() {
   // Polling fallback
   useEffect(() => {
     const hasActiveJobs = jobs.some(j => 
-      j.status === 'pending' || j.status === 'processing' || j.status === 'paused' || j.status === 'refreshing_views' || j.status === 'generating'
+      j.status === 'pending' || j.status === 'processing' || j.status === 'refreshing_views' || j.status === 'generating'
     );
     
     if (!hasActiveJobs || !session?.user?.id) return;
@@ -637,31 +502,7 @@ export default function ImportarEFD() {
     }
   };
 
-  const handleResumeJob = async (jobId: string) => {
-    try {
-      toast.info('Retomando importação...');
-      
-      const { error } = await supabase.functions.invoke('process-efd-job', {
-        body: { job_id: jobId }
-      });
-      
-      if (error) throw error;
-      
-      // Clear error message in UI
-      setJobs(prevJobs => prevJobs.map(j => 
-        j.id === jobId ? { ...j, error_message: null } : j
-      ));
-      
-      toast.success('Job retomado com sucesso!');
-      loadJobs();
-    } catch (err) {
-      console.error('Error resuming job:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Erro ao retomar importação';
-      toast.error(errorMessage);
-    }
-  };
-
-  const activeJobs = jobs.filter(j => j.status === 'pending' || j.status === 'processing' || j.status === 'paused' || j.status === 'refreshing_views' || j.status === 'generating');
+  const activeJobs = jobs.filter(j => j.status === 'pending' || j.status === 'processing' || j.status === 'refreshing_views');
   const completedJobs = jobs.filter(j => j.status === 'completed' || j.status === 'failed' || j.status === 'cancelled');
 
   // Animated progress effect for database clearing
@@ -769,21 +610,6 @@ export default function ImportarEFD() {
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
-      {/* Demo Trial Banners */}
-      {isDemo && !demoLoading && (
-        <div className="space-y-4">
-          <DemoTrialBanner 
-            daysRemaining={daysRemaining} 
-            trialExpired={trialExpired}
-          />
-          <DemoLimitsBanner
-            importType="contrib"
-            currentCount={importCounts.efd_contrib}
-            maxCount={limits.efd_contrib}
-          />
-        </div>
-      )}
-      
       {/* Clear Database Confirmation Dialog */}
       <AlertDialog open={showClearConfirm} onOpenChange={(open) => {
         if (!isClearing) {
@@ -1116,94 +942,21 @@ export default function ImportarEFD() {
                     </Badge>
                   </div>
                   
-                  {/* Phase Indicator */}
-                  {job.status === 'processing' && job.current_phase && (() => {
-                    const phaseInfo = getPhaseInfo(job.current_phase);
-                    const PhaseIcon = phaseInfo.icon;
-                    const currentPhaseIndex = PHASES.indexOf(job.current_phase as typeof PHASES[number]);
-                    
-                    return (
-                      <div className="p-3 bg-muted/50 rounded-lg border">
-                        <div className="flex items-center gap-3">
-                          <div className={`p-2 rounded-full bg-background ${phaseInfo.colorClass}`}>
-                            <PhaseIcon className={`h-4 w-4 ${job.current_phase === 'parsing' || job.current_phase === 'consolidating' ? 'animate-pulse' : ''}`} />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between">
-                              <span className={`text-sm font-medium ${phaseInfo.colorClass}`}>
-                                {phaseInfo.label}
-                              </span>
-                              {/* Phase progress dots */}
-                              <div className="flex items-center gap-1">
-                                {PHASES.map((p, i) => (
-                                  <div 
-                                    key={p}
-                                    className={`h-2 w-2 rounded-full transition-colors ${
-                                      currentPhaseIndex > i ? 'bg-positive' :
-                                      currentPhaseIndex === i ? phaseInfo.bgClass :
-                                      'bg-muted-foreground/30'
-                                    }`}
-                                    title={getPhaseInfo(p).label}
-                                  />
-                                ))}
-                              </div>
-                            </div>
-                            <p className="text-xs text-muted-foreground truncate">
-                              {phaseInfo.description}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  {/* Bytes Download Progress (during parsing phase) */}
-                  {job.current_phase === 'parsing' && job.bytes_processed !== null && job.file_size > 0 && (
-                    <div className="p-3 bg-blue-500/5 rounded-lg border border-blue-500/20">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <Download className="h-4 w-4 text-blue-500 animate-bounce" />
-                          <span className="text-sm font-medium text-blue-600">
-                            Download do Arquivo
-                          </span>
-                        </div>
-                        <span className="text-sm font-mono text-blue-600">
-                          {((job.bytes_processed / job.file_size) * 100).toFixed(1)}%
-                        </span>
-                      </div>
-                      
-                      <Progress 
-                        value={(job.bytes_processed / job.file_size) * 100} 
-                        className="h-2 mb-2 [&>div]:bg-blue-500" 
-                      />
-                      
-                      <div className="flex items-center justify-between text-xs text-muted-foreground">
-                        <span>
-                          {formatFileSize(job.bytes_processed)} de {formatFileSize(job.file_size)}
-                        </span>
-                        <span className="text-blue-600">
-                          {job.total_lines > 0 && `${job.total_lines.toLocaleString('pt-BR')} linhas`}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* General Progress */}
                   <div className="space-y-1">
                     <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>Progresso Geral</span>
+                      <span>Progresso</span>
                       <span>{job.progress}%</span>
                     </div>
                     <Progress value={job.progress} className="h-2" />
                     <div className="flex justify-between text-xs text-muted-foreground">
                       <span>
-                        {job.current_phase !== 'parsing' && bytesProgress && <span className="mr-2">{bytesProgress}</span>}
+                        {bytesProgress && <span className="mr-2">{bytesProgress}</span>}
                         {job.chunk_number !== null && job.chunk_number > 0 && (
-                          <span className="text-muted-foreground/70">Chunk {job.chunk_number}</span>
+                          <span className="text-muted-foreground/70">Bloco {job.chunk_number}</span>
                         )}
                       </span>
-                      {job.total_lines > 0 && job.current_phase !== 'parsing' && (
-                        <span>{job.total_lines.toLocaleString('pt-BR')} linhas processadas</span>
+                      {job.total_lines > 0 && (
+                        <span>{job.total_lines.toLocaleString('pt-BR')} linhas</span>
                       )}
                     </div>
                   </div>
@@ -1225,117 +978,16 @@ export default function ImportarEFD() {
                     </div>
                   )}
 
-                  {/* Show error message with resume button for paused/processing jobs */}
-                  {job.error_message && (job.status === 'processing' || job.status === 'paused') && (
-                    <div className="flex items-center gap-3 p-2 rounded-lg bg-warning/10 border border-warning/30">
-                      <AlertTriangle className="h-4 w-4 text-warning flex-shrink-0" />
-                      <span className="text-xs text-warning flex-1">{job.error_message}</span>
-                      <Button 
-                        variant="outline" 
-                        size="sm"
-                        className="border-warning text-warning hover:bg-warning hover:text-warning-foreground h-7 text-xs"
-                        onClick={() => handleResumeJob(job.id)}
-                      >
-                        <RefreshCw className="h-3 w-3 mr-1" />
-                        Retomar
-                      </Button>
+                  {(job.status === 'processing' || job.status === 'refreshing_views') && (
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                      <span>Mercadorias: {job.counts.mercadorias}</span>
+                      <span>Serviços: {job.counts.servicos || 0}</span>
+                      <span>Energia/Água: {job.counts.energia_agua}</span>
+                      <span>Fretes: {job.counts.fretes}</span>
+                      <span>Participantes: {job.counts.participantes || 0}</span>
+                      <span>Estabelecimentos: {job.counts.estabelecimentos || 0}</span>
                     </div>
                   )}
-
-                  {/* Show resume button for paused jobs without error message */}
-                  {job.status === 'paused' && !job.error_message && (
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      className="border-warning text-warning hover:bg-warning hover:text-warning-foreground"
-                      onClick={() => handleResumeJob(job.id)}
-                    >
-                      <RefreshCw className="h-3 w-3 mr-1" />
-                      Retomar Processamento
-                    </Button>
-                  )}
-
-                  {/* Show resume button for stale processing jobs */}
-                  {updateInfo?.isStale && job.status === 'processing' && !job.error_message && (
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      className="border-primary text-primary hover:bg-primary hover:text-primary-foreground"
-                      onClick={() => handleResumeJob(job.id)}
-                    >
-                      <RefreshCw className="h-3 w-3 mr-1" />
-                      Retomar Processamento
-                    </Button>
-                  )}
-
-                  {(job.status === 'processing' || job.status === 'refreshing_views' || job.status === 'generating') && (() => {
-                    const dc = getDisplayCounts(job.counts);
-                    // Durante processamento, mostra raw counts se disponíveis
-                    const showRaw = !dc.isConsolidated && (dc.rawMercadorias > 0 || dc.rawFretes > 0 || dc.rawEnergiaAgua > 0 || dc.rawServicos > 0);
-                    return (
-                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                        <span>Operações: {showRaw ? dc.rawMercadorias : dc.mercadorias}</span>
-                        <span>Serviços: {showRaw ? dc.rawServicos : dc.servicos}</span>
-                        <span>Energia/Água: {showRaw ? dc.rawEnergiaAgua : dc.energiaAgua}</span>
-                        <span>Fretes: {showRaw ? dc.rawFretes : dc.fretes}</span>
-                        <span>Participantes: {dc.participantes}</span>
-                        <span>Estabelecimentos: {dc.estabelecimentos}</span>
-                      </div>
-                    );
-                  })()}
-
-                  {/* View Refresh Progress */}
-                  {job.status === 'refreshing_views' && job.view_refresh_status && (() => {
-                    const vrs = job.view_refresh_status;
-                    const viewProgress = vrs.views_total > 0 
-                      ? (vrs.views_completed / vrs.views_total) * 100 
-                      : 0;
-                    const elapsedSeconds = vrs.started_at 
-                      ? Math.floor((Date.now() - new Date(vrs.started_at).getTime()) / 1000)
-                      : 0;
-                    
-                    return (
-                      <div className="mt-3 p-3 bg-purple-500/5 rounded-lg border border-purple-500/20">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-2">
-                            <RefreshCw className="h-4 w-4 text-purple-500 animate-spin" />
-                            <span className="text-sm font-medium text-purple-600">
-                              Atualizando Painéis
-                            </span>
-                          </div>
-                          <span className="text-sm font-medium text-purple-600">
-                            {vrs.views_completed}/{vrs.views_total}
-                          </span>
-                        </div>
-                        
-                        <Progress 
-                          value={viewProgress} 
-                          className="h-2 mb-2 [&>div]:bg-purple-500" 
-                        />
-                        
-                        <div className="flex items-center justify-between text-xs text-muted-foreground">
-                          <span>
-                            {vrs.current_view ? (
-                              <span className="font-mono text-purple-600">{vrs.current_view}</span>
-                            ) : (
-                              <span className="text-positive">Concluído!</span>
-                            )}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <Clock className="h-3 w-3" />
-                            {elapsedSeconds}s
-                          </span>
-                        </div>
-                        
-                        {vrs.failed_views && vrs.failed_views.length > 0 && (
-                          <div className="mt-2 text-xs text-warning flex items-center gap-1">
-                            <AlertTriangle className="h-3 w-3" />
-                            {vrs.failed_views.length} view(s) com falha
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
 
                   <Button
                     variant="outline"
@@ -1367,6 +1019,7 @@ export default function ImportarEFD() {
               {completedJobs.map((job) => {
                 const statusInfo = getStatusInfo(job.status);
                 const StatusIcon = statusInfo.icon;
+                const totalRecords = job.counts.mercadorias + job.counts.energia_agua + job.counts.fretes;
                 
                 return (
                   <div key={job.id} className="border rounded-lg p-4">
@@ -1383,57 +1036,53 @@ export default function ImportarEFD() {
                       </Badge>
                     </div>
 
-                    {job.status === 'completed' && (() => {
-                      const dc = getDisplayCounts(job.counts);
-                      const total = dc.mercadorias + dc.energiaAgua + dc.fretes + dc.servicos;
-                      return (
-                        <div className="bg-muted/50 rounded-lg p-3 mt-3">
-                          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 text-center">
-                            <div>
-                              <p className="text-lg font-semibold text-foreground">{dc.mercadorias}</p>
-                              <p className="text-xs text-muted-foreground">Operações</p>
-                            </div>
-                            <div>
-                              <p className="text-lg font-semibold text-foreground">{dc.servicos}</p>
-                              <p className="text-xs text-muted-foreground">Serviços</p>
-                            </div>
-                            <div>
-                              <p className="text-lg font-semibold text-foreground">{dc.energiaAgua}</p>
-                              <p className="text-xs text-muted-foreground">Energia/Água</p>
-                            </div>
-                            <div>
-                              <p className="text-lg font-semibold text-foreground">{dc.fretes}</p>
-                              <p className="text-xs text-muted-foreground">Fretes</p>
-                            </div>
-                            <div>
-                              <p className="text-lg font-semibold text-foreground">{dc.participantes}</p>
-                              <p className="text-xs text-muted-foreground">Participantes</p>
-                            </div>
-                            <div>
-                              <p className="text-lg font-semibold text-foreground">{dc.estabelecimentos}</p>
-                              <p className="text-xs text-muted-foreground">Estabelecimentos</p>
-                            </div>
+                    {job.status === 'completed' && (
+                      <div className="bg-muted/50 rounded-lg p-3 mt-3">
+                        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 text-center">
+                          <div>
+                            <p className="text-lg font-semibold text-foreground">{job.counts.mercadorias}</p>
+                            <p className="text-xs text-muted-foreground">Mercadorias</p>
                           </div>
-                          <div className="text-center mt-2 pt-2 border-t border-border">
-                            <p className="text-sm font-medium text-foreground">{total} registros importados</p>
+                          <div>
+                            <p className="text-lg font-semibold text-foreground">{job.counts.servicos || 0}</p>
+                            <p className="text-xs text-muted-foreground">Serviços</p>
                           </div>
-                          {job.counts.seen && (job.counts.seen.d100 !== undefined || job.counts.seen.d500 !== undefined) && (
-                            <div className="text-center mt-2 pt-2 border-t border-border">
-                              <p className="text-xs text-muted-foreground">
-                                Registros detectados no arquivo: 
-                                {job.counts.seen.d100 ? ` D100: ${job.counts.seen.d100}` : ''} 
-                                {job.counts.seen.d500 ? ` D500: ${job.counts.seen.d500}` : ''}
-                                {!job.counts.seen.d100 && !job.counts.seen.d500 && ' nenhum D100/D500'}
-                              </p>
-                            </div>
-                          )}
-                          <div className="flex items-center justify-center gap-2 text-xs text-positive mt-2 pt-2 border-t border-border">
-                            <Shield className="h-3 w-3" />
-                            <span>Arquivo original excluído por segurança</span>
+                          <div>
+                            <p className="text-lg font-semibold text-foreground">{job.counts.energia_agua}</p>
+                            <p className="text-xs text-muted-foreground">Energia/Água</p>
+                          </div>
+                          <div>
+                            <p className="text-lg font-semibold text-foreground">{job.counts.fretes}</p>
+                            <p className="text-xs text-muted-foreground">Fretes</p>
+                          </div>
+                          <div>
+                            <p className="text-lg font-semibold text-foreground">{job.counts.participantes || 0}</p>
+                            <p className="text-xs text-muted-foreground">Participantes</p>
+                          </div>
+                          <div>
+                            <p className="text-lg font-semibold text-foreground">{job.counts.estabelecimentos || 0}</p>
+                            <p className="text-xs text-muted-foreground">Estabelecimentos</p>
                           </div>
                         </div>
-                      );
-                    })()}
+                        <div className="text-center mt-2 pt-2 border-t border-border">
+                          <p className="text-sm font-medium text-foreground">{totalRecords + (job.counts.servicos || 0)} registros importados</p>
+                        </div>
+                        {job.counts.seen && (job.counts.seen.d100 !== undefined || job.counts.seen.d500 !== undefined) && (
+                          <div className="text-center mt-2 pt-2 border-t border-border">
+                            <p className="text-xs text-muted-foreground">
+                              Registros detectados no arquivo: 
+                              {job.counts.seen.d100 ? ` D100: ${job.counts.seen.d100}` : ''} 
+                              {job.counts.seen.d500 ? ` D500: ${job.counts.seen.d500}` : ''}
+                              {!job.counts.seen.d100 && !job.counts.seen.d500 && ' nenhum D100/D500'}
+                            </p>
+                          </div>
+                        )}
+                        <div className="flex items-center justify-center gap-2 text-xs text-positive mt-2 pt-2 border-t border-border">
+                          <Shield className="h-3 w-3" />
+                          <span>Arquivo original excluído por segurança</span>
+                        </div>
+                      </div>
+                    )}
 
                     {job.status === 'failed' && job.error_message && (
                       <div className="bg-destructive/10 rounded-lg p-3 mt-3 flex items-start gap-2">

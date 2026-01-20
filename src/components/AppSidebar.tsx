@@ -10,15 +10,12 @@ import {
   Truck,
   Upload,
   FileText,
-  Users,
-  Clock
+  Users
 } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { useAuth } from '@/hooks/useAuth';
 import { useRole } from '@/hooks/useRole';
 import { useSessionInfo } from '@/hooks/useSessionInfo';
-import { useDemoStatus } from '@/hooks/useDemoStatus';
-import { Progress } from '@/components/ui/progress';
 import { useLocation } from 'react-router-dom';
 import {
   Sidebar,
@@ -47,7 +44,7 @@ const allMenuItems: MenuItem[] = [
   { title: 'Configurações e Parâmetros Gerais', url: '/configuracoes', icon: Settings, adminOnly: true },
   { title: 'Empresas', url: '/empresas', icon: Building2, adminOnly: true },
   { title: 'Alíquotas', url: '/aliquotas', icon: Calculator },
-  { title: 'Operação Comercial', url: '/mercadorias', icon: Package },
+  { title: 'Mercadorias', url: '/mercadorias', icon: Package },
   { title: 'Por Participante', url: '/mercadorias-participante', icon: Users },
   { title: 'Serviços', url: '/servicos', icon: FileText },
   { title: 'Energia e Água', url: '/energia-agua', icon: Zap },
@@ -66,7 +63,6 @@ export function AppSidebar() {
   const { signOut, user } = useAuth();
   const { isAdmin } = useRole();
   const { tenantNome, grupoNome, empresas } = useSessionInfo();
-  const { isDemo, daysRemaining, trialExpired, isLoading: demoLoading } = useDemoStatus();
 
   const isActive = (path: string) => location.pathname === path;
 
@@ -128,93 +124,35 @@ export function AppSidebar() {
 
       <SidebarFooter className="border-t border-sidebar-border p-4">
         {!collapsed && user && (
-          <div className="mb-2 space-y-2">
-            {/* Card do Usuário */}
-            <div className="bg-sidebar-accent/30 rounded-lg p-2 space-y-1">
-              <p className="font-medium text-xs text-sidebar-foreground truncate">
-                {user.user_metadata?.full_name || 'Usuário'}
-              </p>
-              <p className="text-[10px] text-sidebar-foreground/60 truncate">
-                {user.email}
-              </p>
-              {isAdmin && (
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary/20 text-primary">
-                  Administrador
-                </span>
+          <div className="mb-3 px-2 space-y-1">
+            {/* Informações da sessão */}
+            <div className="text-xs space-y-0.5">
+              {/* Ambiente e Grupo na mesma linha */}
+              {(tenantNome || grupoNome) && (
+                <p className="text-sidebar-foreground/80">
+                  {tenantNome}
+                  {tenantNome && grupoNome && ' | '}
+                  {grupoNome}
+                </p>
+              )}
+              
+              {/* Empresa em itálico e negrito */}
+              {empresas.length > 0 && (
+                <p className="font-semibold italic text-sidebar-foreground truncate">
+                  {isAdmin 
+                    ? `Todas (${empresas.length})` 
+                    : empresas.map(e => e.nome).join(', ')}
+                </p>
               )}
             </div>
             
-            {/* Grupo e Empresas */}
-            {grupoNome && (
-              <div className="space-y-1">
-                <div className="flex items-center gap-1.5 text-[10px] text-sidebar-foreground/80">
-                  <Building2 className="h-3 w-3" />
-                  <span className="font-medium">{grupoNome}</span>
-                </div>
-                
-                {empresas.length > 0 && (
-                  <div className="pl-4 space-y-0.5">
-                    {isAdmin ? (
-                      <p className="text-[10px] text-sidebar-foreground/60 italic">
-                        Acesso a todas ({empresas.length} empresas)
-                      </p>
-                    ) : (
-                      <>
-                        {empresas.slice(0, 3).map((e) => (
-                          <p key={e.id} className="text-[10px] text-sidebar-foreground/60 truncate">
-                            • {e.nome}
-                          </p>
-                        ))}
-                        {empresas.length > 3 && (
-                          <p className="text-[10px] text-sidebar-foreground/50 italic">
-                            +{empresas.length - 3} outras
-                          </p>
-                        )}
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
+            {/* Separador */}
+            <div className="border-t border-sidebar-border/50 my-2" />
             
-            {/* Demo Trial Status */}
-            {isDemo && !demoLoading && (
-              <div className={`rounded-lg p-2 ${
-                trialExpired 
-                  ? 'bg-destructive/10 border border-destructive/20' 
-                  : daysRemaining <= 3 
-                    ? 'bg-warning/10 border border-warning/20' 
-                    : 'bg-amber-500/10 border border-amber-500/20'
-              }`}>
-                <div className="flex items-center gap-2 mb-1">
-                  <Clock className={`h-3 w-3 ${
-                    trialExpired ? 'text-destructive' : daysRemaining <= 3 ? 'text-warning' : 'text-amber-600'
-                  }`} />
-                  <span className={`px-1.5 py-0.5 text-[10px] font-bold rounded ${
-                    trialExpired 
-                      ? 'bg-destructive/20 text-destructive' 
-                      : daysRemaining <= 3 
-                        ? 'bg-warning/20 text-warning' 
-                        : 'bg-amber-500/20 text-amber-600'
-                  }`}>
-                    SIMULAÇÃO
-                  </span>
-                </div>
-                <p className={`text-[10px] ${
-                  trialExpired ? 'text-destructive' : daysRemaining <= 3 ? 'text-warning' : 'text-amber-600'
-                }`}>
-                  {trialExpired 
-                    ? 'Período expirado' 
-                    : daysRemaining === 0 
-                      ? 'Último dia!' 
-                      : `${daysRemaining} dia${daysRemaining > 1 ? 's' : ''} restante${daysRemaining > 1 ? 's' : ''}`}
-                </p>
-                <Progress 
-                  value={trialExpired ? 100 : Math.max(0, ((14 - daysRemaining) / 14) * 100)} 
-                  className={`h-1 mt-1 ${trialExpired ? '[&>div]:bg-destructive' : daysRemaining <= 3 ? '[&>div]:bg-warning' : '[&>div]:bg-amber-500'}`}
-                />
-              </div>
-            )}
+            {/* Email do usuário */}
+            <p className="text-xs text-sidebar-foreground/60 truncate">
+              {user.email}
+            </p>
           </div>
         )}
         <Button

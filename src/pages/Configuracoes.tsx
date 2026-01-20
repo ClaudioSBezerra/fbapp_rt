@@ -64,9 +64,7 @@ export default function Configuracoes() {
   const [selectedGrupoForClear, setSelectedGrupoForClear] = useState<string>('');
   const [clearEmpresaDialogOpen, setClearEmpresaDialogOpen] = useState(false);
   const [clearGrupoDialogOpen, setClearGrupoDialogOpen] = useState(false);
-  const [clearTenantDialogOpen, setClearTenantDialogOpen] = useState(false);
   const [confirmationText, setConfirmationText] = useState('');
-  const [tenantConfirmationText, setTenantConfirmationText] = useState('');
 
   // Role management state
   const [promoteDialogOpen, setPromoteDialogOpen] = useState(false);
@@ -74,11 +72,6 @@ export default function Configuracoes() {
   const [selectedUserForRole, setSelectedUserForRole] = useState<UserProfile | null>(null);
   const [isUpdatingRole, setIsUpdatingRole] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
-
-  // Group change state
-  const [userSelectedGrupo, setUserSelectedGrupo] = useState<Record<string, string>>({});
-  const [changeGrupoDialogOpen, setChangeGrupoDialogOpen] = useState(false);
-  const [pendingGrupoChange, setPendingGrupoChange] = useState<{userId: string, newGrupoId: string, userName: string} | null>(null);
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -183,19 +176,6 @@ export default function Configuracoes() {
 
             if (linksData) {
               setUserEmpresas(linksData);
-              
-              // Initialize userSelectedGrupo based on existing links
-              const grupoMap: Record<string, string> = {};
-              (profiles || []).forEach(profile => {
-                const userLinks = linksData.filter(l => l.user_id === profile.id);
-                if (userLinks.length > 0 && empresasData) {
-                  const linkedEmpresa = empresasData.find(e => e.id === userLinks[0].empresa_id);
-                  if (linkedEmpresa) {
-                    grupoMap[profile.id] = linkedEmpresa.grupo_id;
-                  }
-                }
-              });
-              setUserSelectedGrupo(prev => ({ ...prev, ...grupoMap }));
             }
           }
         }
@@ -370,40 +350,6 @@ export default function Configuracoes() {
     }
   };
 
-  const handleClearTenant = async () => {
-    if (tenantConfirmationText !== 'LIMPAR TUDO') {
-      toast.error('Digite "LIMPAR TUDO" para confirmar');
-      return;
-    }
-
-    setIsClearing(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('clear-company-data', {
-        body: { scope: 'tenant' }
-      });
-
-      if (error) throw error;
-
-      if (data.success) {
-        toast.success(data.message);
-        const counts = data.counts;
-        const total = Object.values(counts as Record<string, number>).reduce((a: number, b: number) => a + b, 0);
-        if (total > 0) {
-          toast.info(`${total.toLocaleString('pt-BR')} registros removidos`, { duration: 5000 });
-        }
-      } else {
-        throw new Error(data.error || 'Erro ao limpar dados');
-      }
-    } catch (error: any) {
-      console.error('Error clearing tenant data:', error);
-      toast.error(error.message || 'Erro ao limpar dados do ambiente');
-    } finally {
-      setIsClearing(false);
-      setClearTenantDialogOpen(false);
-      setTenantConfirmationText('');
-    }
-  };
-
   const handlePromoteToAdmin = async () => {
     if (!selectedUserForRole) return;
 
@@ -463,115 +409,34 @@ export default function Configuracoes() {
     }
   };
 
-  const handleGrupoChangeRequest = (userId: string, newGrupoId: string, userName: string) => {
-    const currentGrupoId = userSelectedGrupo[userId];
-    
-    // If same group or no current group, just switch without confirmation
-    if (!currentGrupoId || currentGrupoId === newGrupoId) {
-      setUserSelectedGrupo(prev => ({ ...prev, [userId]: newGrupoId }));
-      return;
-    }
-    
-    // Check if user has any empresas linked in the current group
-    const currentGrupoEmpresas = empresas.filter(e => e.grupo_id === currentGrupoId);
-    const hasLinksInCurrentGrupo = currentGrupoEmpresas.some(e => isUserLinked(userId, e.id));
-    
-    if (hasLinksInCurrentGrupo) {
-      // Show confirmation dialog
-      setPendingGrupoChange({ userId, newGrupoId, userName });
-      setChangeGrupoDialogOpen(true);
-    } else {
-      // No links to remove, just switch
-      setUserSelectedGrupo(prev => ({ ...prev, [userId]: newGrupoId }));
-    }
-  };
-
-  const handleConfirmGrupoChange = async () => {
-    if (!pendingGrupoChange) return;
-    
-    const { userId, newGrupoId } = pendingGrupoChange;
-    const currentGrupoId = userSelectedGrupo[userId];
-    
-    // Get empresas from the old group
-    const oldEmpresaIds = empresas
-      .filter(e => e.grupo_id === currentGrupoId)
-      .map(e => e.id);
-    
-    // Remove links from local state
-    setUserEmpresas(prev => prev.filter(
-      ue => ue.user_id !== userId || !oldEmpresaIds.includes(ue.empresa_id)
-    ));
-    
-    // Update selected grupo
-    setUserSelectedGrupo(prev => ({ ...prev, [userId]: newGrupoId }));
-    
-    // Persist the removal to database
-    try {
-      const { error } = await supabase
-        .from('user_empresas')
-        .delete()
-        .eq('user_id', userId)
-        .in('empresa_id', oldEmpresaIds);
-      
-      if (error) throw error;
-      
-      toast.success('Grupo alterado. Selecione as novas empresas e salve.');
-    } catch (error) {
-      console.error('Error removing old empresa links:', error);
-      toast.error('Erro ao remover permissões antigas');
-    }
-    
-    setChangeGrupoDialogOpen(false);
-    setPendingGrupoChange(null);
-  };
-
-  const getUserCurrentGrupo = (userId: string): string => {
-    // First check if we have a selected grupo for this user
-    if (userSelectedGrupo[userId]) {
-      return userSelectedGrupo[userId];
-    }
-    
-    // Otherwise, try to infer from their linked empresas
-    const userLinks = userEmpresas.filter(ue => ue.user_id === userId);
-    if (userLinks.length > 0) {
-      const linkedEmpresa = empresas.find(e => e.id === userLinks[0].empresa_id);
-      if (linkedEmpresa) {
-        return linkedEmpresa.grupo_id;
-      }
-    }
-    
-    // Default to first grupo if available
-    return grupos[0]?.id || '';
-  };
-
   return (
     <div className="space-y-6 animate-fade-in">
       <div>
-        <h1 className="text-xl font-bold text-foreground">Configurações e Parâmetros Gerais</h1>
-        <p className="text-sm text-muted-foreground">
+        <h1 className="text-2xl font-bold text-foreground">Configurações e Parâmetros Gerais</h1>
+        <p className="text-muted-foreground">
           Gerencie suas preferências, dados da conta e parâmetros do sistema
         </p>
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
         <Card className="border-border/50">
-          <CardHeader className="pb-3">
+          <CardHeader>
             <div className="flex items-center gap-2">
-              <User className="h-4 w-4 text-muted-foreground" />
+              <User className="h-5 w-5 text-muted-foreground" />
               <div>
-                <CardTitle className="text-base">Perfil</CardTitle>
-                <CardDescription className="text-xs">Informações da sua conta</CardDescription>
+                <CardTitle>Perfil</CardTitle>
+                <CardDescription>Informações da sua conta</CardDescription>
               </div>
             </div>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="space-y-4">
             <div>
-              <p className="text-xs text-muted-foreground">E-mail</p>
-              <p className="text-sm font-medium">{user?.email}</p>
+              <p className="text-sm text-muted-foreground">E-mail</p>
+              <p className="font-medium">{user?.email}</p>
             </div>
             <div>
-              <p className="text-xs text-muted-foreground">ID do Usuário</p>
-              <code className="text-[10px] bg-muted px-2 py-1 rounded">
+              <p className="text-sm text-muted-foreground">ID do Usuário</p>
+              <code className="text-xs bg-muted px-2 py-1 rounded">
                 {user?.id}
               </code>
             </div>
@@ -579,19 +444,19 @@ export default function Configuracoes() {
         </Card>
 
         <Card className="border-border/50">
-          <CardHeader className="pb-3">
+          <CardHeader>
             <div className="flex items-center gap-2">
-              <Shield className="h-4 w-4 text-muted-foreground" />
+              <Shield className="h-5 w-5 text-muted-foreground" />
               <div>
-                <CardTitle className="text-base">Segurança</CardTitle>
-                <CardDescription className="text-xs">Configurações de acesso</CardDescription>
+                <CardTitle>Segurança</CardTitle>
+                <CardDescription>Configurações de acesso</CardDescription>
               </div>
             </div>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="space-y-4">
             <div>
-              <p className="text-xs text-muted-foreground">Último acesso</p>
-              <p className="text-sm font-medium">
+              <p className="text-sm text-muted-foreground">Último acesso</p>
+              <p className="font-medium">
                 {user?.last_sign_in_at
                   ? new Date(user.last_sign_in_at).toLocaleString('pt-BR')
                   : 'Primeiro acesso'}
@@ -688,21 +553,21 @@ export default function Configuracoes() {
       {/* Admin: Data Cleanup */}
       {isAdmin && (
         <Card className="border-destructive/30 bg-destructive/5">
-          <CardHeader className="pb-3">
+          <CardHeader>
             <div className="flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-destructive" />
+              <AlertTriangle className="h-5 w-5 text-destructive" />
               <div>
-                <CardTitle className="text-base text-destructive">Limpeza de Dados</CardTitle>
-                <CardDescription className="text-xs">
+                <CardTitle className="text-destructive">Limpeza de Dados</CardTitle>
+                <CardDescription>
                   Ações destrutivas - remova dados transacionais de empresas ou grupos. 
                   A estrutura organizacional será mantida.
                 </CardDescription>
               </div>
             </div>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-6">
             <Alert variant="default" className="border-muted bg-muted/50">
-              <AlertDescription className="text-xs">
+              <AlertDescription className="text-sm">
                 <strong>O que será removido:</strong> Mercadorias, Serviços, Fretes, Energia/Água, Uso e Consumo, Participantes, Jobs de Importação e Filiais.
                 <br />
                 <strong>O que será preservado:</strong> Alíquotas, Estrutura de Tenant/Grupo/Empresa, Usuários e Permissões, Simples Nacional.
@@ -710,8 +575,8 @@ export default function Configuracoes() {
             </Alert>
 
             {/* Clear Empresa */}
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">Limpar dados de uma Empresa</Label>
+            <div className="space-y-3">
+              <Label className="text-base font-medium">Limpar dados de uma Empresa</Label>
               <div className="flex flex-col sm:flex-row gap-3">
                 <Select
                   value={selectedEmpresaForClear}
@@ -804,8 +669,8 @@ export default function Configuracoes() {
             <div className="border-t border-border/50" />
 
             {/* Clear Grupo */}
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">Limpar dados de um Grupo (todas as empresas)</Label>
+            <div className="space-y-3">
+              <Label className="text-base font-medium">Limpar dados de um Grupo (todas as empresas)</Label>
               <div className="flex flex-col sm:flex-row gap-3">
                 <Select
                   value={selectedGrupoForClear}
@@ -894,100 +759,6 @@ export default function Configuracoes() {
                 </Dialog>
               </div>
             </div>
-
-            <div className="border-t border-destructive/20 pt-4 mt-4">
-              {/* Clear Tenant */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 mb-2">
-                  <AlertTriangle className="h-5 w-5 text-destructive" />
-                  <Label className="text-sm font-semibold text-destructive">Limpar Todo o Ambiente</Label>
-                </div>
-                <p className="text-xs text-muted-foreground mb-3">
-                  Remove <strong>TODOS</strong> os dados transacionais de <strong>TODAS</strong> as empresas do ambiente. 
-                  A estrutura organizacional (grupos, empresas) será preservada.
-                </p>
-                
-                <Dialog open={clearTenantDialogOpen} onOpenChange={setClearTenantDialogOpen}>
-                  <Button 
-                    variant="destructive" 
-                    onClick={() => setClearTenantDialogOpen(true)}
-                    disabled={isClearing}
-                    className="w-full sm:w-auto"
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Limpar Todo o Ambiente
-                  </Button>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle className="flex items-center gap-2 text-destructive">
-                        <AlertTriangle className="h-5 w-5" />
-                        ⚠️ Limpar TODO o Ambiente
-                      </DialogTitle>
-                      <DialogDescription className="space-y-2">
-                        <span className="block">
-                          Você está prestes a remover <strong>TODOS os dados transacionais</strong> de <strong>TODAS as empresas</strong> do ambiente:
-                        </span>
-                        <ul className="list-disc list-inside text-xs space-y-1 mt-2">
-                          <li>Mercadorias, Serviços, Fretes</li>
-                          <li>Energia/Água, Uso e Consumo</li>
-                          <li>Participantes, Simples Nacional</li>
-                          <li>Jobs de Importação, Filiais</li>
-                          <li>Tabelas RAW de importação</li>
-                        </ul>
-                        <span className="block mt-3 font-semibold text-destructive">
-                          Esta ação NÃO PODE ser desfeita!
-                        </span>
-                      </DialogDescription>
-                    </DialogHeader>
-                    
-                    <div className="space-y-3 py-4">
-                      <div className="p-3 bg-destructive/10 border border-destructive/20 rounded">
-                        <p className="text-sm font-medium text-destructive">
-                          Digite <strong>"LIMPAR TUDO"</strong> para confirmar:
-                        </p>
-                      </div>
-                      <Input
-                        value={tenantConfirmationText}
-                        onChange={(e) => setTenantConfirmationText(e.target.value.toUpperCase())}
-                        placeholder="LIMPAR TUDO"
-                        autoComplete="off"
-                        className="font-mono"
-                      />
-                    </div>
-                    
-                    <DialogFooter>
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          setClearTenantDialogOpen(false);
-                          setTenantConfirmationText('');
-                        }}
-                        disabled={isClearing}
-                      >
-                        Cancelar
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        onClick={handleClearTenant}
-                        disabled={isClearing || tenantConfirmationText !== 'LIMPAR TUDO'}
-                      >
-                        {isClearing ? (
-                          <>
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                            Limpando...
-                          </>
-                        ) : (
-                          <>
-                            <Trash2 className="h-4 w-4 mr-2" />
-                            Confirmar Limpeza Total
-                          </>
-                        )}
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-              </div>
-            </div>
           </CardContent>
         </Card>
       )}
@@ -995,12 +766,12 @@ export default function Configuracoes() {
       {/* Admin: Role Management */}
       {isAdmin && (
         <Card className="border-border/50">
-          <CardHeader className="pb-3">
+          <CardHeader>
             <div className="flex items-center gap-2">
-              <UserCog className="h-4 w-4 text-muted-foreground" />
+              <UserCog className="h-5 w-5 text-muted-foreground" />
               <div>
-                <CardTitle className="text-base">Gerenciamento de Administradores</CardTitle>
-                <CardDescription className="text-xs">
+                <CardTitle>Gerenciamento de Administradores</CardTitle>
+                <CardDescription>
                   Promova ou rebaixe usuários do seu ambiente. Administradores têm acesso completo a todas as funcionalidades.
                 </CardDescription>
               </div>
@@ -1013,30 +784,30 @@ export default function Configuracoes() {
                 <Skeleton className="h-16 w-full" />
               </div>
             ) : users.length === 0 ? (
-              <div className="text-center py-6 text-muted-foreground">
-                <Users className="h-10 w-10 mx-auto mb-2 opacity-50" />
-                <p className="text-sm">Nenhum outro usuário no ambiente.</p>
-                <p className="text-xs">Quando outros usuários entrarem, você poderá gerenciar suas permissões aqui.</p>
+              <div className="text-center py-8 text-muted-foreground">
+                <Users className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                <p>Nenhum outro usuário no ambiente.</p>
+                <p className="text-sm">Quando outros usuários entrarem, você poderá gerenciar suas permissões aqui.</p>
               </div>
             ) : (
               <div className="space-y-3">
                 {users.map((u) => (
                   <div 
                     key={u.id} 
-                    className="flex items-center justify-between p-3 border border-border/50 rounded-lg hover:bg-muted/30 transition-colors"
+                    className="flex items-center justify-between p-4 border border-border/50 rounded-lg hover:bg-muted/30 transition-colors"
                   >
-                    <div className="flex items-center gap-2">
-                      <div className={`p-1.5 rounded-full ${u.role === 'admin' ? 'bg-primary/10' : 'bg-muted'}`}>
-                        <User className={`h-4 w-4 ${u.role === 'admin' ? 'text-primary' : 'text-muted-foreground'}`} />
+                    <div className="flex items-center gap-3">
+                      <div className={`p-2 rounded-full ${u.role === 'admin' ? 'bg-primary/10' : 'bg-muted'}`}>
+                        <User className={`h-5 w-5 ${u.role === 'admin' ? 'text-primary' : 'text-muted-foreground'}`} />
                       </div>
                       <div>
-                        <p className="text-sm font-medium">{u.full_name || u.email}</p>
-                        <p className="text-xs text-muted-foreground">{u.email}</p>
+                        <p className="font-medium">{u.full_name || u.email}</p>
+                        <p className="text-sm text-muted-foreground">{u.email}</p>
                       </div>
                     </div>
                     
-                    <div className="flex items-center gap-2">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${
+                    <div className="flex items-center gap-3">
+                      <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
                         u.role === 'admin' 
                           ? 'bg-primary/10 text-primary border border-primary/20' 
                           : 'bg-muted text-muted-foreground'
@@ -1077,8 +848,8 @@ export default function Configuracoes() {
               </div>
             )}
             
-            <Alert variant="default" className="mt-3 border-muted bg-muted/50">
-              <AlertDescription className="text-xs">
+            <Alert variant="default" className="mt-4 border-muted bg-muted/50">
+              <AlertDescription className="text-sm">
                 <strong>Administradores</strong> têm acesso total: visualizam todas as empresas, gerenciam usuários, 
                 importam dados e podem executar ações de limpeza.
               </AlertDescription>
@@ -1196,50 +967,15 @@ export default function Configuracoes() {
         </DialogContent>
       </Dialog>
 
-      {/* Group Change Confirmation Dialog */}
-      <Dialog open={changeGrupoDialogOpen} onOpenChange={setChangeGrupoDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-orange-600">
-              <AlertTriangle className="h-5 w-5" />
-              Confirmar Troca de Grupo
-            </DialogTitle>
-            <DialogDescription>
-              Ao trocar o grupo de <strong>{pendingGrupoChange?.userName}</strong>, todas as permissões de empresas do grupo atual serão <strong>removidas</strong>.
-              <br /><br />
-              Você precisará selecionar as novas empresas manualmente e clicar em <strong>Salvar</strong>.
-            </DialogDescription>
-          </DialogHeader>
-          
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setChangeGrupoDialogOpen(false);
-                setPendingGrupoChange(null);
-              }}
-            >
-              Cancelar
-            </Button>
-            <Button
-              onClick={handleConfirmGrupoChange}
-              className="bg-orange-600 hover:bg-orange-700"
-            >
-              Confirmar Troca
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       {/* Admin: User-Empresa Management */}
       {isAdmin && (
         <Card className="border-border/50">
-          <CardHeader className="pb-3">
+          <CardHeader>
             <div className="flex items-center gap-2">
-              <Building2 className="h-4 w-4 text-muted-foreground" />
+              <Building2 className="h-5 w-5 text-muted-foreground" />
               <div>
-                <CardTitle className="text-base">Permissões por Empresa</CardTitle>
-                <CardDescription className="text-xs">
+                <CardTitle>Permissões por Empresa</CardTitle>
+                <CardDescription>
                   Defina quais empresas cada usuário pode acessar. Administradores têm acesso a todas.
                 </CardDescription>
               </div>
@@ -1252,25 +988,25 @@ export default function Configuracoes() {
                 <Skeleton className="h-20 w-full" />
               </div>
             ) : users.length === 0 ? (
-              <div className="text-center py-6 text-muted-foreground">
-                <Users className="h-10 w-10 mx-auto mb-2 opacity-50" />
-                <p className="text-sm">Nenhum outro usuário no ambiente.</p>
-                <p className="text-xs">Quando outros usuários entrarem, você poderá gerenciar suas permissões aqui.</p>
+              <div className="text-center py-8 text-muted-foreground">
+                <Users className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                <p>Nenhum outro usuário no ambiente.</p>
+                <p className="text-sm">Quando outros usuários entrarem, você poderá gerenciar suas permissões aqui.</p>
               </div>
             ) : empresas.length === 0 ? (
-              <div className="text-center py-6 text-muted-foreground">
-                <Building2 className="h-10 w-10 mx-auto mb-2 opacity-50" />
-                <p className="text-sm">Nenhuma empresa cadastrada.</p>
+              <div className="text-center py-8 text-muted-foreground">
+                <Building2 className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                <p>Nenhuma empresa cadastrada.</p>
               </div>
             ) : (
               <div className="space-y-6">
                 {users.map((u) => (
-                  <div key={u.id} className="border border-border/50 rounded-lg p-3">
-                    <div className="flex items-center justify-between mb-3">
+                  <div key={u.id} className="border border-border/50 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-4">
                       <div>
-                        <p className="text-sm font-medium">{u.full_name || u.email}</p>
-                        <p className="text-xs text-muted-foreground">{u.email}</p>
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground mt-1">
+                        <p className="font-medium">{u.full_name || u.email}</p>
+                        <p className="text-sm text-muted-foreground">{u.email}</p>
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-muted text-muted-foreground mt-1">
                           {u.role === 'admin' ? 'Administrador' : u.role === 'viewer' ? 'Visualizador' : 'Usuário'}
                         </span>
                       </div>
@@ -1291,59 +1027,25 @@ export default function Configuracoes() {
                     </div>
                     
                     {u.role === 'admin' ? (
-                      <p className="text-xs text-muted-foreground italic">
+                      <p className="text-sm text-muted-foreground italic">
                         Administradores têm acesso a todas as empresas automaticamente.
                       </p>
                     ) : (
-                      <div className="space-y-4">
-                        {/* Group Selector */}
-                        {grupos.length > 1 && (
-                          <div className="space-y-1.5">
-                            <Label className="text-xs font-medium">Grupo de Empresas</Label>
-                            <Select
-                              value={getUserCurrentGrupo(u.id)}
-                              onValueChange={(val) => handleGrupoChangeRequest(u.id, val, u.full_name || u.email)}
-                            >
-                              <SelectTrigger className="w-full sm:w-64">
-                                <SelectValue placeholder="Selecione o grupo" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {grupos.map(g => (
-                                  <SelectItem key={g.id} value={g.id}>{g.nome}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        )}
-                        
-                        {/* Empresas filtered by selected group */}
-                        <div className="space-y-1.5">
-                          <Label className="text-xs font-medium">
-                            Empresas {grupos.length > 1 ? 'do grupo selecionado' : ''}
-                          </Label>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            {empresas
-                              .filter(empresa => {
-                                const currentGrupo = getUserCurrentGrupo(u.id);
-                                return !currentGrupo || empresa.grupo_id === currentGrupo;
-                              })
-                              .map((empresa) => (
-                                <label
-                                  key={empresa.id}
-                                  className="flex items-center gap-2 p-1.5 rounded-md hover:bg-muted/50 cursor-pointer"
-                                >
-                                  <Checkbox
-                                    checked={isUserLinked(u.id, empresa.id)}
-                                    onCheckedChange={(checked) => 
-                                      handleToggleEmpresa(u.id, empresa.id, checked as boolean)
-                                    }
-                                    className="h-3.5 w-3.5"
-                                  />
-                                  <span className="text-xs">{empresa.nome}</span>
-                                </label>
-                              ))}
-                          </div>
-                        </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {empresas.map((empresa) => (
+                          <label
+                            key={empresa.id}
+                            className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/50 cursor-pointer"
+                          >
+                            <Checkbox
+                              checked={isUserLinked(u.id, empresa.id)}
+                              onCheckedChange={(checked) => 
+                                handleToggleEmpresa(u.id, empresa.id, checked as boolean)
+                              }
+                            />
+                            <span className="text-sm">{empresa.nome}</span>
+                          </label>
+                        ))}
                       </div>
                     )}
                   </div>

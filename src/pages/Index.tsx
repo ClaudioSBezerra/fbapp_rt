@@ -12,7 +12,7 @@ const Index = () => {
       if (user) {
         navigate('/dashboard', { replace: true });
       } else {
-        navigate('/landing', { replace: true });
+        navigate('/auth', { replace: true });
       }
     }
   }, [user, loading, navigate]);

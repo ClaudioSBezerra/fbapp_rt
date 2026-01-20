@@ -240,33 +240,32 @@ serve(async (req) => {
       console.error("Error recording audit log:", auditError);
     }
 
-    // =========== REFRESH VIEWS (RPC CENTRALIZADO) ===========
-    console.log("Refreshing materialized views using centralized RPC...");
-    const { data: refreshResult, error: refreshError } = await supabaseAdmin
-      .rpc('refresh_all_materialized_views');
+    // Atualizar Materialized Views individualmente para evitar timeout
+    console.log("Refreshing materialized views...");
+    const views = [
+      'extensions.mv_mercadorias_aggregated',
+      'extensions.mv_fretes_aggregated',
+      'extensions.mv_energia_agua_aggregated',
+      'extensions.mv_servicos_aggregated',
+      'extensions.mv_mercadorias_participante',
+      'extensions.mv_dashboard_stats',
+      'extensions.mv_uso_consumo_aggregated',
+      'extensions.mv_uso_consumo_detailed',
+      'extensions.mv_fretes_detailed',
+      'extensions.mv_energia_agua_detailed',
+    ];
 
-    if (refreshError) {
-      console.error("Error refreshing views via RPC:", refreshError);
-    } else {
-      console.log(`Views refresh result: ${refreshResult?.refreshed_count || 0}/${refreshResult?.total_views || 11} refreshed in ${refreshResult?.duration_ms || 0}ms`);
-      if (refreshResult?.views_failed?.length > 0) {
-        console.warn("Failed views:", refreshResult.views_failed);
+    for (const view of views) {
+      try {
+        await supabaseAdmin.rpc('exec_sql', {
+          sql: `REFRESH MATERIALIZED VIEW ${view}`
+        });
+        console.log(`Refreshed ${view}`);
+      } catch (err) {
+        console.error(`Failed to refresh ${view}:`, err);
       }
     }
-
-    // =========== VERIFICAÇÃO PÓS-LIMPEZA ===========
-    console.log("Running post-cleanup verification...");
-    const { count: postUsoConsumo } = await supabaseAdmin
-      .from('uso_consumo_imobilizado')
-      .select('*', { count: 'exact', head: true })
-      .in('filial_id', filialIds);
-
-    const verification = {
-      uso_consumo_remaining: postUsoConsumo || 0,
-      all_clean: (postUsoConsumo || 0) === 0
-    };
-
-    console.log(`Verification: all_clean=${verification.all_clean}, remaining=${verification.uso_consumo_remaining}`);
+    console.log("Materialized views refresh completed");
 
     const message = `Deletados: ${totalDeleted.uso_consumo.toLocaleString('pt-BR')} registros de Uso/Consumo, ${totalDeleted.import_jobs.toLocaleString('pt-BR')} jobs de importação`;
     console.log(`Cleanup completed: ${message}`);
@@ -275,8 +274,6 @@ serve(async (req) => {
       success: true, 
       deleted: totalDeleted,
       estimated,
-      verification,
-      refresh_result: refreshResult || null,
       message
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

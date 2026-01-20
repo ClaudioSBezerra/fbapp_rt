@@ -536,8 +536,8 @@ export default function EnergiaAgua() {
                 </div>
                 <div className="flex justify-between items-center pt-1 border-t">
                   <span className="text-[10px] text-muted-foreground">Dif. deb/cred.:</span>
-                  <Badge variant={totaisCreditos.diferencaReal > 0 ? 'destructive' : totaisCreditos.diferencaReal < 0 ? 'default' : 'secondary'} className={totaisCreditos.diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}>
-                    {totaisCreditos.diferencaReal > 0 ? '+' : ''}{formatCurrency(totaisCreditos.diferencaReal)}
+                  <Badge variant={totaisCreditos.diferencaReal < 0 ? 'destructive' : 'default'} className={totaisCreditos.diferencaReal >= 0 ? 'bg-positive text-positive-foreground' : ''}>
+                    {totaisCreditos.diferencaReal >= 0 ? '+' : ''}{formatCurrency(totaisCreditos.diferencaReal)}
                   </Badge>
                 </div>
               </CardContent>
@@ -597,8 +597,8 @@ export default function EnergiaAgua() {
                 </div>
                 <div className="flex justify-between items-center pt-1 border-t">
                   <span className="text-[10px] text-muted-foreground">Dif. deb/cred.:</span>
-                  <Badge variant={totaisDebitos.diferencaReal > 0 ? 'destructive' : totaisDebitos.diferencaReal < 0 ? 'default' : 'secondary'} className={totaisDebitos.diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}>
-                    {totaisDebitos.diferencaReal > 0 ? '+' : ''}{formatCurrency(totaisDebitos.diferencaReal)}
+                  <Badge variant={totaisDebitos.diferencaReal < 0 ? 'destructive' : 'default'} className={totaisDebitos.diferencaReal >= 0 ? 'bg-positive text-positive-foreground' : ''}>
+                    {totaisDebitos.diferencaReal >= 0 ? '+' : ''}{formatCurrency(totaisDebitos.diferencaReal)}
                   </Badge>
                 </div>
               </CardContent>
