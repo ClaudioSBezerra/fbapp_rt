@@ -1058,30 +1058,46 @@ serve(async (req) => {
 
       // Use upsert with ignoreDuplicates to avoid inserting duplicate records
       // This requires unique constraints on the tables (will be added via migration after data cleanup)
-      const onConflictMap: Record<keyof BatchBuffers, string> = {
+      const onConflictMap: Record<keyof BatchBuffers, string | undefined> = {
         mercadorias: 'filial_id,mes_ano,tipo,descricao,valor,pis,cofins,icms,ipi',
         fretes: 'filial_id,mes_ano,tipo,valor,pis,cofins,icms',
         energia_agua: 'filial_id,mes_ano,tipo_operacao,tipo_servico,valor,pis,cofins,icms',
-        servicos: 'filial_id,mes_ano,tipo,descricao,valor,pis,cofins,iss',
+        // Servicos table currently has no unique constraint, so we can't safely upsert by content
+        // Leaving undefined will cause the code below to fall back to regular insert
+        servicos: undefined, 
         participantes: 'filial_id,cod_part',
       };
       
-      const { error } = await supabase.from(table).upsert(batches[table], { 
-        onConflict: onConflictMap[table],
-        ignoreDuplicates: true 
-      });
-      if (error) {
-        // If unique constraint doesn't exist yet, fall back to insert
-        if (error.message.includes('constraint') || error.message.includes('unique')) {
-          console.log(`Job ${jobId}: Constraint not found for ${table}, using insert (duplicates may occur)`);
-          const { error: insertError } = await supabase.from(table).insert(batches[table]);
-          if (insertError) {
-            console.error(`Insert error for ${table}:`, insertError);
-            return insertError.message;
+      const conflictTarget = onConflictMap[table];
+      
+      // If we have a conflict target defined, try upsert
+      if (conflictTarget) {
+        const { error } = await supabase.from(table).upsert(batches[table], { 
+          onConflict: conflictTarget,
+          ignoreDuplicates: true 
+        });
+        
+        if (error) {
+          // If unique constraint doesn't exist yet, fall back to insert
+          if (error.message.includes('constraint') || error.message.includes('unique') || error.message.includes('does not exist')) {
+            console.log(`Job ${jobId}: Constraint issue for ${table} (${error.message}), using insert fallback`);
+            const { error: insertError } = await supabase.from(table).insert(batches[table]);
+            if (insertError) {
+              console.error(`Insert fallback error for ${table}:`, insertError);
+              return insertError.message;
+            }
+          } else {
+            console.error(`Upsert error for ${table}:`, error);
+            return error.message;
           }
-        } else {
-          console.error(`Upsert error for ${table}:`, error);
-          return error.message;
+        }
+      } else {
+        // No conflict target defined (e.g. servicos), use direct insert
+        // Note: This may create duplicates if the same file is imported twice without cleanup
+        const { error: insertError } = await supabase.from(table).insert(batches[table]);
+        if (insertError) {
+          console.error(`Direct insert error for ${table}:`, insertError);
+          return insertError.message;
         }
       }
 
