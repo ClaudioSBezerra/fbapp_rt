@@ -1119,24 +1119,74 @@ async function refreshMaterializedViews(supabase: any, jobId: string): Promise<n
     'extensions.mv_participantes_cache',
   ];
 
+  const totalViews = viewsToRefresh.length;
+  const failedViews: string[] = [];
+  const startedAt = new Date().toISOString();
+
+  // Inicializa status de refresh
+  await supabase.from("import_jobs").update({ 
+    view_refresh_status: {
+      views_total: totalViews,
+      views_completed: 0,
+      current_view: viewsToRefresh[0].replace('extensions.', ''),
+      started_at: startedAt,
+      failed_views: []
+    }
+  }).eq("id", jobId);
+
   let viewsRefreshed = 0;
-  for (const view of viewsToRefresh) {
+  for (let i = 0; i < viewsToRefresh.length; i++) {
+    const view = viewsToRefresh[i];
+    const viewName = view.replace('extensions.', '');
+    
+    // Atualiza status com view atual e progresso (90-99%)
+    const progressPercent = Math.round(90 + ((i / totalViews) * 9));
+    await supabase.from("import_jobs").update({ 
+      progress: progressPercent,
+      view_refresh_status: {
+        views_total: totalViews,
+        views_completed: i,
+        current_view: viewName,
+        started_at: startedAt,
+        failed_views: failedViews
+      }
+    }).eq("id", jobId);
+
     try {
       const { error } = await supabase.rpc('exec_sql', {
         sql: `REFRESH MATERIALIZED VIEW ${view}`
       });
       if (error) {
         console.warn(`Job ${jobId}: Failed to refresh ${view}:`, error.message);
+        failedViews.push(viewName);
       } else {
         viewsRefreshed++;
-        console.log(`Job ${jobId}: Refreshed ${view}`);
+        console.log(`Job ${jobId}: Refreshed ${view} (${i + 1}/${totalViews})`);
       }
     } catch (err) {
       console.warn(`Job ${jobId}: Exception refreshing ${view}:`, err);
+      failedViews.push(viewName);
     }
   }
+
+  // Atualiza status final
+  await supabase.from("import_jobs").update({ 
+    progress: 99,
+    view_refresh_status: {
+      views_total: totalViews,
+      views_completed: totalViews,
+      current_view: null,
+      started_at: startedAt,
+      failed_views: failedViews
+    }
+  }).eq("id", jobId);
   
-  console.log(`Job ${jobId}: Refreshed ${viewsRefreshed}/${viewsToRefresh.length} views`);
+  // Limpa view_refresh_status ao finalizar
+  await supabase.from("import_jobs").update({ 
+    view_refresh_status: null 
+  }).eq("id", jobId);
+  
+  console.log(`Job ${jobId}: Refreshed ${viewsRefreshed}/${totalViews} views`);
   return viewsRefreshed;
 }
 

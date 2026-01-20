@@ -85,6 +85,14 @@ function getDisplayCounts(counts: ImportCounts) {
 }
 
 
+interface ViewRefreshStatus {
+  views_total: number;
+  views_completed: number;
+  current_view: string | null;
+  started_at: string;
+  failed_views?: string[];
+}
+
 interface ImportJob {
   id: string;
   user_id: string;
@@ -104,6 +112,7 @@ interface ImportJob {
   updated_at: string;
   bytes_processed: number | null;
   chunk_number: number | null;
+  view_refresh_status?: ViewRefreshStatus | null;
 }
 
 interface Empresa {
@@ -1049,6 +1058,59 @@ export default function ImportarEFD() {
                         <span>Fretes: {showRaw ? dc.rawFretes : dc.fretes}</span>
                         <span>Participantes: {dc.participantes}</span>
                         <span>Estabelecimentos: {dc.estabelecimentos}</span>
+                      </div>
+                    );
+                  })()}
+
+                  {/* View Refresh Progress */}
+                  {job.status === 'refreshing_views' && job.view_refresh_status && (() => {
+                    const vrs = job.view_refresh_status;
+                    const viewProgress = vrs.views_total > 0 
+                      ? (vrs.views_completed / vrs.views_total) * 100 
+                      : 0;
+                    const elapsedSeconds = vrs.started_at 
+                      ? Math.floor((Date.now() - new Date(vrs.started_at).getTime()) / 1000)
+                      : 0;
+                    
+                    return (
+                      <div className="mt-3 p-3 bg-purple-500/5 rounded-lg border border-purple-500/20">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <RefreshCw className="h-4 w-4 text-purple-500 animate-spin" />
+                            <span className="text-sm font-medium text-purple-600">
+                              Atualizando Painéis
+                            </span>
+                          </div>
+                          <span className="text-sm font-medium text-purple-600">
+                            {vrs.views_completed}/{vrs.views_total}
+                          </span>
+                        </div>
+                        
+                        <Progress 
+                          value={viewProgress} 
+                          className="h-2 mb-2 [&>div]:bg-purple-500" 
+                        />
+                        
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <span>
+                            {vrs.current_view ? (
+                              <span className="font-mono text-purple-600">{vrs.current_view}</span>
+                            ) : (
+                              <span className="text-positive">Concluído!</span>
+                            )}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            {elapsedSeconds}s
+                          </span>
+                        </div>
+                        
+                        {vrs.failed_views && vrs.failed_views.length > 0 && (
+                          <div className="mt-2 text-xs text-warning flex items-center gap-1">
+                            <AlertTriangle className="h-3 w-3" />
+                            {vrs.failed_views.length} view(s) com falha
+                          </div>
+                        )}
                       </div>
                     );
                   })()}
