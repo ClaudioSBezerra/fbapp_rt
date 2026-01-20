@@ -70,28 +70,20 @@ const DemoSignup = () => {
     setIsSubmitting(true);
 
     try {
-      // 1. Create user in Supabase Auth
+      // 1. Create user in Supabase Auth (auto-confirm enabled)
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/`,
-          data: {
-            full_name: fullName,
-          },
+          data: { full_name: fullName },
         },
       });
 
-      if (authError) {
-        throw authError;
-      }
-
-      if (!authData.user) {
-        throw new Error('Erro ao criar usuário');
-      }
+      if (authError) throw authError;
+      if (!authData.user) throw new Error('Erro ao criar usuário');
 
       // 2. Call the demo-signup edge function to set up the demo environment
-      const { data: demoData, error: demoError } = await supabase.functions.invoke('demo-signup', {
+      const { error: demoError } = await supabase.functions.invoke('demo-signup', {
         body: {
           user_id: authData.user.id,
           full_name: fullName,
@@ -101,16 +93,15 @@ const DemoSignup = () => {
 
       if (demoError) {
         console.error('Demo setup error:', demoError);
-        // Don't throw here - user is created, just show warning
         toast({
-          title: 'Conta criada com aviso',
-          description: 'Sua conta foi criada, mas houve um problema ao configurar o ambiente de demonstração. Entre em contato com o suporte.',
+          title: 'Aviso',
+          description: 'Conta criada, mas houve problema ao configurar o ambiente demo.',
           variant: 'destructive',
         });
       } else {
         toast({
-          title: 'Bem-vindo ao período de teste!',
-          description: `Sua conta foi criada com sucesso. Você tem 14 dias para experimentar o simulador.`,
+          title: 'Bem-vindo!',
+          description: 'Sua conta foi criada com sucesso. Você tem 14 dias de teste.',
         });
       }
 
