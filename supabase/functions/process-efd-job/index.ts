@@ -1971,23 +1971,15 @@ serve(async (req) => {
           
           counts.block_c_line_offset = processedLines;
           
-          await supabase.from("import_jobs").update({ 
-            progress: 50 + Math.floor((processedLines / (totalBlockCLines || 1)) * 15),
-            counts
-          }).eq("id", jobId);
+      await supabase.from("import_jobs").update({ 
+        progress: 50 + Math.floor((processedLines / (totalBlockCLines || 1)) * 15),
+        counts,
+        current_phase: "block_c"  // CRITICAL: Ensure next invocation enters block_c flow
+      }).eq("id", jobId);
           
-          // Fire-and-forget for next chunk
-          const selfUrl = `${supabaseUrl}/functions/v1/process-efd-job`;
-          EdgeRuntime.waitUntil(
-            fetch(selfUrl, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${supabaseKey}`,
-              },
-              body: JSON.stringify({ job_id: jobId }),
-            }).catch(err => console.error(`Job ${jobId}: Failed to invoke next chunk: ${err}`))
-          );
+      // Fire and forget next chunk with retry mechanism
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      EdgeRuntime.waitUntil(selfInvokeWithRetry(supabaseUrl, supabaseKey, jobId, supabase));
           
           console.log(`Job ${jobId}: First Block C chunk processed (${processedLines} lines), fire-and-forget for next chunk`);
           
@@ -2037,6 +2029,28 @@ serve(async (req) => {
       }).eq("id", jobId);
 
       // ===========================================================================
+      // INTEGRITY CHECK: Verify Block C was fully processed
+      // ===========================================================================
+      const expectedBlockCLines = counts.block_c_total_lines || 0;
+      const processedBlockCOffset = counts.block_c_line_offset || 0;
+
+      if (expectedBlockCLines > 0 && processedBlockCOffset < expectedBlockCLines) {
+        console.error(`Job ${jobId}: INTEGRITY CHECK FAILED - Block C not fully processed: ${processedBlockCOffset}/${expectedBlockCLines}`);
+        
+        await supabase.from("import_jobs").update({ 
+          current_phase: "block_c",
+          error_message: `Block C incompleto: ${processedBlockCOffset}/${expectedBlockCLines} linhas. Retrying...`
+        }).eq("id", jobId);
+        
+        EdgeRuntime.waitUntil(selfInvokeWithRetry(supabaseUrl, supabaseKey, jobId, supabase));
+        
+        return new Response(
+          JSON.stringify({ success: false, message: "Block C incomplete, retrying..." }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // ===========================================================================
       // PHASE 7: REFRESH VIEWS
       // ===========================================================================
       const viewsRefreshed = await refreshMaterializedViews(supabase, jobId);
@@ -2048,7 +2062,7 @@ serve(async (req) => {
       // Cleanup raw lines
       await cleanupRawLines(supabase, jobId);
       
-      await supabase.from("import_jobs").update({ 
+      await supabase.from("import_jobs").update({
         status: "completed",
         progress: 100,
         current_phase: "completed",
@@ -2400,6 +2414,18 @@ serve(async (req) => {
             message: "Consolidation in progress (resumed), continuing...",
             consolidation: consolidationResult
           }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      // Integrity check before finalizing
+      const expectedBlockCLines = counts.block_c_total_lines || 0;
+      const processedBlockCOffset = counts.block_c_line_offset || 0;
+      if (expectedBlockCLines > 0 && processedBlockCOffset < expectedBlockCLines) {
+        console.error(`Job ${jobId}: INTEGRITY CHECK FAILED (consolidating resumption) - Block C: ${processedBlockCOffset}/${expectedBlockCLines}`);
+        await supabase.from("import_jobs").update({ current_phase: "block_c" }).eq("id", jobId);
+        EdgeRuntime.waitUntil(selfInvokeWithRetry(supabaseUrl, supabaseKey, jobId, supabase));
+        return new Response(
+          JSON.stringify({ success: false, message: "Block C incomplete, retrying..." }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
