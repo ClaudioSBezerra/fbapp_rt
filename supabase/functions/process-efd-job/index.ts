@@ -1,6 +1,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+// Declare EdgeRuntime for fire-and-forget background tasks
+declare const EdgeRuntime: {
+  waitUntil(promise: Promise<unknown>): void;
+};
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -1374,23 +1379,24 @@ serve(async (req) => {
         })
         .eq("id", jobId);
 
-      // Re-invoke self to continue processing
-      console.log(`Job ${jobId}: Invoking next chunk...`);
+      // Re-invoke self to continue processing using fire-and-forget pattern
+      // This prevents 504 Gateway Timeout on large files with many chunks
+      console.log(`Job ${jobId}: Invoking next chunk (fire-and-forget)...`);
       const selfUrl = `${supabaseUrl}/functions/v1/process-efd-job`;
       
-      try {
-        const nextChunkResponse = await fetch(selfUrl, {
+      // Fire-and-forget: don't await the response, just schedule the next chunk
+      EdgeRuntime.waitUntil(
+        fetch(selfUrl, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             "Authorization": `Bearer ${supabaseKey}`,
           },
           body: JSON.stringify({ job_id: jobId }),
-        });
-        console.log(`Job ${jobId}: Next chunk invoked, status: ${nextChunkResponse.status}`);
-      } catch (err) {
-        console.error(`Job ${jobId}: Failed to invoke next chunk:`, err);
-      }
+        })
+          .then(res => console.log(`Job ${jobId}: Next chunk invoked, status: ${res.status}`))
+          .catch(err => console.error(`Job ${jobId}: Failed to invoke next chunk:`, err))
+      );
 
       return new Response(
         JSON.stringify({ 
