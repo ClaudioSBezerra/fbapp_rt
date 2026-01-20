@@ -531,6 +531,7 @@ export type Database = {
           completed_at: string | null
           counts: Json
           created_at: string
+          current_phase: string | null
           empresa_id: string
           error_message: string | null
           file_name: string
@@ -554,6 +555,7 @@ export type Database = {
           completed_at?: string | null
           counts?: Json
           created_at?: string
+          current_phase?: string | null
           empresa_id: string
           error_message?: string | null
           file_name: string
@@ -577,6 +579,7 @@ export type Database = {
           completed_at?: string | null
           counts?: Json
           created_at?: string
+          current_phase?: string | null
           empresa_id?: string
           error_message?: string | null
           file_name?: string
