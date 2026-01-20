@@ -253,31 +253,37 @@ function getPeriodFromHeader(fields: string[], efdType: EFDType): string {
 }
 
 // ============================================================================
-// NEW: CHUNKED PARSING WITH DIRECT DB INSERTION
+// NEW: CHUNKED PARSING WITH DIRECT DB INSERTION + RANGE REQUESTS
 // Inserts lines directly into efd_raw_lines table during streaming
+// Uses HTTP Range Requests to avoid re-downloading entire file each chunk
 // ============================================================================
 
 interface ChunkedInsertResult {
   hasMore: boolean;
-  nextOffset: number;
+  nextLineNumber: number;
+  bytesProcessed: number;
   processedInChunk: number;
   linesFiltered: number;
+  partialLine: string;
   blockCounts: { block0: number; blockA: number; blockC: number; blockD: number };
 }
 
 async function separateBlocksChunkedWithInsert(
   fetchResponse: Response,
   validPrefixes: string[],
-  skipLines: number,
   maxLines: number,
   jobId: string,
-  supabase: any
+  supabase: any,
+  initialLineNumber: number,
+  partialLineFromPrevious: string
 ): Promise<ChunkedInsertResult> {
   const INSERT_BATCH_SIZE = RAW_LINES_INSERT_BATCH_SIZE;
   let currentBatch: { job_id: string; block_type: string; line_number: number; content: string }[] = [];
-  let lineCount = 0;
+  let lineCount = initialLineNumber;
   let processedInChunk = 0;
-  let linesFiltered = 0; // Track how many lines were filtered out
+  let linesFiltered = 0;
+  let bytesProcessed = 0;
+  let partialLine = '';
   const blockCounts = { block0: 0, blockA: 0, blockC: 0, blockD: 0 };
 
   const flushBatch = async () => {
@@ -289,35 +295,64 @@ async function separateBlocksChunkedWithInsert(
     currentBatch = [];
   };
 
-  console.log(`Job ${jobId}: separateBlocksChunkedWithInsert starting at offset ${skipLines}, max lines ${maxLines}, using granular record filtering`);
+  console.log(`Job ${jobId}: separateBlocksChunkedWithInsert starting at line ${initialLineNumber}, max ${maxLines} lines, using Range Requests`);
 
-  const lineStream = fetchResponse.body!
+  // Create a byte-counting passthrough stream
+  const reader = fetchResponse.body!.getReader();
+  const countingStream = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      const { done, value } = await reader.read();
+      if (done) {
+        controller.close();
+        return;
+      }
+      bytesProcessed += value.length;
+      controller.enqueue(value);
+    }
+  });
+
+  const lineStream = countingStream
     .pipeThrough(new TextDecoderStream())
     .pipeThrough(new TextLineStream());
 
-  for await (const line of lineStream) {
+  let isFirstLine = true;
+
+  for await (const rawLine of lineStream) {
+    // Handle partial line from previous chunk (prepend to first line)
+    let line = rawLine;
+    if (isFirstLine && partialLineFromPrevious) {
+      line = partialLineFromPrevious + rawLine;
+      isFirstLine = false;
+    }
+    isFirstLine = false;
+
     const trimmed = line.trim();
-    if (!trimmed || !trimmed.startsWith('|')) continue;
+    if (!trimmed) continue;
+
+    // Check if this looks like an incomplete EFD line (doesn't start with |)
+    // This can happen at chunk boundaries
+    if (!trimmed.startsWith('|')) {
+      // Might be a partial line at the end or corrupted - skip it
+      continue;
+    }
     
     lineCount++;
-    
-    // Skip lines already processed in previous chunks
-    if (lineCount <= skipLines) continue;
+    processedInChunk++;
     
     // Check chunk limit - if we've processed maxLines, return early
     if (processedInChunk >= maxLines) {
       await flushBatch();
-      console.log(`Job ${jobId}: Chunk limit reached at line ${lineCount}, saved ${blockCounts.block0 + blockCounts.blockA + blockCounts.blockC + blockCounts.blockD} records, filtered ${linesFiltered}`);
+      console.log(`Job ${jobId}: Chunk limit reached at line ${lineCount}, bytes: ${bytesProcessed}, saved ${blockCounts.block0 + blockCounts.blockA + blockCounts.blockC + blockCounts.blockD} records, filtered ${linesFiltered}`);
       return {
         hasMore: true,
-        nextOffset: lineCount - 1,
+        nextLineNumber: lineCount,
+        bytesProcessed,
         processedInChunk,
         linesFiltered,
+        partialLine: '', // No partial line mid-processing
         blockCounts
       };
     }
-    
-    processedInChunk++;
     
     // GRANULAR FILTERING: Extract the specific record code (e.g., "C170" from "|C170|...")
     const pipeIndex = trimmed.indexOf('|', 1);
@@ -362,14 +397,16 @@ async function separateBlocksChunkedWithInsert(
   await flushBatch();
   const totalSaved = blockCounts.block0 + blockCounts.blockA + blockCounts.blockC + blockCounts.blockD;
   const filterRate = processedInChunk > 0 ? ((linesFiltered / processedInChunk) * 100).toFixed(1) : '0';
-  console.log(`Job ${jobId}: Parsing complete - ${lineCount} total lines, saved ${totalSaved} records, filtered ${linesFiltered} (${filterRate}%)`);
+  console.log(`Job ${jobId}: Parsing complete - ${lineCount} total lines, bytes: ${bytesProcessed}, saved ${totalSaved} records, filtered ${linesFiltered} (${filterRate}%)`);
   console.log(`Job ${jobId}: Block breakdown - Block 0: ${blockCounts.block0}, Block A: ${blockCounts.blockA}, Block C: ${blockCounts.blockC}, Block D: ${blockCounts.blockD}`);
 
   return {
     hasMore: false,
-    nextOffset: lineCount,
+    nextLineNumber: lineCount,
+    bytesProcessed,
     processedInChunk,
     linesFiltered,
+    partialLine: '',
     blockCounts
   };
 }
@@ -1567,8 +1604,9 @@ serve(async (req) => {
         started_at: job.started_at || new Date().toISOString() 
       }).eq("id", jobId);
 
-      // Get current parsing offset from job
-      const parsingOffset = (job as any).parsing_offset || 0;
+      // Get current byte offset and line number from job for Range Request resumption
+      const bytesProcessedSoFar = job.bytes_processed || 0;
+      const currentLineNumber = (job as any).parsing_offset || 0;
 
       // Get signed URL for file
       const { data: signedUrlData, error: signedUrlError } = await supabase.storage
@@ -1579,46 +1617,61 @@ serve(async (req) => {
         throw new Error("Failed to get file URL");
       }
 
-      console.log(`Job ${jobId}: Starting chunked parsing with DB insertion at offset ${parsingOffset}...`);
-      const fetchResponse = await fetch(signedUrlData.signedUrl);
+      // Use HTTP Range Request to resume from last byte position (avoid re-reading entire file)
+      const fetchHeaders: HeadersInit = {};
+      if (bytesProcessedSoFar > 0) {
+        fetchHeaders['Range'] = `bytes=${bytesProcessedSoFar}-`;
+        console.log(`Job ${jobId}: Using Range Request to resume from byte ${bytesProcessedSoFar} (line ~${currentLineNumber})`);
+      } else {
+        console.log(`Job ${jobId}: Starting fresh parsing from byte 0`);
+      }
+
+      const fetchResponse = await fetch(signedUrlData.signedUrl, { headers: fetchHeaders });
       
-      if (!fetchResponse.ok) {
+      // Accept both 200 (full content) and 206 (partial content from Range)
+      if (!fetchResponse.ok && fetchResponse.status !== 206) {
         throw new Error(`Failed to fetch file: ${fetchResponse.status} ${fetchResponse.statusText}`);
       }
 
-      // Use new chunked streaming with direct DB insertion
+      const isRangeResponse = fetchResponse.status === 206;
+      console.log(`Job ${jobId}: Fetch response status ${fetchResponse.status} (Range: ${isRangeResponse})`);
+
+      // Use new chunked streaming with direct DB insertion + Range support
       const result = await separateBlocksChunkedWithInsert(
         fetchResponse, 
         validPrefixes, 
-        parsingOffset, 
         PARSING_CHUNK_SIZE, 
         jobId, 
-        supabase
+        supabase,
+        currentLineNumber,
+        '' // No partial line buffer on initial chunk
       );
       
-      console.log(`Job ${jobId}: Chunk processed - hasMore: ${result.hasMore}, blockCounts:`, result.blockCounts);
+      console.log(`Job ${jobId}: Chunk processed - hasMore: ${result.hasMore}, bytes: ${result.bytesProcessed}, blockCounts:`, result.blockCounts);
 
       if (result.hasMore) {
-        // More lines to parse - save progress (lightweight update) and self-invoke
+        // More lines to parse - save progress with bytes_processed for Range Request resumption
+        const newBytesProcessed = bytesProcessedSoFar + result.bytesProcessed;
         const estimatedTotalLines = job.file_size / 100;
-        const progress = Math.min(9, Math.floor((result.nextOffset / estimatedTotalLines) * 9));
+        const progress = Math.min(9, Math.floor((result.nextLineNumber / estimatedTotalLines) * 9));
         
         await supabase.from("import_jobs").update({ 
           progress,
-          parsing_offset: result.nextOffset,
-          parsing_total_lines: result.nextOffset
+          parsing_offset: result.nextLineNumber,
+          bytes_processed: newBytesProcessed,
+          parsing_total_lines: result.nextLineNumber
         }).eq("id", jobId);
         
         // Fire-and-forget for next chunk
         await new Promise(resolve => setTimeout(resolve, 1000));
         EdgeRuntime.waitUntil(selfInvokeWithRetry(supabaseUrl, supabaseKey, jobId, supabase));
         
-        console.log(`Job ${jobId}: Parsing chunk complete, self-invoking for next chunk at offset ${result.nextOffset}`);
+        console.log(`Job ${jobId}: Parsing chunk complete, saved ${newBytesProcessed} bytes processed, self-invoking for next chunk`);
         
         return new Response(
           JSON.stringify({ 
             success: true, 
-            message: `Parsing chunk processed, offset: ${result.nextOffset}`,
+            message: `Parsing chunk processed, line: ${result.nextLineNumber}, bytes: ${newBytesProcessed}`,
             hasMore: true,
             blockCounts: result.blockCounts
           }),
@@ -1627,14 +1680,16 @@ serve(async (req) => {
       }
 
       // Parsing complete - advance to block_0
-      console.log(`Job ${jobId}: Parsing complete, advancing to block_0 phase`);
+      const finalBytesProcessed = bytesProcessedSoFar + result.bytesProcessed;
+      console.log(`Job ${jobId}: Parsing complete (${finalBytesProcessed} bytes), advancing to block_0 phase`);
       
       await supabase.from("import_jobs").update({ 
         progress: 10,
-        total_lines: result.nextOffset,
+        total_lines: result.nextLineNumber,
+        bytes_processed: finalBytesProcessed,
         current_phase: "block_0",
         parsing_offset: 0,
-        parsing_total_lines: result.nextOffset
+        parsing_total_lines: result.nextLineNumber
       }).eq("id", jobId);
 
       // Continue to block_0 processing in same invocation
