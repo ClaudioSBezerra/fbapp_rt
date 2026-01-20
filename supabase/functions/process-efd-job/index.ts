@@ -15,6 +15,7 @@ const corsHeaders = {
 const BATCH_SIZE = 1000;
 const PROGRESS_UPDATE_INTERVAL = 5000;
 const BLOCK_C_CHUNK_SIZE = 50000; // Process Block C in chunks to avoid timeout
+const BLOCK_D_CHUNK_SIZE = 50000; // Process Block D in chunks to avoid timeout
 const PARSING_CHUNK_SIZE = 200000; // Lines per parsing invocation for chunked streaming (increased)
 const RAW_LINES_INSERT_BATCH_SIZE = 3000; // Batch size for inserting into efd_raw_lines (increased from 500)
 const SELF_INVOKE_MAX_RETRIES = 7; // Increased from 5 to 7 for better resilience
@@ -764,17 +765,42 @@ async function processBlockDFromTable(
   context: BlockContext,
   jobId: string,
   recordLimit: number,
-  counts: InsertCounts
-): Promise<void> {
-  console.log(`Job ${jobId}: Processing Block D from efd_raw_lines table`);
+  counts: InsertCounts,
+  lineOffset: number = 0,
+  maxLines: number = 0
+): Promise<{ processedLines: number; hasMore: boolean }> {
+  console.log(`Job ${jobId}: Processing Block D from efd_raw_lines table, offset: ${lineOffset}, maxLines: ${maxLines}`);
   
-  // Fetch Block D lines from the table
-  const { data: rawLines, error: fetchError } = await supabase
+  // Build query for Block D lines with pagination
+  let query = supabase
     .from('efd_raw_lines')
-    .select('content')
+    .select('content, line_number')
     .eq('job_id', jobId)
     .eq('block_type', 'D')
     .order('line_number', { ascending: true });
+  
+  // Apply offset using line_number comparison for efficiency
+  if (lineOffset > 0) {
+    // Get the line_number at the offset position
+    const { data: offsetData } = await supabase
+      .from('efd_raw_lines')
+      .select('line_number')
+      .eq('job_id', jobId)
+      .eq('block_type', 'D')
+      .order('line_number', { ascending: true })
+      .range(lineOffset, lineOffset);
+    
+    if (offsetData && offsetData.length > 0) {
+      query = query.gte('line_number', offsetData[0].line_number);
+    }
+  }
+  
+  // Apply limit if chunking
+  if (maxLines > 0) {
+    query = query.limit(maxLines);
+  }
+
+  const { data: rawLines, error: fetchError } = await query;
 
   if (fetchError) {
     console.error(`Job ${jobId}: Error fetching Block D lines:`, fetchError);
@@ -782,13 +808,14 @@ async function processBlockDFromTable(
   }
 
   const lines = rawLines?.map((r: { content: string }) => r.content) || [];
-  console.log(`Job ${jobId}: Found ${lines.length} Block D lines in table`);
+  console.log(`Job ${jobId}: Found ${lines.length} Block D lines in table (offset: ${lineOffset})`);
   
   const batch: RawFretesRecord[] = [];
   let currentFilialId: string | null = null;
   let pendingD100: PendingDRecord | null = null;
   let pendingD500: PendingDRecord | null = null;
   let recordCount = 0;
+  let processedLines = 0;
 
   const flushBatch = async () => {
     if (batch.length === 0) return;
@@ -817,6 +844,7 @@ async function processBlockDFromTable(
   for (const line of lines) {
     if (recordLimit > 0 && recordCount >= recordLimit) break;
 
+    processedLines++;
     const fields = line.split("|");
     const registro = fields[1];
 
@@ -983,7 +1011,10 @@ async function processBlockDFromTable(
   finalizePendingD500();
   await flushBatch();
   
-  console.log(`Job ${jobId}: Block D completed - ${recordCount} frete records`);
+  const hasMore = maxLines > 0 && lines.length === maxLines;
+  console.log(`Job ${jobId}: Block D chunk completed - ${recordCount} frete records, processedLines: ${processedLines}, hasMore: ${hasMore}`);
+  
+  return { processedLines, hasMore };
 }
 
 // ============================================================================
@@ -1769,10 +1800,52 @@ serve(async (req) => {
 
       // ===========================================================================
       // PHASE 3: BLOCK D - Process fretes (D100, D500)
+      // With chunking for large datasets
       // ===========================================================================
       if (importScope === 'all' || importScope === 'only_d') {
-        console.log(`Job ${jobId}: Starting Block D processing from table...`);
-        await processBlockDFromTable(supabase, context, jobId, recordLimit, counts);
+        // Get total Block D lines count
+        const { count: totalBlockDLines } = await supabase
+          .from('efd_raw_lines')
+          .select('*', { count: 'exact', head: true })
+          .eq('job_id', jobId)
+          .eq('block_type', 'D');
+        
+        if ((totalBlockDLines || 0) > BLOCK_D_CHUNK_SIZE) {
+          // Large Block D - process first chunk and fire-and-forget for remaining
+          console.log(`Job ${jobId}: Block D has ${totalBlockDLines} lines, processing in chunks...`);
+          
+          const { processedLines, hasMore } = await processBlockDFromTable(
+            supabase, context, jobId, recordLimit, counts, 0, BLOCK_D_CHUNK_SIZE
+          );
+          
+          if (hasMore) {
+            // Save progress and self-invoke for next chunk
+            await supabase.from("import_jobs").update({ 
+              progress: 20 + Math.floor((processedLines / (totalBlockDLines || 1)) * 15),
+              counts: { ...counts, block_d_line_offset: processedLines, block_d_total_lines: totalBlockDLines },
+              current_phase: "block_d"
+            }).eq("id", jobId);
+            
+            // Fire-and-forget for next chunk
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            EdgeRuntime.waitUntil(selfInvokeWithRetry(supabaseUrl, supabaseKey, jobId, supabase));
+            
+            console.log(`Job ${jobId}: First Block D chunk processed (${processedLines} lines), self-invoking for next chunk`);
+            
+            return new Response(
+              JSON.stringify({ 
+                success: true, 
+                message: `Block D chunk 0-${processedLines} processed, continuing...`,
+                counts
+              }),
+              { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          }
+        } else {
+          // Small Block D - process all at once
+          console.log(`Job ${jobId}: Starting Block D processing (${totalBlockDLines} lines)...`);
+          await processBlockDFromTable(supabase, context, jobId, recordLimit, counts, 0, 0);
+        }
       }
       
       await supabase.from("import_jobs").update({ 
@@ -1944,6 +2017,150 @@ serve(async (req) => {
           counts,
           consolidation: consolidationResult
         }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // ===========================================================================
+    // RESUMPTION: BLOCK D - Continue processing remaining chunks
+    // ===========================================================================
+    if (currentPhase === 'block_d') {
+      const lineOffset = (counts as any).block_d_line_offset || 0;
+      
+      console.log(`Job ${jobId}: Resuming Block D from offset ${lineOffset}`);
+
+      // Get context from Block 0 lines in table
+      const context = await processBlock0QuickFromTable(supabase, job.empresa_id, jobId);
+      
+      // Get total Block D lines count
+      const { count: totalBlockDLines } = await supabase
+        .from('efd_raw_lines')
+        .select('*', { count: 'exact', head: true })
+        .eq('job_id', jobId)
+        .eq('block_type', 'D');
+      
+      const actualTotalLines = totalBlockDLines || 0;
+      
+      console.log(`Job ${jobId}: Processing Block D chunk from offset ${lineOffset}, total lines: ${actualTotalLines}`);
+      
+      const { processedLines, hasMore } = await processBlockDFromTable(
+        supabase, context, jobId, recordLimit, counts, lineOffset, BLOCK_D_CHUNK_SIZE
+      );
+      
+      if (hasMore) {
+        // More chunks to process
+        const newOffset = lineOffset + processedLines;
+        const progress = 20 + Math.floor((newOffset / actualTotalLines) * 15);
+        
+        await supabase.from("import_jobs").update({ 
+          progress,
+          counts: { ...counts, block_d_line_offset: newOffset }
+        }).eq("id", jobId);
+        
+        // Fire-and-forget for next chunk
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        EdgeRuntime.waitUntil(selfInvokeWithRetry(supabaseUrl, supabaseKey, jobId, supabase));
+        
+        console.log(`Job ${jobId}: Block D chunk ${lineOffset}-${newOffset} processed, self-invoking for next`);
+        
+        return new Response(
+          JSON.stringify({ 
+            success: true, 
+            message: `Block D chunk ${lineOffset}-${newOffset} processed, continuing...`,
+            counts
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      
+      // All Block D chunks done - proceed to Block A
+      console.log(`Job ${jobId}: Block D completed all chunks, proceeding to Block A`);
+      
+      await supabase.from("import_jobs").update({ 
+        progress: 35,
+        counts,
+        current_phase: "block_a"
+      }).eq("id", jobId);
+
+      // Process Block A
+      if (importScope === 'all' || importScope === 'only_a') {
+        console.log(`Job ${jobId}: Starting Block A processing from table...`);
+        await processBlockAFromTable(supabase, context, jobId, recordLimit, counts);
+      }
+
+      await supabase.from("import_jobs").update({ 
+        progress: 50,
+        counts,
+        current_phase: "block_c"
+      }).eq("id", jobId);
+
+      // Check if Block C needs chunking
+      const { count: totalBlockCLines } = await supabase
+        .from('efd_raw_lines')
+        .select('*', { count: 'exact', head: true })
+        .eq('job_id', jobId)
+        .eq('block_type', 'C');
+
+      if ((totalBlockCLines || 0) > BLOCK_C_CHUNK_SIZE) {
+        // Large Block C - process first chunk
+        const { processedLines: cProcessed, hasMore: cHasMore } = await processBlockCFromTable(
+          supabase, context, jobId, recordLimit, counts, 0, BLOCK_C_CHUNK_SIZE
+        );
+        
+        if (cHasMore) {
+          await supabase.from("import_jobs").update({ 
+            progress: 50 + Math.floor((cProcessed / (totalBlockCLines || 1)) * 15),
+            counts: { ...counts, block_c_line_offset: cProcessed, block_c_total_lines: totalBlockCLines }
+          }).eq("id", jobId);
+          
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          EdgeRuntime.waitUntil(selfInvokeWithRetry(supabaseUrl, supabaseKey, jobId, supabase));
+          
+          return new Response(
+            JSON.stringify({ success: true, message: `Block C started, continuing...` }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      } else {
+        await processBlockCFromTable(supabase, context, jobId, recordLimit, counts, 0, 0);
+      }
+
+      // Continue to consolidation
+      await supabase.from("import_jobs").update({ 
+        progress: 65,
+        counts,
+        current_phase: "consolidating"
+      }).eq("id", jobId);
+      
+      const consolidationResult = await consolidateData(supabase, jobId, supabaseUrl, supabaseKey);
+      
+      if (consolidationResult.needsContinuation) {
+        return new Response(
+          JSON.stringify({ success: true, message: "Consolidation in progress..." }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      
+      await supabase.from("import_jobs").update({ 
+        progress: 90,
+        current_phase: "refreshing_views"
+      }).eq("id", jobId);
+
+      const viewsRefreshed = await refreshMaterializedViews(supabase, jobId);
+      await cleanupRawLines(supabase, jobId);
+
+      await supabase.from("import_jobs").update({ 
+        status: "completed",
+        progress: 100,
+        current_phase: "completed",
+        counts: { ...counts, consolidation: consolidationResult, refresh_success: viewsRefreshed > 0 },
+        completed_at: new Date().toISOString() 
+      }).eq("id", jobId);
+
+      await supabase.storage.from("efd-files").remove([job.file_path]);
+
+      return new Response(
+        JSON.stringify({ success: true, message: "Import completed (resumed from block_d)" }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
