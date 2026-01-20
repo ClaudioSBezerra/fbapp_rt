@@ -216,6 +216,7 @@ interface InsertCounts {
   estabelecimentos: number;
   block_c_line_offset?: number;
   block_c_total_lines?: number;
+  block_c_last_filial_id?: string | null;  // NEW: Persist filial ID across chunks
 }
 
 // ============================================================================
@@ -1037,6 +1038,60 @@ async function processBlockDFromTable(
 // NEW: Reads from efd_raw_lines table with chunked processing
 // ============================================================================
 
+// Helper function to find the last C010 record before a given offset
+async function getLastC010BeforeOffset(
+  supabase: any,
+  jobId: string,
+  lineOffset: number,
+  filialMap: Map<string, string>
+): Promise<string | null> {
+  if (lineOffset === 0) return null;
+  
+  // Get line_number of the first line in our current offset
+  const { data: currentLines, error: currentError } = await supabase
+    .from('efd_raw_lines')
+    .select('line_number')
+    .eq('job_id', jobId)
+    .eq('block_type', 'C')
+    .order('line_number', { ascending: true })
+    .range(lineOffset, lineOffset);
+  
+  if (currentError || !currentLines?.length) {
+    console.log(`Job ${jobId}: Could not determine current line_number for offset ${lineOffset}`);
+    return null;
+  }
+  
+  const currentLineNumber = currentLines[0].line_number;
+  
+  // Find the most recent C010 before this line_number
+  const { data: c010Lines, error: c010Error } = await supabase
+    .from('efd_raw_lines')
+    .select('content')
+    .eq('job_id', jobId)
+    .eq('block_type', 'C')
+    .like('content', '%|C010|%')
+    .lt('line_number', currentLineNumber)
+    .order('line_number', { ascending: false })
+    .limit(1);
+  
+  if (c010Error || !c010Lines?.length) {
+    console.log(`Job ${jobId}: No C010 found before line ${currentLineNumber}`);
+    return null;
+  }
+  
+  // Parse the C010 line to get the CNPJ and resolve to filial_id
+  const c010Content = c010Lines[0].content;
+  const fields = c010Content.split('|');
+  if (fields.length > 2 && fields[2]) {
+    const cnpj = fields[2].replace(/\D/g, '');
+    const filialId = filialMap.get(cnpj) || null;
+    console.log(`Job ${jobId}: Found preceding C010 with CNPJ ${cnpj}, resolved to filial_id: ${filialId}`);
+    return filialId;
+  }
+  
+  return null;
+}
+
 async function processBlockCFromTable(
   supabase: any,
   context: BlockContext,
@@ -1044,9 +1099,10 @@ async function processBlockCFromTable(
   recordLimit: number,
   counts: InsertCounts,
   lineOffset: number = 0,
-  maxLines: number = 0
-): Promise<{ processedLines: number; hasMore: boolean }> {
-  console.log(`Job ${jobId}: Processing Block C from efd_raw_lines table, offset: ${lineOffset}, maxLines: ${maxLines}`);
+  maxLines: number = 0,
+  lastFilialId: string | null = null  // NEW: Accept last filial ID from previous chunk
+): Promise<{ processedLines: number; hasMore: boolean; lastFilialId: string | null }> {
+  console.log(`Job ${jobId}: Processing Block C from efd_raw_lines table, offset: ${lineOffset}, maxLines: ${maxLines}, lastFilialId: ${lastFilialId}`);
   
   // Build query for Block C lines
   let query = supabase
@@ -1072,15 +1128,18 @@ async function processBlockCFromTable(
   console.log(`Job ${jobId}: Fetched ${lines.length} Block C lines from table (offset: ${lineOffset})`);
   
   if (lines.length === 0) {
-    return { processedLines: 0, hasMore: false };
+    return { processedLines: 0, hasMore: false, lastFilialId };
   }
 
   const c100Batch: RawC100Record[] = [];
   const c500Batch: RawC500Record[] = [];
-  let currentFilialId: string | null = null;
+  // FIXED: Initialize with lastFilialId from previous chunk instead of null
+  let currentFilialId: string | null = lastFilialId;
   let c100Count = 0;
   let c500Count = 0;
   let c600Count = 0;
+  
+  console.log(`Job ${jobId}: Starting Block C processing with currentFilialId: ${currentFilialId}`);
 
   const flushC100 = async () => {
     if (c100Batch.length === 0) return;
@@ -1297,12 +1356,13 @@ async function processBlockCFromTable(
   await flushC100();
   await flushC500();
   
-  console.log(`Job ${jobId}: Block C chunk completed - C100: ${c100Count}, C500: ${c500Count}, C600: ${c600Count}`);
+  console.log(`Job ${jobId}: Block C chunk completed - C100: ${c100Count}, C500: ${c500Count}, C600: ${c600Count}, lastFilialId: ${currentFilialId}`);
   
   // Determine if there are more lines to process
   const hasMore = maxLines > 0 && lines.length === maxLines;
   
-  return { processedLines: lines.length, hasMore };
+  // Return the last filial ID for persistence across chunks
+  return { processedLines: lines.length, hasMore, lastFilialId: currentFilialId };
 }
 
 // ============================================================================
@@ -2133,15 +2193,20 @@ serve(async (req) => {
         .eq('block_type', 'C');
 
       if ((totalBlockCLines || 0) > BLOCK_C_CHUNK_SIZE) {
-        // Large Block C - process first chunk
-        const { processedLines: cProcessed, hasMore: cHasMore } = await processBlockCFromTable(
-          supabase, context, jobId, recordLimit, counts, 0, BLOCK_C_CHUNK_SIZE
+        // Large Block C - process first chunk (offset 0, no previous filial)
+        const { processedLines: cProcessed, hasMore: cHasMore, lastFilialId: cLastFilialId } = await processBlockCFromTable(
+          supabase, context, jobId, recordLimit, counts, 0, BLOCK_C_CHUNK_SIZE, null
         );
         
         if (cHasMore) {
           await supabase.from("import_jobs").update({ 
             progress: 50 + Math.floor((cProcessed / (totalBlockCLines || 1)) * 15),
-            counts: { ...counts, block_c_line_offset: cProcessed, block_c_total_lines: totalBlockCLines }
+            counts: { 
+              ...counts, 
+              block_c_line_offset: cProcessed, 
+              block_c_total_lines: totalBlockCLines,
+              block_c_last_filial_id: cLastFilialId  // Persist for next chunk
+            }
           }).eq("id", jobId);
           
           await new Promise(resolve => setTimeout(resolve, 1000));
@@ -2153,7 +2218,7 @@ serve(async (req) => {
           );
         }
       } else {
-        await processBlockCFromTable(supabase, context, jobId, recordLimit, counts, 0, 0);
+        await processBlockCFromTable(supabase, context, jobId, recordLimit, counts, 0, 0, null);
       }
 
       // Continue to consolidation
@@ -2216,15 +2281,25 @@ serve(async (req) => {
       
       const actualTotalLines = totalBlockCLines || 0;
       
-      console.log(`Job ${jobId}: Processing Block C chunk from offset ${lineOffset}, total lines: ${actualTotalLines}`);
+      // FIXED: Recover lastFilialId from counts, or query for the last C010 before this offset
+      let lastFilialId: string | null = counts.block_c_last_filial_id || null;
       
-      const { processedLines, hasMore } = await processBlockCFromTable(
-        supabase, context, jobId, recordLimit, counts, lineOffset, BLOCK_C_CHUNK_SIZE
+      if (!lastFilialId && lineOffset > 0) {
+        // Fallback: query the database for the last C010 before this offset
+        lastFilialId = await getLastC010BeforeOffset(supabase, jobId, lineOffset, context.filialMap);
+        console.log(`Job ${jobId}: Recovered lastFilialId from DB query: ${lastFilialId}`);
+      }
+      
+      console.log(`Job ${jobId}: Processing Block C chunk from offset ${lineOffset}, total lines: ${actualTotalLines}, lastFilialId: ${lastFilialId}`);
+      
+      const { processedLines, hasMore, lastFilialId: newLastFilialId } = await processBlockCFromTable(
+        supabase, context, jobId, recordLimit, counts, lineOffset, BLOCK_C_CHUNK_SIZE, lastFilialId
       );
       
       if (hasMore) {
-        // More chunks to process
+        // More chunks to process - save lastFilialId for next chunk
         counts.block_c_line_offset = lineOffset + processedLines;
+        counts.block_c_last_filial_id = newLastFilialId;  // Persist for next chunk
         const progress = 50 + Math.floor(((lineOffset + processedLines) / actualTotalLines) * 15);
         
         await supabase.from("import_jobs").update({ 
