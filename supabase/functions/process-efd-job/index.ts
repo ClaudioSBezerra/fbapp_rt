@@ -15,11 +15,22 @@ const corsHeaders = {
 const BATCH_SIZE = 1000;
 const PROGRESS_UPDATE_INTERVAL = 5000;
 const BLOCK_C_CHUNK_SIZE = 50000; // Process Block C in chunks to avoid timeout
-const PARSING_CHUNK_SIZE = 150000; // Lines per parsing invocation for chunked streaming
-const RAW_LINES_INSERT_BATCH_SIZE = 500; // Batch size for inserting into efd_raw_lines
-const SELF_INVOKE_MAX_RETRIES = 5; // Increased from 3 to 5 for better resilience
-const SELF_INVOKE_BASE_DELAY_MS = 1000; // Reduced base delay but with exponential backoff
-const SELF_INVOKE_MAX_DELAY_MS = 30000; // Maximum delay cap
+const PARSING_CHUNK_SIZE = 200000; // Lines per parsing invocation for chunked streaming (increased)
+const RAW_LINES_INSERT_BATCH_SIZE = 3000; // Batch size for inserting into efd_raw_lines (increased from 500)
+const SELF_INVOKE_MAX_RETRIES = 7; // Increased from 5 to 7 for better resilience
+const SELF_INVOKE_BASE_DELAY_MS = 2000; // Increased base delay for stability
+const SELF_INVOKE_MAX_DELAY_MS = 45000; // Maximum delay cap (increased)
+
+// ============================================================================
+// REQUIRED RECORDS - Granular filtering to save only records we actually use
+// This dramatically reduces data volume (from ~3.3M to ~250K lines for large files)
+// ============================================================================
+const REQUIRED_RECORDS = new Set([
+  '0000', '0140', '0150',                                    // Block 0: Header, Filiais, Participantes
+  'A010', 'A100',                                            // Block A: Estabelecimento, Documentos de serviços
+  'C010', 'C100', 'C500', 'C600',                            // Block C: Estabelecimento, NFs, Energia/Água, Consolidação
+  'D010', 'D100', 'D101', 'D105', 'D500', 'D501', 'D505',    // Block D: Estabelecimento, CTe, PIS/COFINS sobre frete
+]);
 
 // Helper function to calculate exponential backoff with jitter
 function calculateBackoffDelay(attempt: number, baseDelayMs: number, maxDelayMs: number): number {
@@ -64,8 +75,13 @@ async function selfInvokeWithRetry(
         // Special handling for server temporarily unavailable errors (521/522)
         let delay: number;
         if (status === 521 || status === 522) {
-          delay = 5000 * attempt; // 5s, 10s, 15s, 20s, 25s for server down errors
+          // More aggressive delays for server errors: 8s, 16s, 24s, 32s, 40s, 45s, 45s
+          delay = Math.min(8000 * attempt, SELF_INVOKE_MAX_DELAY_MS);
           console.log(`Job ${jobId}: Server temporarily unavailable (${status}), extended wait ${delay}ms...`);
+        } else if (status >= 500) {
+          // Server errors: exponential backoff with higher base
+          delay = calculateBackoffDelay(attempt, baseDelayMs * 2, SELF_INVOKE_MAX_DELAY_MS);
+          console.log(`Job ${jobId}: Server error (${status}), waiting ${Math.round(delay)}ms...`);
         } else {
           delay = calculateBackoffDelay(attempt, baseDelayMs, SELF_INVOKE_MAX_DELAY_MS);
           console.log(`Job ${jobId}: Waiting ${Math.round(delay)}ms before retry (exponential backoff)...`);
@@ -245,6 +261,7 @@ interface ChunkedInsertResult {
   hasMore: boolean;
   nextOffset: number;
   processedInChunk: number;
+  linesFiltered: number;
   blockCounts: { block0: number; blockA: number; blockC: number; blockD: number };
 }
 
@@ -260,6 +277,7 @@ async function separateBlocksChunkedWithInsert(
   let currentBatch: { job_id: string; block_type: string; line_number: number; content: string }[] = [];
   let lineCount = 0;
   let processedInChunk = 0;
+  let linesFiltered = 0; // Track how many lines were filtered out
   const blockCounts = { block0: 0, blockA: 0, blockC: 0, blockD: 0 };
 
   const flushBatch = async () => {
@@ -271,7 +289,7 @@ async function separateBlocksChunkedWithInsert(
     currentBatch = [];
   };
 
-  console.log(`Job ${jobId}: separateBlocksChunkedWithInsert starting at offset ${skipLines}, max lines ${maxLines}`);
+  console.log(`Job ${jobId}: separateBlocksChunkedWithInsert starting at offset ${skipLines}, max lines ${maxLines}, using granular record filtering`);
 
   const lineStream = fetchResponse.body!
     .pipeThrough(new TextDecoderStream())
@@ -279,7 +297,7 @@ async function separateBlocksChunkedWithInsert(
 
   for await (const line of lineStream) {
     const trimmed = line.trim();
-    if (!trimmed) continue;
+    if (!trimmed || !trimmed.startsWith('|')) continue;
     
     lineCount++;
     
@@ -289,55 +307,69 @@ async function separateBlocksChunkedWithInsert(
     // Check chunk limit - if we've processed maxLines, return early
     if (processedInChunk >= maxLines) {
       await flushBatch();
-      console.log(`Job ${jobId}: Chunk limit reached at line ${lineCount}, inserted block counts:`, blockCounts);
+      console.log(`Job ${jobId}: Chunk limit reached at line ${lineCount}, saved ${blockCounts.block0 + blockCounts.blockA + blockCounts.blockC + blockCounts.blockD} records, filtered ${linesFiltered}`);
       return {
         hasMore: true,
         nextOffset: lineCount - 1,
         processedInChunk,
+        linesFiltered,
         blockCounts
       };
     }
     
     processedInChunk++;
     
-    // Check if line starts with any valid prefix
-    if (!validPrefixes.some(p => trimmed.startsWith(p))) continue;
-
-    let blockType = '';
-    if (trimmed.startsWith('|0')) { 
-      blockType = '0'; 
-      blockCounts.block0++;
-    } else if (trimmed.startsWith('|A')) { 
-      blockType = 'A'; 
-      blockCounts.blockA++;
-    } else if (trimmed.startsWith('|C')) { 
-      blockType = 'C'; 
-      blockCounts.blockC++;
-    } else if (trimmed.startsWith('|D')) { 
-      blockType = 'D'; 
-      blockCounts.blockD++;
+    // GRANULAR FILTERING: Extract the specific record code (e.g., "C170" from "|C170|...")
+    const pipeIndex = trimmed.indexOf('|', 1);
+    if (pipeIndex === -1) {
+      linesFiltered++;
+      continue;
     }
     
-    if (blockType) {
-      currentBatch.push({ 
-        job_id: jobId, 
-        block_type: blockType, 
-        line_number: lineCount, 
-        content: trimmed 
-      });
-      if (currentBatch.length >= INSERT_BATCH_SIZE) {
-        await flushBatch();
-      }
+    const registro = trimmed.substring(1, pipeIndex);
+    
+    // Only save records we actually need for processing
+    if (!REQUIRED_RECORDS.has(registro)) {
+      linesFiltered++;
+      continue;
+    }
+    
+    // Determine block type from first character
+    const blockType = registro.charAt(0);
+    if (!['0', 'A', 'C', 'D'].includes(blockType)) {
+      linesFiltered++;
+      continue;
+    }
+    
+    // Update counters
+    if (blockType === '0') blockCounts.block0++;
+    else if (blockType === 'A') blockCounts.blockA++;
+    else if (blockType === 'C') blockCounts.blockC++;
+    else if (blockType === 'D') blockCounts.blockD++;
+    
+    currentBatch.push({ 
+      job_id: jobId, 
+      block_type: blockType, 
+      line_number: lineCount, 
+      content: trimmed 
+    });
+    
+    if (currentBatch.length >= INSERT_BATCH_SIZE) {
+      await flushBatch();
     }
   }
 
   await flushBatch();
-  console.log(`Job ${jobId}: Parsing complete - total ${lineCount} lines, processed ${processedInChunk} in this chunk, block counts:`, blockCounts);
+  const totalSaved = blockCounts.block0 + blockCounts.blockA + blockCounts.blockC + blockCounts.blockD;
+  const filterRate = processedInChunk > 0 ? ((linesFiltered / processedInChunk) * 100).toFixed(1) : '0';
+  console.log(`Job ${jobId}: Parsing complete - ${lineCount} total lines, saved ${totalSaved} records, filtered ${linesFiltered} (${filterRate}%)`);
+  console.log(`Job ${jobId}: Block breakdown - Block 0: ${blockCounts.block0}, Block A: ${blockCounts.blockA}, Block C: ${blockCounts.blockC}, Block D: ${blockCounts.blockD}`);
 
   return {
     hasMore: false,
     nextOffset: lineCount,
     processedInChunk,
+    linesFiltered,
     blockCounts
   };
 }
