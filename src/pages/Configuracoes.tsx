@@ -568,7 +568,7 @@ export default function Configuracoes() {
           <CardContent className="space-y-6">
             <Alert variant="default" className="border-muted bg-muted/50">
               <AlertDescription className="text-sm">
-                <strong>O que será removido:</strong> Mercadorias, Serviços, Fretes, Energia/Água, Uso e Consumo, Participantes, Jobs de Importação e Filiais.
+                <strong>O que será removido:</strong> Operações de Compra e Venda, Serviços, Fretes, Energia/Água, Uso e Consumo, Participantes, Jobs de Importação e Filiais.
                 <br />
                 <strong>O que será preservado:</strong> Alíquotas, Estrutura de Tenant/Grupo/Empresa, Usuários e Permissões, Simples Nacional.
               </AlertDescription>
