@@ -317,6 +317,41 @@ export type Database = {
           },
         ]
       }
+      efd_raw_lines: {
+        Row: {
+          block_type: string
+          content: string
+          created_at: string
+          id: number
+          job_id: string
+          line_number: number
+        }
+        Insert: {
+          block_type: string
+          content: string
+          created_at?: string
+          id?: number
+          job_id: string
+          line_number: number
+        }
+        Update: {
+          block_type?: string
+          content?: string
+          created_at?: string
+          id?: number
+          job_id?: string
+          line_number?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "efd_raw_lines_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "import_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       empresas: {
         Row: {
           created_at: string
