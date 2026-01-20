@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
-import { TrendingUp, Mail, Lock, User, ArrowLeft } from 'lucide-react';
+import { TrendingUp, Mail, Lock, User, ArrowLeft, Sparkles } from 'lucide-react';
 
 type AuthMode = 'login' | 'signup' | 'forgot';
 
@@ -207,16 +207,29 @@ export default function Auth() {
                 {getButtonText()}
               </Button>
               {mode !== 'forgot' && (
-                <p className="text-sm text-muted-foreground text-center">
-                  {mode === 'login' ? 'Não tem uma conta?' : 'Já tem uma conta?'}{' '}
-                  <button
-                    type="button"
-                    onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
-                    className="text-primary hover:underline font-medium"
-                  >
-                    {mode === 'login' ? 'Criar conta' : 'Fazer login'}
-                  </button>
-                </p>
+                <div className="space-y-3">
+                  <p className="text-sm text-muted-foreground text-center">
+                    {mode === 'login' ? 'Não tem uma conta?' : 'Já tem uma conta?'}{' '}
+                    <button
+                      type="button"
+                      onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
+                      className="text-primary hover:underline font-medium"
+                    >
+                      {mode === 'login' ? 'Criar conta' : 'Fazer login'}
+                    </button>
+                  </p>
+                  {mode === 'login' && (
+                    <div className="pt-3 border-t border-border">
+                      <Link
+                        to="/demo-signup"
+                        className="flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-lg bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 hover:from-amber-500/20 hover:to-orange-500/20 transition-all font-medium text-sm"
+                      >
+                        <Sparkles className="h-4 w-4" />
+                        Experimente grátis por 14 dias
+                      </Link>
+                    </div>
+                  )}
+                </div>
               )}
             </CardFooter>
           </form>
