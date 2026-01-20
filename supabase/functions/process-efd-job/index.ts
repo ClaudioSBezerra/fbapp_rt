@@ -958,26 +958,43 @@ async function processBlockC(
 // CONSOLIDATION - Merge raw records into final tables
 // ============================================================================
 
+// Maximum batches per invocation before fire-and-forget to avoid gateway timeout
+const MAX_CONSOLIDATION_BATCHES_PER_INVOCATION = 15;
+
+interface ConsolidationResult {
+  mercadoriasBatches: number;
+  mercadoriasProcessed: number;
+  otherTypes: any;
+  needsContinuation?: boolean;
+}
+
 async function consolidateData(
   supabase: any,
-  jobId: string
-): Promise<{ mercadoriasBatches: number; mercadoriasProcessed: number; otherTypes: any }> {
+  jobId: string,
+  supabaseUrl?: string,
+  supabaseKey?: string
+): Promise<ConsolidationResult> {
   console.log(`Job ${jobId}: Starting consolidation...`);
 
-  // Adaptive batch consolidation for mercadorias (which can have millions of records)
-  const { data: remainingData } = await supabase
+  // FIXED: Correct count query syntax - count comes directly in the response, not in data
+  const { count: initialRemaining, error: countError } = await supabase
     .from('efd_raw_c100')
-    .select('id', { count: 'exact', head: true })
+    .select('*', { count: 'exact', head: true })
     .eq('import_job_id', jobId);
   
-  const initialRemaining = remainingData?.count || 0;
-  console.log(`Job ${jobId}: ${initialRemaining} raw_c100 records to consolidate`);
+  if (countError) {
+    console.error(`Job ${jobId}: Error counting raw_c100 records:`, countError);
+  }
+  
+  const recordCount = initialRemaining || 0;
+  console.log(`Job ${jobId}: ${recordCount} raw_c100 records to consolidate`);
 
   let batchNumber = 0;
   let totalDeleted = 0;
-  let hasMore = initialRemaining > 0;
+  let hasMore = recordCount > 0;
   let currentBatchSize = 10000;
   let consecutiveFailures = 0;
+  let batchesThisInvocation = 0;
   const MAX_FAILURES = 3;
   const MIN_BATCH_SIZE = 3000;
   const MAX_BATCH_SIZE = 30000;
@@ -986,9 +1003,10 @@ async function consolidateData(
 
   while (hasMore && consecutiveFailures < MAX_FAILURES) {
     batchNumber++;
+    batchesThisInvocation++;
     const batchStart = Date.now();
     
-    console.log(`Job ${jobId}: Consolidation batch ${batchNumber} (size: ${currentBatchSize})...`);
+    console.log(`Job ${jobId}: Consolidation batch ${batchNumber} (size: ${currentBatchSize}, invocation batch: ${batchesThisInvocation})...`);
     
     const { data: batchResult, error: batchError } = await supabase.rpc('consolidar_mercadorias_single_batch', {
       p_job_id: jobId,
@@ -1021,10 +1039,40 @@ async function consolidateData(
     }
 
     // Update progress (70-85% range for mercadorias consolidation)
-    if (initialRemaining > 0) {
-      const consolidationProgress = totalDeleted / initialRemaining;
+    if (recordCount > 0) {
+      const consolidationProgress = totalDeleted / recordCount;
       const progress = Math.min(70 + Math.floor(consolidationProgress * 15), 85);
-      await supabase.from("import_jobs").update({ progress }).eq("id", jobId);
+      await supabase.from("import_jobs").update({ 
+        progress,
+        counts: { consolidation_batches: batchNumber, consolidation_processed: totalDeleted }
+      }).eq("id", jobId);
+    }
+    
+    // Check if we need to fire-and-forget for continuation
+    if (batchesThisInvocation >= MAX_CONSOLIDATION_BATCHES_PER_INVOCATION && hasMore) {
+      console.log(`Job ${jobId}: Reached max batches per invocation (${MAX_CONSOLIDATION_BATCHES_PER_INVOCATION}), will fire-and-forget for continuation`);
+      
+      // Fire-and-forget for next consolidation batch
+      if (supabaseUrl && supabaseKey) {
+        const selfUrl = `${supabaseUrl}/functions/v1/process-efd-job`;
+        EdgeRuntime.waitUntil(
+          fetch(selfUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${supabaseKey}`,
+            },
+            body: JSON.stringify({ job_id: jobId }),
+          }).catch(err => console.error(`Job ${jobId}: Failed to invoke consolidation continuation: ${err}`))
+        );
+      }
+      
+      return {
+        mercadoriasBatches: batchNumber,
+        mercadoriasProcessed: totalDeleted,
+        otherTypes: null,
+        needsContinuation: true
+      };
     }
   }
   
@@ -1045,7 +1093,8 @@ async function consolidateData(
   return {
     mercadoriasBatches: batchNumber,
     mercadoriasProcessed: totalDeleted,
-    otherTypes: consolidationResult
+    otherTypes: consolidationResult,
+    needsContinuation: false
   };
 }
 
@@ -1311,7 +1360,20 @@ serve(async (req) => {
       // PHASE 6: CONSOLIDATION - Merge raw records into final tables
       // ===========================================================================
       console.log(`Job ${jobId}: Starting consolidation...`);
-      const consolidationResult = await consolidateData(supabase, jobId);
+      const consolidationResult = await consolidateData(supabase, jobId, supabaseUrl, supabaseKey);
+
+      // If consolidation needs continuation, return early
+      if (consolidationResult.needsContinuation) {
+        console.log(`Job ${jobId}: Consolidation needs continuation, fire-and-forget already triggered`);
+        return new Response(
+          JSON.stringify({ 
+            success: true, 
+            message: "Consolidation in progress, continuing...",
+            consolidation: consolidationResult
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
 
       await supabase.from("import_jobs").update({ 
         progress: 90,
@@ -1459,7 +1521,20 @@ serve(async (req) => {
         current_phase: "consolidating"
       }).eq("id", jobId);
       
-      const consolidationResult = await consolidateData(supabase, jobId);
+      const consolidationResult = await consolidateData(supabase, jobId, supabaseUrl, supabaseKey);
+      
+      // If consolidation needs continuation, return early
+      if (consolidationResult.needsContinuation) {
+        console.log(`Job ${jobId}: Consolidation needs continuation, fire-and-forget already triggered`);
+        return new Response(
+          JSON.stringify({ 
+            success: true, 
+            message: "Consolidation in progress (resumed from block_c), continuing...",
+            consolidation: consolidationResult
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
       
       await supabase.from("import_jobs").update({ 
         progress: 90,
@@ -1503,7 +1578,20 @@ serve(async (req) => {
     if (currentPhase === 'consolidating') {
       console.log(`Job ${jobId}: Resuming from consolidation phase...`);
       
-      const consolidationResult = await consolidateData(supabase, jobId);
+      const consolidationResult = await consolidateData(supabase, jobId, supabaseUrl, supabaseKey);
+      
+      // If consolidation needs continuation, return early
+      if (consolidationResult.needsContinuation) {
+        console.log(`Job ${jobId}: Consolidation needs continuation, fire-and-forget already triggered`);
+        return new Response(
+          JSON.stringify({ 
+            success: true, 
+            message: "Consolidation in progress (resumed), continuing...",
+            consolidation: consolidationResult
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
       
       await supabase.from("import_jobs").update({ 
         progress: 90,
