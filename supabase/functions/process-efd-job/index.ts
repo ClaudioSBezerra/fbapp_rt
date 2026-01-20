@@ -2358,8 +2358,22 @@ serve(async (req) => {
       );
     }
 
-    // Unknown phase
+    // Unknown phase or failed phase - don't cleanup raw lines for failed jobs
+    // as they may need to be resumed manually
+    if (currentPhase === 'failed') {
+      console.log(`Job ${jobId}: Job is in failed state. To resume, update current_phase to the desired phase.`);
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          message: "Job is in failed state. To resume, update current_phase to desired phase (e.g., block_0, block_d, block_c).",
+          currentPhase: 'failed'
+        }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     console.warn(`Job ${jobId}: Unknown phase ${currentPhase}, marking as failed`);
+    // Only cleanup raw lines for truly unknown phases, not failed
     await cleanupRawLines(supabase, jobId);
     await supabase.from("import_jobs").update({ 
       status: "failed",
@@ -2377,9 +2391,8 @@ serve(async (req) => {
     console.error(`Job ${jobId}: Error:`, error);
     
     if (jobId) {
-      // Cleanup raw lines on error
-      await cleanupRawLines(supabase, jobId);
-      
+      // DON'T cleanup raw lines on error - allow for manual resumption
+      // Cleanup will happen when job completes successfully
       await supabase
         .from("import_jobs")
         .update({ 
