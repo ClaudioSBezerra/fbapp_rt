@@ -103,6 +103,32 @@ interface InsertCounts {
   estabelecimentos: number;
 }
 
+// Log helper function
+async function logJobEvent(
+  supabase: any, 
+  jobId: string, 
+  level: 'info' | 'warning' | 'error', 
+  message: string, 
+  lineNumber?: number, 
+  rawContent?: string
+) {
+  // Don't await logs to avoid slowing down processing too much, just catch errors
+  supabase.from('import_job_logs').insert({
+    job_id: jobId,
+    level,
+    message: message.substring(0, 500),
+    line_number: lineNumber,
+    raw_content: rawContent ? rawContent.substring(0, 1000) : null
+  }).then(({ error }: any) => {
+    if (error) console.error(`Failed to log event: ${error.message}`);
+  });
+  
+  // Also log to console for realtime logs
+  if (level === 'error') console.error(`Job ${jobId}: ${message}`);
+  else if (level === 'warning') console.warn(`Job ${jobId}: ${message}`);
+  else console.log(`Job ${jobId}: ${message}`);
+}
+
 interface SeenCounts {
   a100: number;
   c100: number;
@@ -1062,9 +1088,13 @@ serve(async (req) => {
         mercadorias: 'filial_id,mes_ano,tipo,descricao,valor,pis,cofins,icms,ipi',
         fretes: 'filial_id,mes_ano,tipo,valor,pis,cofins,icms',
         energia_agua: 'filial_id,mes_ano,tipo_operacao,tipo_servico,valor,pis,cofins,icms',
-        // Servicos table currently has no unique constraint, so we can't safely upsert by content
-        // Leaving undefined will cause the code below to fall back to regular insert
-        servicos: undefined, 
+        // Servicos now has a unique index idx_servicos_unique_content
+        // Note: The index covers (filial_id, mes_ano, tipo, COALESCE(descricao, ''), valor, pis, cofins, iss)
+        // For upsert to work, we need to target the constraint name or the columns
+        // Since we created a unique index (not constraint), we might need to rely on the index inference
+        // or explicitly name the constraint if we added one. 
+        // Postgres infers the conflict target from columns.
+        servicos: 'filial_id,mes_ano,tipo,descricao,valor,pis,cofins,iss', 
         participantes: 'filial_id,cod_part',
       };
       
@@ -1080,14 +1110,19 @@ serve(async (req) => {
         if (error) {
           // If unique constraint doesn't exist yet, fall back to insert
           if (error.message.includes('constraint') || error.message.includes('unique') || error.message.includes('does not exist')) {
-            console.log(`Job ${jobId}: Constraint issue for ${table} (${error.message}), using insert fallback`);
+            const msg = `Constraint issue for ${table} (${error.message}), using insert fallback`;
+            console.log(`Job ${jobId}: ${msg}`);
+            logJobEvent(supabase, jobId!, 'warning', msg);
+            
             const { error: insertError } = await supabase.from(table).insert(batches[table]);
             if (insertError) {
               console.error(`Insert fallback error for ${table}:`, insertError);
+              logJobEvent(supabase, jobId!, 'error', `Insert fallback failed for ${table}: ${insertError.message}`);
               return insertError.message;
             }
           } else {
             console.error(`Upsert error for ${table}:`, error);
+            logJobEvent(supabase, jobId!, 'error', `Upsert failed for ${table}: ${error.message}`);
             return error.message;
           }
         }
@@ -1097,6 +1132,7 @@ serve(async (req) => {
         const { error: insertError } = await supabase.from(table).insert(batches[table]);
         if (insertError) {
           console.error(`Direct insert error for ${table}:`, insertError);
+          logJobEvent(supabase, jobId!, 'error', `Direct insert failed for ${table}: ${insertError.message}`);
           return insertError.message;
         }
       }
@@ -1443,7 +1479,11 @@ serve(async (req) => {
           
           // Validar que mes_ano não está vazio antes de processar
           if (!result.record.data.mes_ano) {
-            console.warn(`Job ${jobId}: Skipping record with empty mes_ano (block: ${result.blockType}, line: ${totalLinesProcessed})`);
+            const msg = `Skipping record with empty mes_ano (block: ${result.blockType})`;
+            console.warn(`Job ${jobId}: ${msg}`);
+            // Log to database
+            logJobEvent(supabase, jobId!, 'warning', msg, totalLinesProcessed, trimmedLine);
+            
             linesProcessedInChunk++;
             totalLinesProcessed++;
             continue;
