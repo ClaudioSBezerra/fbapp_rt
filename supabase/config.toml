@@ -1,5 +1,8 @@
 project_id = "yqizlfwylffbdcykkqzx"
 
+[functions.demo-signup]
+verify_jwt = false
+
 [functions.parse-efd-icms]
 verify_jwt = false
 
