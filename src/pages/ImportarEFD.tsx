@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Loader2, CheckCircle, FileText, ArrowRight, AlertCircle, Upload, Clock, XCircle, RefreshCw, Zap, Trash2, AlertTriangle, Shield, Files, Pause } from 'lucide-react';
+import { Loader2, CheckCircle, FileText, ArrowRight, AlertCircle, Upload, Clock, XCircle, RefreshCw, Zap, Trash2, AlertTriangle, Shield, Files, Pause, Download, Database, Package, Truck, Layers } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -112,7 +112,86 @@ interface ImportJob {
   updated_at: string;
   bytes_processed: number | null;
   chunk_number: number | null;
+  current_phase?: 'pending' | 'parsing' | 'block_0' | 'block_d' | 'block_a' | 'block_c' | 'consolidating' | 'refreshing_views' | 'completed' | 'failed' | null;
   view_refresh_status?: ViewRefreshStatus | null;
+}
+
+// Phase configuration for visual display
+const PHASES = ['parsing', 'block_0', 'block_a', 'block_c', 'block_d', 'consolidating', 'refreshing_views'] as const;
+
+function getPhaseInfo(phase: string | null | undefined): { 
+  label: string; 
+  description: string; 
+  icon: typeof Download;
+  colorClass: string;
+  bgClass: string;
+} {
+  switch (phase) {
+    case 'parsing':
+      return { 
+        label: 'Leitura do Arquivo', 
+        description: 'Baixando e processando linhas do arquivo EFD',
+        icon: Download,
+        colorClass: 'text-blue-500',
+        bgClass: 'bg-blue-500'
+      };
+    case 'block_0':
+      return { 
+        label: 'Registros Básicos', 
+        description: 'Processando período, filiais e participantes',
+        icon: Database,
+        colorClass: 'text-cyan-500',
+        bgClass: 'bg-cyan-500'
+      };
+    case 'block_a':
+      return { 
+        label: 'Bloco A - Serviços', 
+        description: 'Processando notas fiscais de serviço (ISS)',
+        icon: FileText,
+        colorClass: 'text-purple-500',
+        bgClass: 'bg-purple-500'
+      };
+    case 'block_c':
+      return { 
+        label: 'Bloco C - Mercadorias', 
+        description: 'Processando NF-e e operações de energia/água',
+        icon: Package,
+        colorClass: 'text-amber-500',
+        bgClass: 'bg-amber-500'
+      };
+    case 'block_d':
+      return { 
+        label: 'Bloco D - Fretes', 
+        description: 'Processando CT-e e telecomunicações',
+        icon: Truck,
+        colorClass: 'text-green-500',
+        bgClass: 'bg-green-500'
+      };
+    case 'consolidating':
+      return { 
+        label: 'Consolidação', 
+        description: 'Agregando dados nas tabelas finais',
+        icon: Layers,
+        colorClass: 'text-indigo-500',
+        bgClass: 'bg-indigo-500'
+      };
+    case 'refreshing_views':
+      return { 
+        label: 'Atualizando Painéis', 
+        description: 'Atualizando visualizações do dashboard',
+        icon: RefreshCw,
+        colorClass: 'text-purple-500',
+        bgClass: 'bg-purple-500'
+      };
+    default:
+      return { 
+        label: 'Processando', 
+        description: 'Em processamento...',
+        icon: Loader2,
+        colorClass: 'text-primary',
+        bgClass: 'bg-primary'
+      };
+  }
 }
 
 interface Empresa {
@@ -388,6 +467,7 @@ export default function ImportarEFD() {
         ...job,
         counts: (job.counts as unknown) as ImportCounts,
         status: job.status as ImportJob['status'],
+        current_phase: job.current_phase as ImportJob['current_phase'],
       })));
     }
   }, [session?.user?.id]);
@@ -1036,21 +1116,94 @@ export default function ImportarEFD() {
                     </Badge>
                   </div>
                   
+                  {/* Phase Indicator */}
+                  {job.status === 'processing' && job.current_phase && (() => {
+                    const phaseInfo = getPhaseInfo(job.current_phase);
+                    const PhaseIcon = phaseInfo.icon;
+                    const currentPhaseIndex = PHASES.indexOf(job.current_phase as typeof PHASES[number]);
+                    
+                    return (
+                      <div className="p-3 bg-muted/50 rounded-lg border">
+                        <div className="flex items-center gap-3">
+                          <div className={`p-2 rounded-full bg-background ${phaseInfo.colorClass}`}>
+                            <PhaseIcon className={`h-4 w-4 ${job.current_phase === 'parsing' || job.current_phase === 'consolidating' ? 'animate-pulse' : ''}`} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between">
+                              <span className={`text-sm font-medium ${phaseInfo.colorClass}`}>
+                                {phaseInfo.label}
+                              </span>
+                              {/* Phase progress dots */}
+                              <div className="flex items-center gap-1">
+                                {PHASES.map((p, i) => (
+                                  <div 
+                                    key={p}
+                                    className={`h-2 w-2 rounded-full transition-colors ${
+                                      currentPhaseIndex > i ? 'bg-positive' :
+                                      currentPhaseIndex === i ? phaseInfo.bgClass :
+                                      'bg-muted-foreground/30'
+                                    }`}
+                                    title={getPhaseInfo(p).label}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                            <p className="text-xs text-muted-foreground truncate">
+                              {phaseInfo.description}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Bytes Download Progress (during parsing phase) */}
+                  {job.current_phase === 'parsing' && job.bytes_processed !== null && job.file_size > 0 && (
+                    <div className="p-3 bg-blue-500/5 rounded-lg border border-blue-500/20">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <Download className="h-4 w-4 text-blue-500 animate-bounce" />
+                          <span className="text-sm font-medium text-blue-600">
+                            Download do Arquivo
+                          </span>
+                        </div>
+                        <span className="text-sm font-mono text-blue-600">
+                          {((job.bytes_processed / job.file_size) * 100).toFixed(1)}%
+                        </span>
+                      </div>
+                      
+                      <Progress 
+                        value={(job.bytes_processed / job.file_size) * 100} 
+                        className="h-2 mb-2 [&>div]:bg-blue-500" 
+                      />
+                      
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span>
+                          {formatFileSize(job.bytes_processed)} de {formatFileSize(job.file_size)}
+                        </span>
+                        <span className="text-blue-600">
+                          {job.total_lines > 0 && `${job.total_lines.toLocaleString('pt-BR')} linhas`}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* General Progress */}
                   <div className="space-y-1">
                     <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>Progresso</span>
+                      <span>Progresso Geral</span>
                       <span>{job.progress}%</span>
                     </div>
                     <Progress value={job.progress} className="h-2" />
                     <div className="flex justify-between text-xs text-muted-foreground">
                       <span>
-                        {bytesProgress && <span className="mr-2">{bytesProgress}</span>}
+                        {job.current_phase !== 'parsing' && bytesProgress && <span className="mr-2">{bytesProgress}</span>}
                         {job.chunk_number !== null && job.chunk_number > 0 && (
-                          <span className="text-muted-foreground/70">Bloco {job.chunk_number}</span>
+                          <span className="text-muted-foreground/70">Chunk {job.chunk_number}</span>
                         )}
                       </span>
-                      {job.total_lines > 0 && (
-                        <span>{job.total_lines.toLocaleString('pt-BR')} linhas</span>
+                      {job.total_lines > 0 && job.current_phase !== 'parsing' && (
+                        <span>{job.total_lines.toLocaleString('pt-BR')} linhas processadas</span>
                       )}
                     </div>
                   </div>
