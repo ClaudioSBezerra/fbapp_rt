@@ -17,8 +17,16 @@ const PROGRESS_UPDATE_INTERVAL = 5000;
 const BLOCK_C_CHUNK_SIZE = 50000; // Process Block C in chunks to avoid timeout
 const PARSING_CHUNK_SIZE = 150000; // Lines per parsing invocation for chunked streaming
 const RAW_LINES_INSERT_BATCH_SIZE = 500; // Batch size for inserting into efd_raw_lines
-const SELF_INVOKE_MAX_RETRIES = 3;
-const SELF_INVOKE_BASE_DELAY_MS = 2000;
+const SELF_INVOKE_MAX_RETRIES = 5; // Increased from 3 to 5 for better resilience
+const SELF_INVOKE_BASE_DELAY_MS = 1000; // Reduced base delay but with exponential backoff
+const SELF_INVOKE_MAX_DELAY_MS = 30000; // Maximum delay cap
+
+// Helper function to calculate exponential backoff with jitter
+function calculateBackoffDelay(attempt: number, baseDelayMs: number, maxDelayMs: number): number {
+  const exponentialDelay = baseDelayMs * Math.pow(2, attempt - 1);
+  const jitter = Math.random() * 500; // Add 0-500ms jitter
+  return Math.min(exponentialDelay + jitter, maxDelayMs);
+}
 
 // Helper function to self-invoke with retry mechanism
 async function selfInvokeWithRetry(
@@ -49,28 +57,37 @@ async function selfInvokeWithRetry(
         return true;
       }
       
-      console.warn(`Job ${jobId}: Self-invoke attempt ${attempt} failed with status ${response.status}`);
+      const status = response.status;
+      console.warn(`Job ${jobId}: Self-invoke attempt ${attempt} failed with status ${status}`);
       
       if (attempt < maxRetries) {
-        const delay = baseDelayMs * attempt;
-        console.log(`Job ${jobId}: Waiting ${delay}ms before retry...`);
+        // Special handling for server temporarily unavailable errors (521/522)
+        let delay: number;
+        if (status === 521 || status === 522) {
+          delay = 5000 * attempt; // 5s, 10s, 15s, 20s, 25s for server down errors
+          console.log(`Job ${jobId}: Server temporarily unavailable (${status}), extended wait ${delay}ms...`);
+        } else {
+          delay = calculateBackoffDelay(attempt, baseDelayMs, SELF_INVOKE_MAX_DELAY_MS);
+          console.log(`Job ${jobId}: Waiting ${Math.round(delay)}ms before retry (exponential backoff)...`);
+        }
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     } catch (err) {
       console.error(`Job ${jobId}: Self-invoke attempt ${attempt} error:`, err);
       
       if (attempt < maxRetries) {
-        const delay = baseDelayMs * attempt;
-        console.log(`Job ${jobId}: Waiting ${delay}ms before retry...`);
+        const delay = calculateBackoffDelay(attempt, baseDelayMs, SELF_INVOKE_MAX_DELAY_MS);
+        console.log(`Job ${jobId}: Waiting ${Math.round(delay)}ms before retry after error...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
   }
   
-  console.error(`Job ${jobId}: All ${maxRetries} self-invoke attempts failed`);
+  console.error(`Job ${jobId}: All ${maxRetries} self-invoke attempts failed - marking as paused`);
   
-  // Mark job as needing manual intervention
+  // Mark job as paused for manual intervention (instead of keeping it as 'processing')
   await supabase.from("import_jobs").update({ 
+    status: "paused",
     error_message: "Conexão perdida durante processamento. Clique em 'Retomar' para continuar.",
   }).eq("id", jobId);
   

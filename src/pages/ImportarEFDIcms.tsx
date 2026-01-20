@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Progress } from '@/components/ui/progress';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Loader2, CheckCircle, FileText, AlertCircle, Upload, Clock, XCircle, RefreshCw, AlertTriangle, FileWarning, Trash2, Shield, Files } from 'lucide-react';
+import { Loader2, CheckCircle, FileText, AlertCircle, Upload, Clock, XCircle, RefreshCw, AlertTriangle, FileWarning, Trash2, Shield, Files, Pause } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useRole } from '@/hooks/useRole';
@@ -32,7 +32,7 @@ interface ImportJob {
   file_path: string;
   file_name: string;
   file_size: number;
-  status: 'pending' | 'processing' | 'generating' | 'refreshing_views' | 'completed' | 'failed' | 'cancelled';
+  status: 'pending' | 'processing' | 'paused' | 'generating' | 'refreshing_views' | 'completed' | 'failed' | 'cancelled';
   progress: number;
   total_lines: number;
   counts: ImportCounts;
@@ -101,6 +101,8 @@ function getStatusInfo(status: ImportJob['status']) {
       return { label: 'Aguardando', color: 'bg-muted text-muted-foreground', icon: Clock };
     case 'processing':
       return { label: 'Processando', color: 'bg-primary/10 text-primary', icon: Loader2 };
+    case 'paused':
+      return { label: 'Pausado', color: 'bg-warning/10 text-warning', icon: Pause };
     case 'generating':
       return { label: 'Gerando dados...', color: 'bg-blue-500/10 text-blue-500', icon: Loader2 };
     case 'refreshing_views':
@@ -391,7 +393,7 @@ export default function ImportarEFDIcms() {
   }, [session?.user?.id, loadJobs]);
 
   useEffect(() => {
-    const hasActiveJobs = jobs.some(j => ['pending', 'processing', 'refreshing_views', 'generating'].includes(j.status));
+    const hasActiveJobs = jobs.some(j => ['pending', 'processing', 'paused', 'refreshing_views', 'generating'].includes(j.status));
     if (!hasActiveJobs || !session?.user?.id) return;
     const pollInterval = setInterval(loadJobs, 15000);
     return () => clearInterval(pollInterval);
@@ -422,7 +424,7 @@ export default function ImportarEFDIcms() {
     } catch (error) { toast.error('Erro ao cancelar'); }
   };
 
-  const activeJobs = jobs.filter(j => ['pending', 'processing', 'refreshing_views', 'generating'].includes(j.status));
+  const activeJobs = jobs.filter(j => ['pending', 'processing', 'paused', 'refreshing_views', 'generating'].includes(j.status));
   const completedJobs = jobs.filter(j => ['completed', 'failed', 'cancelled'].includes(j.status));
 
   return (
