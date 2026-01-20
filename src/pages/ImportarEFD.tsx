@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Loader2, CheckCircle, FileText, ArrowRight, AlertCircle, Upload, Clock, XCircle, RefreshCw, Zap, Trash2, AlertTriangle, Shield, Files } from 'lucide-react';
+import { Loader2, CheckCircle, FileText, ArrowRight, AlertCircle, Upload, Clock, XCircle, RefreshCw, Zap, Trash2, AlertTriangle, Shield, Files, Pause } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -101,7 +101,7 @@ interface ImportJob {
   file_path: string;
   file_name: string;
   file_size: number;
-  status: 'pending' | 'processing' | 'generating' | 'refreshing_views' | 'completed' | 'failed' | 'cancelled';
+  status: 'pending' | 'processing' | 'paused' | 'generating' | 'refreshing_views' | 'completed' | 'failed' | 'cancelled';
   progress: number;
   total_lines: number;
   counts: ImportCounts;
@@ -167,6 +167,8 @@ function getStatusInfo(status: ImportJob['status']) {
       return { label: 'Aguardando', color: 'bg-muted text-muted-foreground', icon: Clock };
     case 'processing':
       return { label: 'Processando', color: 'bg-primary/10 text-primary', icon: Loader2 };
+    case 'paused':
+      return { label: 'Pausado', color: 'bg-warning/10 text-warning', icon: Pause };
     case 'generating':
       return { label: 'Gerando dados...', color: 'bg-blue-500/10 text-blue-500', icon: Loader2 };
     case 'refreshing_views':
@@ -461,7 +463,7 @@ export default function ImportarEFD() {
   // Polling fallback
   useEffect(() => {
     const hasActiveJobs = jobs.some(j => 
-      j.status === 'pending' || j.status === 'processing' || j.status === 'refreshing_views' || j.status === 'generating'
+      j.status === 'pending' || j.status === 'processing' || j.status === 'paused' || j.status === 'refreshing_views' || j.status === 'generating'
     );
     
     if (!hasActiveJobs || !session?.user?.id) return;
@@ -579,7 +581,7 @@ export default function ImportarEFD() {
     }
   };
 
-  const activeJobs = jobs.filter(j => j.status === 'pending' || j.status === 'processing' || j.status === 'refreshing_views');
+  const activeJobs = jobs.filter(j => j.status === 'pending' || j.status === 'processing' || j.status === 'paused' || j.status === 'refreshing_views' || j.status === 'generating');
   const completedJobs = jobs.filter(j => j.status === 'completed' || j.status === 'failed' || j.status === 'cancelled');
 
   // Animated progress effect for database clearing
@@ -1070,8 +1072,8 @@ export default function ImportarEFD() {
                     </div>
                   )}
 
-                  {/* Show error message with resume button */}
-                  {job.error_message && job.status === 'processing' && (
+                  {/* Show error message with resume button for paused/processing jobs */}
+                  {job.error_message && (job.status === 'processing' || job.status === 'paused') && (
                     <div className="flex items-center gap-3 p-2 rounded-lg bg-warning/10 border border-warning/30">
                       <AlertTriangle className="h-4 w-4 text-warning flex-shrink-0" />
                       <span className="text-xs text-warning flex-1">{job.error_message}</span>
@@ -1085,6 +1087,19 @@ export default function ImportarEFD() {
                         Retomar
                       </Button>
                     </div>
+                  )}
+
+                  {/* Show resume button for paused jobs without error message */}
+                  {job.status === 'paused' && !job.error_message && (
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      className="border-warning text-warning hover:bg-warning hover:text-warning-foreground"
+                      onClick={() => handleResumeJob(job.id)}
+                    >
+                      <RefreshCw className="h-3 w-3 mr-1" />
+                      Retomar Processamento
+                    </Button>
                   )}
 
                   {/* Show resume button for stale processing jobs */}
