@@ -9,7 +9,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Loader2, Download, Package, Wrench, AlertCircle, HelpCircle } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Label } from '@/components/ui/label';
 import { formatFilialDisplayFormatted, formatDocumento } from '@/lib/formatFilial';
 import { exportToExcel } from '@/lib/exportToExcel';
 import { toast } from 'sonner';
@@ -48,7 +47,6 @@ interface DetailedRow {
   pis: number;
   cofins: number;
   quantidade_docs: number;
-  is_simples?: boolean;
 }
 
 const ANOS_PROJECAO = [2027, 2028, 2029, 2030, 2031, 2032, 2033];
@@ -58,17 +56,10 @@ const CFOPS_USO_CONSUMO = ['1556', '2556'];
 const formatNumber = (value: number) =>
   new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
 
-const formatCurrency = (value: number) =>
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
-
-const formatCompact = (value: number) =>
-  new Intl.NumberFormat('pt-BR', { notation: 'compact', compactDisplay: 'short' }).format(value);
-
 const formatDate = (dateStr: string) => {
   const [year, month] = dateStr.substring(0, 7).split('-');
   return `${month}/${year}`;
 };
-
 
 export default function UsoConsumoImobilizado() {
   const [loading, setLoading] = useState(true);
@@ -78,7 +69,6 @@ export default function UsoConsumoImobilizado() {
   const [filialSelecionada, setFilialSelecionada] = useState<string>('todas');
   const [mesAnoSelecionado, setMesAnoSelecionado] = useState<string>('todos');
   const [cfopSelecionado, setCfopSelecionado] = useState<string>('todos');
-  const [filterSimples, setFilterSimples] = useState<string>('all');
   const [anoProjecao, setAnoProjecao] = useState<number>(2027);
   const [periodosDisponiveis, setPeriodosDisponiveis] = useState<string[]>([]);
 
@@ -88,13 +78,8 @@ export default function UsoConsumoImobilizado() {
       setLoading(true);
       
       try {
-        // Parâmetro de filtro simples nacional
-        const simplesParam = filterSimples === 'all' ? null : filterSimples === 'sim';
-        
         // Carregar dados detalhados agregados por participante
-        const { data: detailedData, error: detailError } = await supabase.rpc('get_mv_uso_consumo_detailed', {
-          p_is_simples: simplesParam
-        });
+        const { data: detailedData, error: detailError } = await supabase.rpc('get_mv_uso_consumo_detailed' as any);
         
         if (detailError) {
           console.error('Error fetching detailed data:', detailError);
@@ -103,7 +88,6 @@ export default function UsoConsumoImobilizado() {
           const formattedData = (detailedData || []).map((row: any) => ({
             ...row,
             mes_ano: typeof row.mes_ano === 'string' ? row.mes_ano : new Date(row.mes_ano).toISOString().slice(0, 10),
-            is_simples: row.is_simples || false
           }));
           setData(formattedData);
           
@@ -113,21 +97,17 @@ export default function UsoConsumoImobilizado() {
           if (periodos.length > 0 && mesAnoSelecionado === 'todos') {
             setMesAnoSelecionado(periodos[0] as string);
           }
-          
-          // Derivar filiais a partir dos dados carregados (somente filiais com dados)
-          const filiaisFromData = formattedData.reduce((acc: Filial[], row: DetailedRow) => {
-            if (!acc.some(f => f.id === row.filial_id)) {
-              acc.push({
-                id: row.filial_id,
-                nome: row.filial_nome,
-                cnpj: row.filial_cnpj,
-                cod_est: row.filial_cod_est,
-              });
-            }
-            return acc;
-          }, []);
-          setFiliais(filiaisFromData);
         }
+
+        // Carregar filiais
+        const { data: filiaisData } = await supabase.from('filiais').select('id, nome_fantasia, razao_social, cnpj, cod_est');
+        const filialsList = filiaisData?.map(f => ({
+          id: f.id,
+          nome: f.nome_fantasia || f.razao_social || 'Sem nome',
+          cnpj: f.cnpj || '',
+          cod_est: f.cod_est || null,
+        })) || [];
+        setFiliais(filialsList);
 
         // Carregar alíquotas
         const { data: aliquotasData } = await supabase.from('aliquotas').select('*').eq('is_active', true).order('ano');
@@ -140,7 +120,7 @@ export default function UsoConsumoImobilizado() {
     };
 
     fetchData();
-  }, [filterSimples]);
+  }, []);
 
   // Filtrar dados
   const dadosFiltrados = useMemo(() => {
@@ -225,7 +205,6 @@ export default function UsoConsumoImobilizado() {
     return result;
   }, [dadosImobilizado, dadosUsoConsumo]);
 
-
   // Exportar para Excel
   const handleExport = () => {
     const exportData = dadosFiltrados.map(row => {
@@ -265,7 +244,6 @@ export default function UsoConsumoImobilizado() {
           <TableRow className="text-xs">
             <TableHead className="min-w-[140px] text-xs">Filial</TableHead>
             <TableHead className="min-w-[120px] text-xs">Participante</TableHead>
-            <TableHead className="text-xs text-center w-[40px]">SN</TableHead>
             <TableHead className="text-xs whitespace-nowrap">Mês/Ano</TableHead>
             <TableHead className="text-right text-xs">Valor</TableHead>
             <TableHead className="text-right text-xs">ICMS</TableHead>
@@ -306,11 +284,8 @@ export default function UsoConsumoImobilizado() {
                 </TooltipTrigger>
                 <TooltipContent side="top" className="max-w-xs">
                   <p className="font-semibold mb-1">Fórmula:</p>
-                  <p className="font-mono text-xs">(ICMS Proj. + PIS/COFINS Proj. + IBS + CBS) − (ICMS + PIS/COFINS)</p>
-                  <p className="text-muted-foreground text-xs mt-1">
-                    Diferença entre impostos projetados e atuais.<br/>
-                    <span className="text-green-600 dark:text-green-400">Negativo = Economia</span> | <span className="text-red-600 dark:text-red-400">Positivo = Aumento</span>
-                  </p>
+                  <p className="font-mono text-xs">(ICMS Proj. + PIS/COFINS Proj. + IBS + CBS) − (ICMS + PIS + COFINS)</p>
+                  <p className="text-muted-foreground text-xs mt-1">Compara impostos atuais com TODOS os impostos projetados (transição + novos). Vermelho = aumento, Verde = redução.</p>
                 </TooltipContent>
               </Tooltip>
             </TableHead>
@@ -319,7 +294,7 @@ export default function UsoConsumoImobilizado() {
         <TableBody>
           {rows.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={17} className="text-center py-8 text-muted-foreground text-xs">
+              <TableCell colSpan={16} className="text-center py-8 text-muted-foreground text-xs">
                 Nenhum dado encontrado para os filtros selecionados
               </TableCell>
             </TableRow>
@@ -341,13 +316,6 @@ export default function UsoConsumoImobilizado() {
                       )}
                     </div>
                   </TableCell>
-                  <TableCell className="text-center py-1 px-1">
-                    {row.is_simples ? (
-                      <Badge variant="default" className="text-[8px] px-1 py-0 bg-green-600 hover:bg-green-600">SN</Badge>
-                    ) : (
-                      <span className="text-muted-foreground text-[10px]">-</span>
-                    )}
-                  </TableCell>
                   <TableCell className="text-xs whitespace-nowrap">{formatDate(row.mes_ano)}</TableCell>
                   <TableCell className="text-right font-mono text-xs">{formatNumber(row.valor)}</TableCell>
                   <TableCell className="text-right font-mono text-xs">{formatNumber(row.icms)}</TableCell>
@@ -362,10 +330,10 @@ export default function UsoConsumoImobilizado() {
                   <TableCell className="text-right font-mono text-xs font-semibold bg-muted/30">{formatNumber(proj.totalImpostoReforma)}</TableCell>
                   <TableCell className="text-right">
                     <Badge
-                      variant={proj.diferenca > 0 ? 'destructive' : proj.diferenca < 0 ? 'default' : 'secondary'}
-                      className={`text-xs ${proj.diferenca < 0 ? 'bg-positive text-positive-foreground' : ''}`}
+                      variant={proj.diferenca > 0 ? 'destructive' : 'default'}
+                      className={`text-xs ${proj.diferenca <= 0 ? 'bg-positive text-positive-foreground' : ''}`}
                     >
-                      {proj.diferenca > 0 ? '+' : ''}{formatNumber(proj.diferenca)}
+                      {proj.diferenca >= 0 ? '+' : ''}{formatNumber(proj.diferenca)}
                     </Badge>
                   </TableCell>
                 </TableRow>
@@ -396,84 +364,58 @@ export default function UsoConsumoImobilizado() {
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-3 items-end">
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">Período</Label>
-            <Select value={mesAnoSelecionado} onValueChange={setMesAnoSelecionado}>
-              <SelectTrigger className="w-[140px]">
-                <SelectValue placeholder="Todos" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="todos">Todos</SelectItem>
-                {periodosDisponiveis.map(p => (
-                  <SelectItem key={p} value={p}>
-                    {p.split('-').reverse().join('/')}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+        <div className="flex flex-wrap gap-3">
+          <Select value={mesAnoSelecionado} onValueChange={setMesAnoSelecionado}>
+            <SelectTrigger className="w-[140px]">
+              <SelectValue placeholder="Período" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todos</SelectItem>
+              {periodosDisponiveis.map(p => (
+                <SelectItem key={p} value={p}>
+                  {p.split('-').reverse().join('/')}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">Filial</Label>
-            <Select value={filialSelecionada} onValueChange={setFilialSelecionada}>
-              <SelectTrigger className="w-[220px]">
-                <SelectValue placeholder="Todas" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="todas">Todas as filiais</SelectItem>
-                {filiais.map(f => (
-                  <SelectItem key={f.id} value={f.id}>
-                    {formatFilialDisplayFormatted(f.cod_est, f.cnpj)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <Select value={filialSelecionada} onValueChange={setFilialSelecionada}>
+            <SelectTrigger className="w-[220px]">
+              <SelectValue placeholder="Filial" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todas">Todas as filiais</SelectItem>
+              {filiais.map(f => (
+                <SelectItem key={f.id} value={f.id}>
+                  {formatFilialDisplayFormatted(f.cod_est, f.cnpj)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">CFOP</Label>
-            <Select value={cfopSelecionado} onValueChange={setCfopSelecionado}>
-              <SelectTrigger className="w-[120px]">
-                <SelectValue placeholder="Todos" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="todos">Todos</SelectItem>
-                <SelectItem value="1551">1551</SelectItem>
-                <SelectItem value="2551">2551</SelectItem>
-                <SelectItem value="1556">1556</SelectItem>
-                <SelectItem value="2556">2556</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          <Select value={cfopSelecionado} onValueChange={setCfopSelecionado}>
+            <SelectTrigger className="w-[120px]">
+              <SelectValue placeholder="CFOP" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todos</SelectItem>
+              <SelectItem value="1551">1551</SelectItem>
+              <SelectItem value="2551">2551</SelectItem>
+              <SelectItem value="1556">1556</SelectItem>
+              <SelectItem value="2556">2556</SelectItem>
+            </SelectContent>
+          </Select>
 
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">Simples Nacional</Label>
-            <Select value={filterSimples} onValueChange={setFilterSimples}>
-              <SelectTrigger className="w-[140px]">
-                <SelectValue placeholder="Todos" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos</SelectItem>
-                <SelectItem value="sim">Sim (SN)</SelectItem>
-                <SelectItem value="nao">Não</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">Ano Projeção</Label>
-            <Select value={String(anoProjecao)} onValueChange={v => setAnoProjecao(Number(v))}>
-              <SelectTrigger className="w-[100px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {ANOS_PROJECAO.map(ano => (
-                  <SelectItem key={ano} value={String(ano)}>{ano}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <Select value={String(anoProjecao)} onValueChange={v => setAnoProjecao(Number(v))}>
+            <SelectTrigger className="w-[100px]">
+              <SelectValue placeholder="Ano" />
+            </SelectTrigger>
+            <SelectContent>
+              {ANOS_PROJECAO.map(ano => (
+                <SelectItem key={ano} value={String(ano)}>{ano}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
           <Button variant="outline" onClick={handleExport} disabled={dadosFiltrados.length === 0}>
             <Download className="h-4 w-4 mr-2" />

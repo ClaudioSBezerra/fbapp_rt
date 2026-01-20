@@ -5,7 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowDownRight, ArrowUpRight, Zap, HelpCircle, Download } from 'lucide-react';
+import { ArrowDownRight, ArrowUpRight, Zap, Filter, Calendar, HelpCircle, Download } from 'lucide-react';
 import { exportToExcel } from '@/lib/exportToExcel';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { supabase } from '@/integrations/supabase/client';
@@ -319,11 +319,8 @@ export default function EnergiaAgua() {
                   </TooltipTrigger>
                   <TooltipContent side="top" className="max-w-xs">
                     <p className="font-semibold mb-1">Fórmula:</p>
-                    <p className="font-mono text-xs">(ICMS Proj. + PIS/COFINS Proj. + IBS + CBS) − (ICMS + PIS/COFINS)</p>
-                    <p className="text-muted-foreground text-xs mt-1">
-                      Diferença entre impostos projetados e atuais.<br/>
-                      <span className="text-green-600 dark:text-green-400">Negativo = Economia</span> | <span className="text-red-600 dark:text-red-400">Positivo = Aumento</span>
-                    </p>
+                    <p className="font-mono text-xs">(ICMS + PIS/COFINS) − (ICMS Proj. + PIS/COFINS Proj. + IBS + CBS)</p>
+                    <p className="text-muted-foreground text-xs mt-1">Compara impostos atuais com TODOS os impostos projetados (transição + novos)</p>
                   </TooltipContent>
                 </Tooltip>
               </TableHead>
@@ -363,10 +360,10 @@ export default function EnergiaAgua() {
                   <TableCell className="text-right font-mono text-xs font-semibold bg-muted/30">{formatCurrency(totalImpostosPagar)}</TableCell>
                   <TableCell className="text-right">
                     <Badge
-                      variant={diferencaReal > 0 ? 'destructive' : diferencaReal < 0 ? 'default' : 'secondary'}
-                      className={`text-xs ${diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}`}
+                      variant={diferencaReal < 0 ? 'destructive' : 'default'}
+                      className={`text-xs ${diferencaReal >= 0 ? 'bg-positive text-positive-foreground' : ''}`}
                     >
-                      {diferencaReal > 0 ? '+' : ''}
+                      {diferencaReal >= 0 ? '+' : ''}
                       {formatCurrency(diferencaReal)}
                     </Badge>
                   </TableCell>
@@ -404,11 +401,15 @@ export default function EnergiaAgua() {
       {/* Filters */}
       <Card className="border-border/50">
         <CardContent className="pt-4">
-          <div className="flex flex-wrap gap-3 items-end">
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Filial</Label>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-4 w-full">
+            <div className="flex items-center gap-2">
+              <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-xs font-medium">Filtros:</span>
+            </div>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <Label className="text-xs whitespace-nowrap">Filial:</Label>
               <Select value={filterFilial} onValueChange={setFilterFilial}>
-                <SelectTrigger className="w-[220px]">
+                <SelectTrigger className="w-full sm:w-[220px]">
                   <SelectValue placeholder="Todas" />
                 </SelectTrigger>
                 <SelectContent>
@@ -421,11 +422,10 @@ export default function EnergiaAgua() {
                 </SelectContent>
               </Select>
             </div>
-
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Período</Label>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <Label className="text-xs whitespace-nowrap">Mês/Ano:</Label>
               <Select value={filterMesAno} onValueChange={setFilterMesAno}>
-                <SelectTrigger className="w-[140px]">
+                <SelectTrigger className="w-full sm:w-[150px]">
                   <SelectValue placeholder="Todos" />
                 </SelectTrigger>
                 <SelectContent>
@@ -438,11 +438,11 @@ export default function EnergiaAgua() {
                 </SelectContent>
               </Select>
             </div>
-
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Ano Projeção</Label>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <Calendar className="h-3.5 w-3.5 text-muted-foreground hidden sm:block" />
+              <Label className="text-xs whitespace-nowrap">Ano Projeção:</Label>
               <Select value={anoProjecao.toString()} onValueChange={(v) => setAnoProjecao(parseInt(v))}>
-                <SelectTrigger className="w-[100px]">
+                <SelectTrigger className="w-full sm:w-[120px]">
                   <SelectValue placeholder="Ano" />
                 </SelectTrigger>
                 <SelectContent>

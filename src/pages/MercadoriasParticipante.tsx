@@ -40,7 +40,6 @@ interface ParticipanteRow {
   cofins: number;
   icms: number;
   tipo: string;
-  is_simples?: boolean;
 }
 
 interface TotalsFromBackend {
@@ -123,7 +122,6 @@ function ParticipanteTable({ data, tipo, aliquotas, selectedYear, isLoading }: P
         <TableHeader>
           <TableRow className="text-xs">
             <TableHead className="text-xs">Participante</TableHead>
-            <TableHead className="text-xs text-center w-[40px]">SN</TableHead>
             <TableHead className="text-xs whitespace-nowrap">Mês/Ano</TableHead>
             <TableHead className="text-right text-xs">Valor</TableHead>
             <TableHead className="text-right text-xs">ICMS</TableHead>
@@ -164,11 +162,8 @@ function ParticipanteTable({ data, tipo, aliquotas, selectedYear, isLoading }: P
                 </TooltipTrigger>
                 <TooltipContent side="top" className="max-w-xs">
                   <p className="font-semibold mb-1">Fórmula:</p>
-                  <p className="font-mono text-xs">(ICMS Proj. + PIS/COFINS Proj. + IBS + CBS) − (ICMS + PIS/COFINS)</p>
-                  <p className="text-muted-foreground text-xs mt-1">
-                    Diferença entre impostos projetados e atuais.<br/>
-                    <span className="text-green-600 dark:text-green-400">Negativo = Economia</span> | <span className="text-red-600 dark:text-red-400">Positivo = Aumento</span>
-                  </p>
+                  <p className="font-mono text-xs">(ICMS + PIS/COFINS) − (ICMS Proj. + PIS/COFINS Proj. + IBS + CBS)</p>
+                  <p className="text-muted-foreground text-xs mt-1">Compara impostos atuais com TODOS os impostos projetados (transição + novos)</p>
                 </TooltipContent>
               </Tooltip>
             </TableHead>
@@ -233,13 +228,6 @@ function ParticipanteTable({ data, tipo, aliquotas, selectedYear, isLoading }: P
                     </Tooltip>
                   </div>
                 </TableCell>
-                <TableCell className="text-center py-1 px-1">
-                  {row.is_simples ? (
-                    <Badge variant="default" className="text-[8px] px-1 py-0 bg-green-600 hover:bg-green-600">SN</Badge>
-                  ) : (
-                    <span className="text-muted-foreground text-[10px]">-</span>
-                  )}
-                </TableCell>
                 <TableCell className="text-xs whitespace-nowrap">{formatMesAno(row.mes_ano)}</TableCell>
                 <TableCell className="text-right font-mono text-xs">{formatCurrency(row.valor)}</TableCell>
                 <TableCell className="text-right font-mono text-xs">{formatCurrency(vlIcms)}</TableCell>
@@ -276,7 +264,6 @@ export default function MercadoriasParticipante() {
   const queryClient = useQueryClient();
   const [filterMesAno, setFilterMesAno] = useState<string>('all');
   const [filterParticipante, setFilterParticipante] = useState('');
-  const [filterSimples, setFilterSimples] = useState<string>('all');
   const [selectedYear, setSelectedYear] = useState(2027);
   const [openCombobox, setOpenCombobox] = useState(false);
   const [page, setPage] = useState(1);
@@ -297,7 +284,6 @@ export default function MercadoriasParticipante() {
   // Parâmetros de filtro para as queries
   const mesAnoParam = filterMesAno === 'all' ? null : filterMesAno;
   const participanteParam = filterParticipante || null;
-  const simplesParam = filterSimples === 'all' ? null : filterSimples === 'sim';
 
   // Buscar TOTAIS do backend (1 linha, sem limite)
   const { data: backendTotals, isLoading: isLoadingTotals } = useQuery({
@@ -314,14 +300,13 @@ export default function MercadoriasParticipante() {
 
   // Buscar dados paginados para a listagem (máximo 1000 registros no backend)
   const { data: participanteData = [], isLoading: isLoadingPage } = useQuery({
-    queryKey: ['mercadorias-participante-page', mesAnoParam, participanteParam, simplesParam, page],
+    queryKey: ['mercadorias-participante-page', mesAnoParam, participanteParam, page],
     queryFn: async () => {
       const { data, error } = await supabase.rpc('get_mercadorias_participante_page', {
         p_limit: PAGE_SIZE,
         p_offset: (page - 1) * PAGE_SIZE,
         p_mes_ano: mesAnoParam,
-        p_participante: participanteParam,
-        p_is_simples: simplesParam
+        p_participante: participanteParam
       });
       if (error) throw error;
       // Mapear resultado para interface esperada (ordem diferente no backend)
@@ -336,7 +321,6 @@ export default function MercadoriasParticipante() {
         pis: number;
         tipo: string;
         valor: number;
-        is_simples: boolean;
       }>).map(row => ({
         filial_id: row.filial_id,
         filial_cod_est: (row as any).filial_cod_est || null,
@@ -349,8 +333,7 @@ export default function MercadoriasParticipante() {
         pis: row.pis,
         cofins: row.cofins,
         icms: row.icms,
-        tipo: row.tipo,
-        is_simples: row.is_simples
+        tipo: row.tipo
       })) as ParticipanteRow[];
     }
   });
@@ -620,21 +603,6 @@ export default function MercadoriasParticipante() {
                   </Command>
                 </PopoverContent>
               </Popover>
-            </div>
-
-            {/* Filtro Simples Nacional */}
-            <div className="space-y-1">
-              <Label className="text-xs">Simples Nacional</Label>
-              <Select value={filterSimples} onValueChange={(v) => handleFilterChange(setFilterSimples, v)}>
-                <SelectTrigger className="w-[120px]">
-                  <SelectValue placeholder="Todos" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos</SelectItem>
-                  <SelectItem value="sim">Sim (SN)</SelectItem>
-                  <SelectItem value="nao">Não</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
 
             {/* Ano de Projeção */}

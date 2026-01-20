@@ -572,56 +572,27 @@ function processLine(
       break;
 
     case "C600":
-      // Consolidação diária - layout diferente para ICMS/IPI e Contribuições
+      // Layout EFD ICMS/IPI - C600 (Consolidação diária):
+      // 2=COD_MOD, 3=COD_MUN, 7=VL_DOC, 12=VL_ICMS, 15=VL_PIS, 16=VL_COFINS
       blockType = "c600";
-      
-      if (context.efdType === 'contribuicoes') {
-        // Layout EFD Contribuições - C600 (Consolidação diária de energia/água/gás/comunicação):
-        // |C600|COD_MOD|COD_MUN|SER|SUB|COD_CONS|QTD_CONS|QTD_CONS_REDUZ|DT_DOC_INI|DT_DOC_FIN|VL_DOC|VL_DESC|
-        // |VL_FORN|VL_SERV_NT|VL_TERC|VL_DA|VL_BC_ICMS|VL_ICMS|VL_BC_ICMS_ST|VL_ICMS_ST|VL_PIS|VL_COFINS|...
-        // Índices corretos: 10=VL_DOC, 18=VL_ICMS, 21=VL_PIS, 22=VL_COFINS
-        if (fields.length > 22) {
-          const valorDoc = parseNumber(fields[10]);
-          
-          if (valorDoc > 0) {
-            record = {
-              table: "mercadorias",
-              data: {
-                tipo: "saida",
-                mes_ano: context.currentPeriod,
-                ncm: null,
-                descricao: `Consolidação NF ${fields[1] || ""} ${fields[2] || ""}`.trim().substring(0, 200) || "Consolidação diária",
-                valor: valorDoc,
-                pis: parseNumber(fields[21]),    // Campo 21 = VL_PIS
-                cofins: parseNumber(fields[22]), // Campo 22 = VL_COFINS
-                icms: parseNumber(fields[18]),   // Campo 18 = VL_ICMS
-                ipi: 0,
-              },
-            };
-          }
-        }
-      } else {
-        // Layout EFD ICMS/IPI - C600 (Consolidação diária):
-        // 2=COD_MOD, 3=COD_MUN, 7=VL_DOC, 12=VL_ICMS, 15=VL_PIS, 16=VL_COFINS
-        if (fields.length > 16) {
-          const valorDoc = parseNumber(fields[7]);
-          
-          if (valorDoc > 0) {
-            record = {
-              table: "mercadorias",
-              data: {
-                tipo: "saida",
-                mes_ano: context.currentPeriod,
-                ncm: null,
-                descricao: `Consolidação NF ${fields[2] || ""} ${fields[3] || ""}`.trim().substring(0, 200) || "Consolidação diária",
-                valor: valorDoc,
-                pis: parseNumber(fields[15]),
-                cofins: parseNumber(fields[16]),
-                icms: parseNumber(fields[12]),
-                ipi: 0,
-              },
-            };
-          }
+      if (fields.length > 16) {
+        const valorDoc = parseNumber(fields[7]);
+        
+        if (valorDoc > 0) {
+          record = {
+            table: "mercadorias",
+            data: {
+              tipo: "saida",
+              mes_ano: context.currentPeriod,
+              ncm: null,
+              descricao: `Consolidação NF ${fields[2] || ""} ${fields[3] || ""}`.trim().substring(0, 200) || "Consolidação diária",
+              valor: valorDoc,
+              pis: parseNumber(fields[15]),
+              cofins: parseNumber(fields[16]),
+              icms: parseNumber(fields[12]),
+              ipi: 0,
+            },
+          };
         }
       }
       break;
@@ -1086,14 +1057,12 @@ serve(async (req) => {
       if (batches[table].length === 0) return null;
 
       // Use upsert with ignoreDuplicates to avoid inserting duplicate records
-      // Aligned with database unique indexes (idx_mercadorias_upsert_key, idx_servicos_upsert_key)
+      // This requires unique constraints on the tables (will be added via migration after data cleanup)
       const onConflictMap: Record<keyof BatchBuffers, string> = {
-        // idx_mercadorias_upsert_key: (filial_id, mes_ano, tipo, COALESCE(cod_part), valor, pis, cofins, icms, ipi)
-        mercadorias: 'filial_id,mes_ano,tipo,cod_part,valor,pis,cofins,icms,ipi',
+        mercadorias: 'filial_id,mes_ano,tipo,descricao,valor,pis,cofins,icms,ipi',
         fretes: 'filial_id,mes_ano,tipo,valor,pis,cofins,icms',
         energia_agua: 'filial_id,mes_ano,tipo_operacao,tipo_servico,valor,pis,cofins,icms',
-        // idx_servicos_upsert_key: (filial_id, mes_ano, tipo, valor, pis, cofins, iss)
-        servicos: 'filial_id,mes_ano,tipo,valor,pis,cofins,iss',
+        servicos: 'filial_id,mes_ano,tipo,descricao,valor,pis,cofins,iss',
         participantes: 'filial_id,cod_part',
       };
       
@@ -1102,27 +1071,18 @@ serve(async (req) => {
         ignoreDuplicates: true 
       });
       if (error) {
-        // Check if error is "ON CONFLICT specification mismatch" - this is a critical config error
-        const isMismatchError = error.message.includes('no unique or exclusion constraint') || 
-                                error.message.includes('ON CONFLICT specification');
-        
-        if (isMismatchError) {
-          // Critical: Database schema doesn't match expected constraints - fail immediately
-          console.error(`Job ${jobId}: CRITICAL - ON CONFLICT mismatch for ${table}. Database index missing or incompatible.`);
-          console.error(`Expected columns: ${onConflictMap[table]}`);
-          console.error(`Error: ${error.message}`);
-          return `Erro de configuração: índice único incompatível para ${table}. Contate o suporte.`;
+        // If unique constraint doesn't exist yet, fall back to insert
+        if (error.message.includes('constraint') || error.message.includes('unique')) {
+          console.log(`Job ${jobId}: Constraint not found for ${table}, using insert (duplicates may occur)`);
+          const { error: insertError } = await supabase.from(table).insert(batches[table]);
+          if (insertError) {
+            console.error(`Insert error for ${table}:`, insertError);
+            return insertError.message;
+          }
+        } else {
+          console.error(`Upsert error for ${table}:`, error);
+          return error.message;
         }
-        
-        // For duplicate key errors, just log and continue (data already exists)
-        if (error.message.includes('duplicate key')) {
-          console.log(`Job ${jobId}: Duplicate keys found for ${table}, skipping batch`);
-          batches[table] = [];
-          return null;
-        }
-        
-        console.error(`Upsert error for ${table}:`, error);
-        return error.message;
       }
 
       counts[table] += batches[table].length;
@@ -1692,42 +1652,16 @@ serve(async (req) => {
       })
       .eq("id", jobId);
 
-    // Refresh materialized views individually for better reliability
-    console.log(`Job ${jobId}: Refreshing materialized views individually...`);
-    const viewsToRefresh = [
-      'extensions.mv_mercadorias_aggregated',
-      'extensions.mv_fretes_aggregated',
-      'extensions.mv_energia_agua_aggregated',
-      'extensions.mv_servicos_aggregated',
-      'extensions.mv_mercadorias_participante',
-      'extensions.mv_dashboard_stats',
-      'extensions.mv_uso_consumo_aggregated',
-      'extensions.mv_uso_consumo_detailed',
-      'extensions.mv_fretes_detailed',
-      'extensions.mv_energia_agua_detailed',
-    ];
-
-    let refreshError = null;
-    let viewsRefreshed = 0;
-    for (const view of viewsToRefresh) {
-      try {
-        const { error } = await supabase.rpc('exec_sql', {
-          sql: `REFRESH MATERIALIZED VIEW ${view}`
-        });
-        if (error) {
-          console.warn(`Job ${jobId}: Failed to refresh ${view}:`, error.message);
-          refreshError = error;
-        } else {
-          viewsRefreshed++;
-          console.log(`Job ${jobId}: Refreshed ${view}`);
-        }
-      } catch (err) {
-        console.warn(`Job ${jobId}: Exception refreshing ${view}:`, err);
-        refreshError = err;
-      }
+    // Refresh materialized views so /mercadorias shows updated data immediately
+    console.log(`Job ${jobId}: Refreshing materialized views (async version with 5min timeout)...`);
+    const { error: refreshError } = await supabase.rpc('refresh_materialized_views_async');
+    const refreshSuccess = !refreshError;
+    
+    if (refreshError) {
+      console.warn(`Job ${jobId}: Failed to refresh materialized views:`, refreshError);
+    } else {
+      console.log(`Job ${jobId}: Materialized views refreshed successfully`);
     }
-    console.log(`Job ${jobId}: Refreshed ${viewsRefreshed}/${viewsToRefresh.length} views`);
-    const refreshSuccess = viewsRefreshed === viewsToRefresh.length;
 
     // Update job as completed (include seenCounts, estabelecimentos, and refresh_success for diagnostics)
     await supabase

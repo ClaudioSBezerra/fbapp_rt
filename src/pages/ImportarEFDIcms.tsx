@@ -3,19 +3,20 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Progress } from '@/components/ui/progress';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Loader2, CheckCircle, FileText, AlertCircle, Upload, Clock, XCircle, RefreshCw, AlertTriangle, FileWarning, Trash2, Shield, Files } from 'lucide-react';
+import { Loader2, CheckCircle, FileText, AlertCircle, Upload, Clock, XCircle, RefreshCw, AlertTriangle, FileWarning, Trash2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useRole } from '@/hooks/useRole';
 import { useSessionInfo } from '@/hooks/useSessionInfo';
-import { useUploadQueue, QueuedFile } from '@/hooks/useUploadQueue';
-import { MultiUploadProgress } from '@/components/MultiUploadProgress';
+import { useResumableUpload } from '@/hooks/useResumableUpload';
+import { UploadProgressDisplay } from '@/components/UploadProgress';
 import { toast } from 'sonner';
+import { formatCNPJMasked } from '@/lib/formatFilial';
 
 interface ImportCounts {
   uso_consumo_imobilizado: number;
@@ -71,29 +72,6 @@ function formatDate(dateStr: string): string {
   });
 }
 
-function formatTime(dateStr: string): string {
-  return new Date(dateStr).toLocaleString('pt-BR', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
-}
-
-function getTimeSinceUpdate(dateStr: string): { text: string; isStale: boolean } {
-  const now = new Date();
-  const updated = new Date(dateStr);
-  const diffMs = now.getTime() - updated.getTime();
-  const diffSeconds = Math.floor(diffMs / 1000);
-  const diffMinutes = Math.floor(diffSeconds / 60);
-  
-  if (diffMinutes > 2) {
-    return { text: `${diffMinutes} min atrás`, isStale: true };
-  } else if (diffSeconds > 30) {
-    return { text: `${diffSeconds}s atrás`, isStale: false };
-  }
-  return { text: 'agora', isStale: false };
-}
-
 function getStatusInfo(status: ImportJob['status']) {
   switch (status) {
     case 'pending':
@@ -116,16 +94,20 @@ function getStatusInfo(status: ImportJob['status']) {
 export default function ImportarEFDIcms() {
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [selectedEmpresa, setSelectedEmpresa] = useState<string>('');
+  const [processingImport, setProcessingImport] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [jobs, setJobs] = useState<ImportJob[]>([]);
   const [periodosDisponiveis, setPeriodosDisponiveis] = useState<PeriodoDisponivel[]>([]);
   const [loadingPeriodos, setLoadingPeriodos] = useState(true);
   const [hasEfdContribuicoes, setHasEfdContribuicoes] = useState(false);
+  const [currentUploadPath, setCurrentUploadPath] = useState<string>('');
   
+  // States for clearing database
   const [isClearing, setIsClearing] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [clearProgress, setClearProgress] = useState<{
-    status: 'counting' | 'deleting' | 'refreshing_views' | 'done';
+    status: 'counting' | 'deleting' | 'done';
     currentTable: string;
     estimated: number;
     deleted: number;
@@ -133,6 +115,7 @@ export default function ImportarEFDIcms() {
   const [progressAnimation, setProgressAnimation] = useState(0);
   const [statusMessage, setStatusMessage] = useState('');
   
+  // States for refreshing views
   const [refreshingViews, setRefreshingViews] = useState(false);
   const [viewsStatus, setViewsStatus] = useState<'loading' | 'empty' | 'ok'>('loading');
   
@@ -142,85 +125,38 @@ export default function ImportarEFDIcms() {
   const { empresas: userEmpresas, isLoading: sessionLoading } = useSessionInfo();
   const navigate = useNavigate();
 
-  // Trigger parse-efd-icms after upload
-  const triggerParseEfdIcms = useCallback(async (queuedFile: QueuedFile, filePath: string) => {
-    if (!selectedEmpresa || !session) {
-      throw new Error('Empresa não selecionada');
-    }
-    
-    // Use fetch directly to properly handle 409 status code
-    const response = await fetch(
-      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/parse-efd-icms`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          empresa_id: selectedEmpresa,
-          file_path: filePath,
-          file_name: queuedFile.file.name,
-          file_size: queuedFile.file.size,
-          import_scope: 'icms_uso_consumo',
-        }),
-      }
-    );
-
-    const data = await response.json();
-
-    // Check for duplicate (409 Conflict)
-    if (response.status === 409 && data.duplicate) {
-      const duplicateError: any = new Error(data.error || 'Período já importado');
-      duplicateError.duplicate = true;
-      duplicateError.context = { json: data };
-      throw duplicateError;
-    }
-
-    if (!response.ok || data.error) {
-      await supabase.storage.from('efd-files').remove([filePath]);
-      throw new Error(data.error || 'Erro ao iniciar importação');
-    }
-  }, [selectedEmpresa, session]);
-
+  // Resumable upload hook
   const {
-    queue,
-    addFiles,
-    removeFile,
-    clearQueue,
-    startQueue,
-    pauseQueue,
-    cancelAll,
-    retryFailed,
-    isProcessing,
+    progress: uploadProgress,
+    startUpload,
+    cancelUpload,
+    resetUpload,
+    isUploading,
     isPaused,
-    overallProgress,
-    hasFiles,
-  } = useUploadQueue({
+    isCompleted: uploadCompleted,
+    hasError: uploadHasError,
+  } = useResumableUpload({
     bucketName: 'efd-files',
-    onFileComplete: triggerParseEfdIcms,
-    onAllComplete: () => {
-      toast.success('Todos os arquivos foram enviados para processamento!');
-      clearQueue();
+    onComplete: async (filePath) => {
+      console.log('Upload completed, starting parse-efd-icms:', filePath);
+      await triggerParseEfdIcms(filePath);
     },
-    onError: (file, error) => {
-      toast.error(`Erro no upload de ${file.file.name}: ${error.message}`);
-    },
-    onDuplicate: (file, duplicateInfo) => {
-      toast.warning(`${file.file.name}: Período ${duplicateInfo.period} já foi importado para esta filial.`, {
-        duration: 6000,
-      });
+    onError: (error) => {
+      console.error('Upload failed:', error);
+      toast.error(`Erro no upload: ${error.message}`);
     },
   });
 
-  const uploading = isProcessing;
+  const uploading = isUploading || isPaused || processingImport;
 
+  // Check views status when jobs change
   useEffect(() => {
     const checkViews = async () => {
       if (!session) return;
       try {
         const { data, error } = await supabase.rpc('get_mv_uso_consumo_aggregated');
         if (error) {
+          console.warn('Failed to check views status:', error);
           setViewsStatus('empty');
         } else {
           setViewsStatus(data && data.length > 0 ? 'ok' : 'empty');
@@ -234,8 +170,10 @@ export default function ImportarEFDIcms() {
 
   const handleRefreshViews = async () => {
     setRefreshingViews(true);
+    
     try {
-      toast.info('Atualizando painéis...');
+      toast.info('Atualizando painéis... Isso pode levar alguns segundos.');
+      
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 120000);
       
@@ -250,30 +188,50 @@ export default function ImportarEFDIcms() {
           signal: controller.signal,
         }
       );
+      
       clearTimeout(timeoutId);
+      
       const result = await response.json();
       
       if (!response.ok || !result.success) {
+        console.error('Refresh failed:', result);
         toast.error(result.error || 'Falha ao atualizar views.');
         setViewsStatus('empty');
         return;
       }
       
-      toast.success(`Painéis atualizados! (${result.duration_ms}ms)`);
+      console.log('Refresh completed:', result);
+      toast.success(`Painéis atualizados com sucesso! (${result.duration_ms}ms)`);
       setViewsStatus('ok');
+      
     } catch (err: any) {
-      toast.error(err.name === 'AbortError' ? 'Timeout na atualização.' : 'Falha ao atualizar views.');
+      console.error('Failed to refresh views:', err);
+      
+      if (err.name === 'AbortError') {
+        toast.error('A atualização está demorando muito. Tente novamente em alguns minutos.');
+      } else {
+        toast.error('Falha ao atualizar views. Tente novamente.');
+      }
       setViewsStatus('empty');
     } finally {
       setRefreshingViews(false);
     }
   };
 
+  // Animated progress effect for database clearing
   useEffect(() => {
-    if (!clearProgress || clearProgress.status === 'done' || clearProgress.status === 'refreshing_views') return;
-    const messages = ['Contando registros...', 'Deletando Uso e Consumo...', 'Atualizando índices...'];
+    if (!clearProgress || clearProgress.status === 'done') return;
+    
+    const messages = [
+      'Contando registros...',
+      'Deletando Uso e Consumo...',
+      'Deletando Ativo Imobilizado...',
+      'Atualizando views...',
+    ];
+    
     let messageIndex = 0;
     let progress = 0;
+    
     setStatusMessage(messages[0]);
     setProgressAnimation(0);
     
@@ -281,45 +239,65 @@ export default function ImportarEFDIcms() {
       messageIndex = Math.min(messageIndex + 1, messages.length - 1);
       setStatusMessage(messages[messageIndex]);
     }, 4000);
+    
     const progressInterval = setInterval(() => {
       progress = Math.min(progress + 2, 90);
       setProgressAnimation(progress);
     }, 500);
     
-    return () => { clearInterval(messageInterval); clearInterval(progressInterval); };
+    return () => {
+      clearInterval(messageInterval);
+      clearInterval(progressInterval);
+    };
   }, [clearProgress?.status]);
 
   const handleClearDatabase = async () => {
     if (!session?.user?.id) return;
+    
     setIsClearing(true);
-    setClearProgress({ status: 'deleting', currentTable: '', estimated: 0, deleted: 0 });
+    setProgressAnimation(0);
+    setStatusMessage('Contando registros...');
+    setClearProgress({ 
+      status: 'deleting', 
+      currentTable: '', 
+      estimated: 0, 
+      deleted: 0 
+    });
 
     try {
       const { data, error } = await supabase.functions.invoke('clear-icms-data');
-      if (error || data?.error) throw new Error(data?.error || error?.message);
       
-      const totalDeleted = data?.deleted?.uso_consumo || 0;
-      
-      // Mostrar status de atualização de views
-      setProgressAnimation(95);
-      setClearProgress({ status: 'refreshing_views', currentTable: 'Atualizando painéis...', estimated: totalDeleted, deleted: totalDeleted });
-      setStatusMessage('Atualizando painéis...');
+      if (error) {
+        console.error('Erro ao chamar função:', error);
+        throw error;
+      }
 
-      // Aguardar um momento para mostrar o status antes de concluir
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      if (data?.error) {
+        console.error('Erro da função:', data.error);
+        throw new Error(data.error);
+      }
+
+      const totalDeleted = (data?.deleted?.uso_consumo || 0);
       
       setProgressAnimation(100);
-      setClearProgress({ status: 'done', currentTable: 'Concluído!', estimated: totalDeleted, deleted: totalDeleted });
-      setViewsStatus('empty'); // Views foram limpas
+      setClearProgress({
+        status: 'done',
+        currentTable: 'Concluído!',
+        estimated: totalDeleted,
+        deleted: totalDeleted
+      });
 
       setTimeout(() => {
         setJobs([]);
-        toast.success(data?.message || 'Base ICMS limpa!');
+        toast.success(data?.message || 'Base de dados ICMS limpa com sucesso!');
         setShowClearConfirm(false);
         setClearProgress(null);
+        setViewsStatus('empty');
       }, 1500);
+      
     } catch (error) {
-      toast.error('Erro ao limpar base');
+      console.error('Error clearing database:', error);
+      toast.error('Erro ao limpar base de dados');
       setClearProgress(null);
       setShowClearConfirm(false);
     } finally {
@@ -327,164 +305,625 @@ export default function ImportarEFDIcms() {
     }
   };
 
+  // Verificar se existem dados de EFD Contribuições
   useEffect(() => {
     const checkEfdContribuicoes = async () => {
       if (!session) return;
       setLoadingPeriodos(true);
+      
       try {
-        const { data } = await supabase.from('mercadorias').select('mes_ano').limit(1000);
+        const { data, error } = await supabase
+          .from('mercadorias')
+          .select('mes_ano')
+          .limit(1000);
+
+        if (error) {
+          console.error('Error checking EFD Contribuições:', error);
+          setHasEfdContribuicoes(false);
+          setPeriodosDisponiveis([]);
+          return;
+        }
+
         if (!data || data.length === 0) {
           setHasEfdContribuicoes(false);
           setPeriodosDisponiveis([]);
           return;
         }
+
         const periodosSet = new Set<string>();
         data.forEach((m) => {
           if (m.mes_ano) {
-            const mesAnoStr = typeof m.mes_ano === 'string' ? m.mes_ano : new Date(m.mes_ano).toISOString().slice(0, 10);
+            const mesAnoStr = typeof m.mes_ano === 'string' 
+              ? m.mes_ano 
+              : new Date(m.mes_ano).toISOString().slice(0, 10);
             periodosSet.add(mesAnoStr.substring(0, 7));
           }
         });
-        const periodos = Array.from(periodosSet).sort().reverse().map(p => ({ mes_ano: p, label: p.split('-').reverse().join('/') }));
+
+        const periodos = Array.from(periodosSet)
+          .sort()
+          .reverse()
+          .map(p => ({
+            mes_ano: p,
+            label: p.split('-').reverse().join('/')
+          }));
+
         setHasEfdContribuicoes(periodos.length > 0);
         setPeriodosDisponiveis(periodos);
-      } catch { setHasEfdContribuicoes(false); setPeriodosDisponiveis([]); }
-      finally { setLoadingPeriodos(false); }
+      } catch (err) {
+        console.error('Error checking EFD Contribuições:', err);
+        setHasEfdContribuicoes(false);
+        setPeriodosDisponiveis([]);
+      } finally {
+        setLoadingPeriodos(false);
+      }
     };
+
     checkEfdContribuicoes();
   }, [session]);
 
+  // Load empresas
   useEffect(() => {
     if (sessionLoading) return;
+    
     if (userEmpresas.length > 0) {
       setEmpresas(userEmpresas.map(e => ({ id: e.id, nome: e.nome })));
       setSelectedEmpresa(userEmpresas[0].id);
+    } else {
+      setEmpresas([]);
+      setSelectedEmpresa('');
     }
   }, [userEmpresas, sessionLoading]);
 
+  // Load existing jobs
   const loadJobs = useCallback(async () => {
     if (!session?.user?.id) return;
-    const { data } = await supabase.from('import_jobs').select('*').eq('user_id', session.user.id).eq('import_scope', 'icms_uso_consumo').order('created_at', { ascending: false }).limit(10);
-    if (data) setJobs(data.map(job => ({ ...job, counts: job.counts as unknown as ImportCounts, status: job.status as ImportJob['status'] })));
+    
+    const { data } = await supabase
+      .from('import_jobs')
+      .select('*')
+      .eq('user_id', session.user.id)
+      .eq('import_scope', 'icms_uso_consumo')
+      .order('created_at', { ascending: false })
+      .limit(10);
+    
+    if (data) {
+      setJobs(data.map(job => ({
+        ...job,
+        counts: (job.counts as unknown) as ImportCounts,
+        status: job.status as ImportJob['status'],
+      })));
+    }
   }, [session?.user?.id]);
 
   useEffect(() => {
     if (!session?.user?.id) return;
     loadJobs();
-    const channel = supabase.channel('import-jobs-icms-realtime').on('postgres_changes', { event: '*', schema: 'public', table: 'import_jobs', filter: `user_id=eq.${session.user.id}` }, (payload) => {
-      if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-        const job = payload.new as any;
-        if (job.import_scope === 'icms_uso_consumo') {
-          loadJobs();
-          if (job.status === 'completed') {
-            toast.success(`Importação concluída! ${job.counts.uso_consumo_imobilizado || 0} registros.`);
-            setViewsStatus('ok');
-          } else if (job.status === 'failed') {
-            toast.error(`Importação falhou: ${job.error_message || 'Erro'}`);
+
+    // Subscribe to realtime updates
+    const channel = supabase
+      .channel('import-jobs-icms-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'import_jobs',
+          filter: `user_id=eq.${session.user.id}`,
+        },
+        (payload) => {
+          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            const job = payload.new as any;
+            if (job.import_scope === 'icms_uso_consumo') {
+              loadJobs();
+              
+              if (job.status === 'completed') {
+                const counts = job.counts as ImportCounts;
+                if (counts.refresh_success === false) {
+                  toast.warning(
+                    `Importação concluída! ${counts.uso_consumo_imobilizado || 0} registros importados. Os painéis podem demorar para atualizar.`,
+                    { duration: 8000 }
+                  );
+                  setViewsStatus('empty');
+                } else {
+                  toast.success(`Importação concluída! ${counts.uso_consumo_imobilizado || 0} registros importados. Redirecionando...`);
+                  setViewsStatus('ok');
+                }
+                setTimeout(() => navigate('/uso-consumo'), 3000);
+              } else if (job.status === 'failed') {
+                toast.error(`Importação falhou: ${job.error_message || 'Erro desconhecido'}`);
+              }
+            }
           }
         }
-      }
-    }).subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [session?.user?.id, loadJobs]);
+      )
+      .subscribe();
 
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [session?.user?.id, loadJobs, navigate]);
+
+  // Polling fallback for active jobs
   useEffect(() => {
-    const hasActiveJobs = jobs.some(j => ['pending', 'processing', 'refreshing_views', 'generating'].includes(j.status));
+    const hasActiveJobs = jobs.some(j => 
+      j.status === 'pending' || j.status === 'processing' || j.status === 'refreshing_views' || j.status === 'generating'
+    );
+    
     if (!hasActiveJobs || !session?.user?.id) return;
-    const pollInterval = setInterval(loadJobs, 15000);
-    return () => clearInterval(pollInterval);
+    
+    const pollInterval = setInterval(() => {
+      loadJobs();
+    }, 15000);
+    
+    return () => {
+      clearInterval(pollInterval);
+    };
   }, [jobs, session?.user?.id, loadJobs]);
 
-  const handleFilesSelect = (files: File[]) => {
-    const validFiles = files.filter(f => f.name.toLowerCase().endsWith('.txt') && f.size <= 1024 * 1024 * 1024);
-    if (validFiles.length > 0) {
-      const added = addFiles(validFiles);
-      if (added > 0) toast.success(`${added} arquivo${added > 1 ? 's' : ''} adicionado${added > 1 ? 's' : ''}`);
+  // Re-sync on tab visibility change
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && session?.user?.id) {
+        loadJobs();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [session?.user?.id, loadJobs]);
+
+  // Trigger parse-efd-icms after upload
+  const triggerParseEfdIcms = useCallback(async (filePath: string) => {
+    if (!selectedFile || !selectedEmpresa || !session) return;
+    
+    setProcessingImport(true);
+    
+    try {
+      console.log('Calling parse-efd-icms for:', filePath);
+      
+      const response = await supabase.functions.invoke('parse-efd-icms', {
+        body: {
+          empresa_id: selectedEmpresa,
+          file_path: filePath,
+          file_name: selectedFile.name,
+          file_size: selectedFile.size,
+          import_scope: 'icms_uso_consumo',
+        },
+      });
+
+      if (response.error) {
+        await supabase.storage.from('efd-files').remove([filePath]);
+        throw new Error(response.error.message || 'Erro ao iniciar importação');
+      }
+
+      const data = response.data;
+      if (data.error) {
+        await supabase.storage.from('efd-files').remove([filePath]);
+        throw new Error(data.error);
+      }
+
+      setSelectedFile(null);
+      setCurrentUploadPath('');
+      resetUpload();
+      toast.success('Importação iniciada! Acompanhe o progresso abaixo.');
+    } catch (error) {
+      console.error('Error starting import:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Erro ao iniciar importação';
+      toast.error(errorMessage);
+    } finally {
+      setProcessingImport(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  }, [selectedFile, selectedEmpresa, session, resetUpload]);
+
+  const handleStartImport = async () => {
+    if (!selectedFile || !selectedEmpresa || !session) return;
+
+    try {
+      const timestamp = Date.now();
+      const filePath = `${session.user.id}/${timestamp}_icms_${selectedFile.name}`;
+      setCurrentUploadPath(filePath);
+      
+      await startUpload(selectedFile, filePath);
+    } catch (error) {
+      console.error('Error starting upload:', error);
+      toast.error('Erro ao iniciar upload');
     }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    handleFilesSelect(Array.from(e.target.files || []));
-    if (fileInputRef.current) fileInputRef.current.value = '';
+  const handleCancelUpload = () => {
+    cancelUpload();
+    setSelectedFile(null);
+    setCurrentUploadPath('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+    toast.info('Upload cancelado.');
   };
 
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => { e.preventDefault(); setIsDragOver(false); handleFilesSelect(Array.from(e.dataTransfer.files)); };
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => { e.preventDefault(); setIsDragOver(true); };
-  const handleDragLeave = () => setIsDragOver(false);
-
-  const handleCancelJob = async (jobId: string) => {
-    try {
-      const { data, error } = await supabase.functions.invoke('cancel-import-job', { body: { job_id: jobId } });
-      if (error || data?.error) throw new Error(data?.error || error?.message);
-      toast.success('Importação cancelada.');
-    } catch (error) { toast.error('Erro ao cancelar'); }
+  const handleFileSelect = (file: File) => {
+    if (!file.name.endsWith('.txt')) {
+      toast.error('Por favor, selecione um arquivo .txt');
+      return;
+    }
+    if (file.size > 1024 * 1024 * 1024) {
+      toast.error('Arquivo muito grande (>1GB). Limite máximo é 1GB.');
+      return;
+    }
+    setSelectedFile(file);
   };
 
-  const activeJobs = jobs.filter(j => ['pending', 'processing', 'refreshing_views', 'generating'].includes(j.status));
-  const completedJobs = jobs.filter(j => ['completed', 'failed', 'cancelled'].includes(j.status));
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleFileSelect(file);
+  };
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto">
-      <AlertDialog open={showClearConfirm} onOpenChange={(open) => { if (!isClearing) { setShowClearConfirm(open); if (!open) setClearProgress(null); } }}>
+    <div className="space-y-6">
+      {/* Clear Database Confirmation Dialog */}
+      <AlertDialog open={showClearConfirm} onOpenChange={(open) => {
+        if (!isClearing) {
+          setShowClearConfirm(open);
+          if (!open) setClearProgress(null);
+        }
+      }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2 text-destructive"><AlertTriangle className="h-5 w-5" />Limpar Base ICMS/IPI</AlertDialogTitle>
+            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5" />
+              Limpar Base ICMS/IPI
+            </AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div>
                 {clearProgress ? (
                   <div className="space-y-4 py-4">
-                    <div className="flex items-center gap-2">{clearProgress.status === 'done' ? <CheckCircle className="h-5 w-5 text-positive" /> : <Loader2 className="h-5 w-5 animate-spin text-primary" />}<span className="font-medium">{clearProgress.status === 'done' ? 'Concluído!' : statusMessage}</span></div>
-                    <Progress value={clearProgress.status === 'done' ? 100 : progressAnimation} className="h-3" />
+                    <div className="flex items-center gap-2">
+                      {clearProgress.status === 'done' ? (
+                        <CheckCircle className="h-5 w-5 text-positive" />
+                      ) : (
+                        <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                      )}
+                      <span className="font-medium">
+                        {clearProgress.status === 'done' ? 'Concluído!' : statusMessage}
+                      </span>
+                    </div>
+                    <Progress 
+                      value={clearProgress.status === 'done' ? 100 : progressAnimation} 
+                      className="h-3" 
+                    />
+                    <p className="text-xs text-muted-foreground text-center">
+                      {clearProgress.status === 'done' 
+                        ? `${clearProgress.deleted.toLocaleString('pt-BR')} registros removidos`
+                        : 'Isso pode levar alguns minutos para bases grandes...'}
+                    </p>
                   </div>
-                ) : (<><p>Esta ação remove dados de Uso/Consumo e Ativo Imobilizado.</p><p className="mt-3 font-semibold text-destructive">Não pode ser desfeita!</p></>)}
+                ) : (
+                  <>
+                    <p>
+                      {isAdmin 
+                        ? 'Esta ação irá remover permanentemente TODOS os dados de ICMS/IPI de TODAS as empresas:'
+                        : `Esta ação irá remover permanentemente os dados de ICMS/IPI da empresa ${empresas[0]?.nome || 'vinculada'}:`
+                      }
+                    </p>
+                    <ul className="list-disc list-inside mt-2 space-y-1">
+                      <li>Uso e Consumo (CFOP 1556, 2556)</li>
+                      <li>Ativo Imobilizado (CFOP 1551, 2551)</li>
+                      <li>Histórico de importações ICMS</li>
+                    </ul>
+                    <p className="mt-3 font-semibold text-destructive">
+                      Esta ação não pode ser desfeita!
+                    </p>
+                    <p className="mt-2 text-sm">
+                      <strong>Nota:</strong> Os dados de EFD Contribuições (mercadorias, fretes, energia) não serão afetados.
+                    </p>
+                  </>
+                )}
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            {!clearProgress && (<><AlertDialogCancel disabled={isClearing}>Cancelar</AlertDialogCancel><Button onClick={handleClearDatabase} disabled={isClearing} className="bg-destructive text-destructive-foreground">{isClearing && <Loader2 className="h-4 w-4 animate-spin mr-2" />}Confirmar</Button></>)}
-            {clearProgress?.status === 'done' && <AlertDialogAction onClick={() => { setShowClearConfirm(false); setClearProgress(null); }}>Fechar</AlertDialogAction>}
+            {!clearProgress && (
+              <>
+                <AlertDialogCancel disabled={isClearing}>Cancelar</AlertDialogCancel>
+                <Button 
+                  onClick={handleClearDatabase}
+                  disabled={isClearing}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  {isClearing && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                  Confirmar Limpeza
+                </Button>
+              </>
+            )}
+            {clearProgress?.status === 'done' && (
+              <AlertDialogAction onClick={() => {
+                setShowClearConfirm(false);
+                setClearProgress(null);
+              }}>
+                Fechar
+              </AlertDialogAction>
+            )}
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
-      {!loadingPeriodos && !hasEfdContribuicoes && (<Alert variant="destructive"><FileWarning className="h-4 w-4" /><AlertTitle>EFD Contribuições não encontrado</AlertTitle><AlertDescription>Importe primeiro arquivos de EFD CONTRIBUIÇÕES.</AlertDescription></Alert>)}
+      {/* Header */}
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Importação de EFD ICMS/IPI</h1>
+        <p className="text-sm text-muted-foreground">
+          Importe arquivos EFD ICMS/IPI para extrair dados de Uso e Consumo (CFOP 1556, 2556) e Ativo Imobilizado (CFOP 1551, 2551)
+        </p>
+      </div>
 
-      {hasEfdContribuicoes && periodosDisponiveis.length > 0 && (<Alert className="border-blue-500 bg-blue-50 dark:bg-blue-950/20"><AlertCircle className="h-4 w-4 text-blue-600" /><AlertTitle className="text-blue-800 dark:text-blue-200">Períodos disponíveis</AlertTitle><AlertDescription className="text-blue-700 dark:text-blue-300">{periodosDisponiveis.slice(0, 6).map(p => p.label).join(', ')}{periodosDisponiveis.length > 6 && ` e mais ${periodosDisponiveis.length - 6}...`}</AlertDescription></Alert>)}
+      {/* Alerta: Sem EFD Contribuições */}
+      {!loadingPeriodos && !hasEfdContribuicoes && (
+        <Alert variant="destructive">
+          <FileWarning className="h-4 w-4" />
+          <AlertTitle>EFD Contribuições não encontrado</AlertTitle>
+          <AlertDescription>
+            Importe primeiro arquivos de <strong>EFD CONTRIBUIÇÕES</strong> antes de importar EFD ICMS/IPI.
+            Os dados do ICMS/IPI serão vinculados aos períodos já existentes.
+          </AlertDescription>
+        </Alert>
+      )}
 
+      {/* Info: Períodos disponíveis */}
+      {hasEfdContribuicoes && periodosDisponiveis.length > 0 && (
+        <Alert className="border-blue-500 bg-blue-50 dark:bg-blue-950/20">
+          <AlertCircle className="h-4 w-4 text-blue-600" />
+          <AlertTitle className="text-blue-800 dark:text-blue-200">Períodos disponíveis para importação</AlertTitle>
+          <AlertDescription className="text-blue-700 dark:text-blue-300">
+            Você pode importar EFD ICMS/IPI para os seguintes períodos (já possuem EFD Contribuições):{' '}
+            <span className="font-medium">{periodosDisponiveis.slice(0, 6).map(p => p.label).join(', ')}</span>
+            {periodosDisponiveis.length > 6 && ` e mais ${periodosDisponiveis.length - 6}...`}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Views Status Alert */}
+      {viewsStatus === 'empty' && jobs.some(j => j.status === 'completed') && (
+        <Card className="border-warning bg-warning/5">
+          <CardContent className="flex items-center justify-between py-4">
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="h-5 w-5 text-warning" />
+              <div>
+                <p className="font-medium text-warning">Views desatualizadas</p>
+                <p className="text-sm text-muted-foreground">
+                  Os dados foram importados mas os painéis ainda não foram atualizados.
+                </p>
+              </div>
+            </div>
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={handleRefreshViews}
+              disabled={refreshingViews}
+              className="border-warning text-warning hover:bg-warning hover:text-warning-foreground"
+            >
+              {refreshingViews ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Atualizando...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Atualizar Views
+                </>
+              )}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Upload Area */}
       <Card className={!hasEfdContribuicoes ? 'opacity-50 pointer-events-none' : ''}>
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
-          <CardTitle className="flex items-center gap-2"><Upload className="h-5 w-5" />Importar EFD ICMS/IPI</CardTitle>
+          <div>
+            <CardTitle className="text-lg">Upload de Arquivo</CardTitle>
+            <CardDescription>
+              Selecione um arquivo EFD ICMS/IPI (.txt) para importar os dados de Uso e Consumo e Ativo Imobilizado
+            </CardDescription>
+          </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={handleRefreshViews} disabled={refreshingViews || uploading}>{refreshingViews ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}Atualizar Painéis</Button>
-            <Button variant="outline" size="sm" className="text-destructive border-destructive hover:bg-destructive hover:text-destructive-foreground" onClick={() => setShowClearConfirm(true)} disabled={uploading || isClearing}><Trash2 className="h-4 w-4 mr-2" />Limpar Base</Button>
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={handleRefreshViews}
+              disabled={refreshingViews || uploading}
+            >
+              {refreshingViews ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <RefreshCw className="h-4 w-4 mr-2" />
+              )}
+              Atualizar Painéis
+            </Button>
+            <Button 
+              variant="outline" 
+              size="sm"
+              className="text-destructive border-destructive hover:bg-destructive hover:text-destructive-foreground"
+              onClick={() => setShowClearConfirm(true)}
+              disabled={uploading || isClearing}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Limpar Base ICMS
+            </Button>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">Importe arquivos EFD ICMS/IPI para extrair dados de Uso e Consumo e Ativo Imobilizado. <strong className="text-foreground">Suporta múltiplos arquivos!</strong></p>
-          <Alert className="border-positive/50 bg-positive/5"><Shield className="h-4 w-4 text-positive" /><AlertTitle className="text-positive">Segurança</AlertTitle><AlertDescription className="text-muted-foreground">O arquivo TXT é automaticamente excluído após a importação.</AlertDescription></Alert>
-          
+          {/* Empresa Selector */}
           <div className="space-y-2">
-            <Label>Empresa Destino</Label>
-            <Select value={selectedEmpresa} onValueChange={setSelectedEmpresa} disabled={uploading}><SelectTrigger><SelectValue placeholder="Selecione a empresa" /></SelectTrigger><SelectContent>{empresas.map((e) => <SelectItem key={e.id} value={e.id}>{e.nome}</SelectItem>)}</SelectContent></Select>
+            <Label>Empresa</Label>
+            <Select value={selectedEmpresa} onValueChange={setSelectedEmpresa} disabled={uploading}>
+              <SelectTrigger className="w-full md:w-[300px]">
+                <SelectValue placeholder="Selecione a empresa" />
+              </SelectTrigger>
+              <SelectContent>
+                {empresas.map((e) => (
+                  <SelectItem key={e.id} value={e.id}>{e.nome}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
-          <div className={`relative border-2 border-dashed rounded-lg p-8 transition-colors cursor-pointer ${isDragOver ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50 hover:bg-muted/50'} ${uploading || !selectedEmpresa || !hasEfdContribuicoes ? 'pointer-events-none opacity-40' : ''}`} onClick={() => fileInputRef.current?.click()} onDrop={handleDrop} onDragOver={handleDragOver} onDragLeave={handleDragLeave}>
-            <input ref={fileInputRef} type="file" accept=".txt" multiple onChange={handleFileChange} className="hidden" disabled={uploading || !selectedEmpresa || !hasEfdContribuicoes} />
-            <div className="flex flex-col items-center gap-3">
-              <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center"><Files className="h-6 w-6 text-muted-foreground" /></div>
-              <div className="space-y-1 text-center"><p className="text-sm font-medium">Arraste os arquivos ou clique para selecionar</p><p className="text-xs text-muted-foreground">Aceita múltiplos arquivos .txt (EFD ICMS/IPI) - até 1GB cada</p></div>
+          {/* Drag & Drop Area */}
+          <div
+            className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+              isDragOver
+                ? 'border-primary bg-primary/5'
+                : 'border-muted-foreground/25 hover:border-muted-foreground/50'
+            }`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            <input
+              type="file"
+              accept=".txt"
+              onChange={(e) => e.target.files?.[0] && handleFileSelect(e.target.files[0])}
+              className="hidden"
+              ref={fileInputRef}
+              disabled={uploading}
+            />
+            <Upload className="h-10 w-10 mx-auto mb-4 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground mb-2">
+              Arraste e solte um arquivo EFD ICMS/IPI aqui ou
+            </p>
+            <Button
+              variant="outline"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+            >
+              Selecionar arquivo
+            </Button>
+          </div>
+
+          {/* Selected File Info */}
+          {selectedFile && !uploading && (
+            <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
+              <div className="flex items-center gap-3">
+                <FileText className="h-5 w-5 text-muted-foreground" />
+                <div>
+                  <p className="font-medium text-sm">{selectedFile.name}</p>
+                  <p className="text-xs text-muted-foreground">{formatFileSize(selectedFile.size)}</p>
+                </div>
+              </div>
+              <Button onClick={handleStartImport} disabled={!selectedEmpresa}>
+                Iniciar Importação
+              </Button>
             </div>
-          </div>
+          )}
 
-          {hasFiles && <MultiUploadProgress queue={queue} overallProgress={overallProgress} isProcessing={isProcessing} isPaused={isPaused} onRemoveFile={removeFile} onStartQueue={startQueue} onPauseQueue={pauseQueue} onCancelAll={cancelAll} onRetryFailed={retryFailed} onClearQueue={clearQueue} />}
+          {/* Upload Progress */}
+          {(isUploading || isPaused || uploadCompleted || uploadHasError) && (
+            <div className="space-y-3">
+              <UploadProgressDisplay progress={uploadProgress} fileName={selectedFile?.name || ''} />
+              {(isUploading || isPaused) && (
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={handleCancelUpload}>
+                    Cancelar
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Processing indicator */}
+          {processingImport && (
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span className="text-sm">Iniciando processamento...</span>
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      {activeJobs.length > 0 && (<Card><CardHeader className="flex flex-row items-center justify-between"><CardTitle className="flex items-center gap-2 text-lg"><Loader2 className="h-5 w-5 animate-spin" />Importações em Andamento</CardTitle><Button variant="ghost" size="sm" onClick={loadJobs}><RefreshCw className="h-4 w-4 mr-1" />Atualizar</Button></CardHeader><CardContent className="space-y-4">{activeJobs.map((job) => { const statusInfo = getStatusInfo(job.status); const StatusIcon = statusInfo.icon; const updateInfo = job.updated_at ? getTimeSinceUpdate(job.updated_at) : null; return (<div key={job.id} className="border rounded-lg p-4 space-y-3"><div className="flex items-start justify-between"><div className="space-y-1 min-w-0 flex-1"><p className="font-medium truncate max-w-xs" title={job.file_name}>{job.file_name}</p><p className="text-xs text-muted-foreground">{formatFileSize(job.file_size)} • {formatDate(job.created_at)}</p></div><Badge className={statusInfo.color}><StatusIcon className={`h-3 w-3 mr-1 ${job.status === 'processing' ? 'animate-spin' : ''}`} />{statusInfo.label}</Badge></div><Progress value={job.progress} className="h-2" />{updateInfo && <div className={`flex items-center gap-2 text-xs ${updateInfo.isStale ? 'text-warning' : 'text-muted-foreground'}`}><Clock className="h-3 w-3" /><span>Última atualização: {formatTime(job.updated_at)} ({updateInfo.text})</span></div>}<Button variant="outline" size="sm" onClick={() => handleCancelJob(job.id)} className="text-destructive"><XCircle className="h-4 w-4 mr-1" />Cancelar</Button></div>); })}</CardContent></Card>)}
+      {/* Import Jobs History */}
+      {jobs.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Histórico de Importações</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {jobs.map((job) => {
+                const statusInfo = getStatusInfo(job.status);
+                const StatusIcon = statusInfo.icon;
+                const isActive = ['pending', 'processing', 'generating', 'refreshing_views'].includes(job.status);
+                
+                return (
+                  <div key={job.id} className="flex items-center justify-between p-3 border rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <StatusIcon className={`h-5 w-5 ${isActive ? 'animate-spin' : ''}`} />
+                      <div>
+                        <p className="font-medium text-sm">{job.file_name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {formatDate(job.created_at)} • {formatFileSize(job.file_size)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Badge className={statusInfo.color}>{statusInfo.label}</Badge>
+                      {job.status === 'completed' && job.counts && (
+                        <span className="text-xs text-muted-foreground">
+                          {job.counts.uso_consumo_imobilizado || 0} registros
+                        </span>
+                      )}
+                      {job.status === 'processing' && (
+                        <span className="text-xs text-muted-foreground">
+                          {job.progress}%
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
-      {completedJobs.length > 0 && (<Card><CardHeader><CardTitle className="flex items-center gap-2 text-lg"><CheckCircle className="h-5 w-5 text-positive" />Histórico</CardTitle></CardHeader><CardContent><div className="space-y-3">{completedJobs.map((job) => { const statusInfo = getStatusInfo(job.status); const StatusIcon = statusInfo.icon; return (<div key={job.id} className="border rounded-lg p-4"><div className="flex items-start justify-between mb-2"><div className="space-y-1 min-w-0 flex-1"><p className="font-medium truncate max-w-xs">{job.file_name}</p><p className="text-xs text-muted-foreground">{formatFileSize(job.file_size)} • {formatDate(job.created_at)}</p></div><Badge className={statusInfo.color}><StatusIcon className="h-3 w-3 mr-1" />{statusInfo.label}</Badge></div>{job.status === 'completed' && <div className="bg-muted/50 rounded-lg p-3"><div className="grid grid-cols-2 gap-2 text-center"><div><p className="text-lg font-semibold">{job.counts.uso_consumo_imobilizado || 0}</p><p className="text-xs text-muted-foreground">Uso/Consumo/Imob.</p></div><div><p className="text-lg font-semibold">{job.counts.participantes || 0}</p><p className="text-xs text-muted-foreground">Participantes</p></div></div><div className="flex items-center justify-center gap-2 text-xs text-positive mt-2 pt-2 border-t"><Shield className="h-3 w-3" /><span>Arquivo excluído</span></div></div>}{job.status === 'failed' && job.error_message && <div className="bg-destructive/10 rounded-lg p-3 flex items-start gap-2"><AlertCircle className="h-4 w-4 text-destructive mt-0.5" /><p className="text-sm text-destructive">{job.error_message}</p></div>}</div>); })}</div></CardContent></Card>)}
-
-      {jobs.length === 0 && !hasFiles && (<Card><CardContent className="py-12 text-center"><FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" /><p className="text-muted-foreground">Nenhuma importação encontrada.</p></CardContent></Card>)}
+      {/* Info Card */}
+      <Card className="bg-muted/50">
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <AlertCircle className="h-4 w-4" />
+            Sobre a Importação EFD ICMS/IPI
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm text-muted-foreground space-y-2">
+          <p>
+            Esta funcionalidade importa dados específicos do <strong>EFD ICMS/IPI</strong> (Escrituração Fiscal Digital - ICMS/IPI):
+          </p>
+          <ul className="list-disc list-inside space-y-1 ml-2">
+            <li><strong>CFOP 1551, 2551</strong> - Aquisições para Ativo Imobilizado</li>
+            <li><strong>CFOP 1556, 2556</strong> - Aquisições para Uso e Consumo</li>
+          </ul>
+          <p className="pt-2">
+            <strong>Pré-requisito:</strong> Você deve importar o arquivo <em>EFD Contribuições</em> do mesmo período primeiro.
+            Os dados do ICMS/IPI serão vinculados à mesma filial e período.
+          </p>
+        </CardContent>
+      </Card>
     </div>
   );
 }

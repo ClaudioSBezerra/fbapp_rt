@@ -142,11 +142,8 @@ function MercadoriasTable({ data, aliquotas, tipo, anoProjecao }: MercadoriasTab
                 </TooltipTrigger>
                 <TooltipContent side="top" className="max-w-xs">
                   <p className="font-semibold mb-1">Fórmula:</p>
-                  <p className="font-mono text-xs">(ICMS Proj. + PIS/COFINS Proj. + IBS + CBS) − (ICMS + PIS/COFINS)</p>
-                  <p className="text-muted-foreground text-xs mt-1">
-                    Diferença entre impostos projetados e atuais.<br/>
-                    <span className="text-green-600 dark:text-green-400">Negativo = Economia</span> | <span className="text-red-600 dark:text-red-400">Positivo = Aumento</span>
-                  </p>
+                  <p className="font-mono text-xs">(ICMS + PIS/COFINS) − (ICMS Proj. + PIS/COFINS Proj. + IBS + CBS)</p>
+                  <p className="text-muted-foreground text-xs mt-1">Compara impostos atuais com TODOS os impostos projetados (transição + novos)</p>
                 </TooltipContent>
               </Tooltip>
             </TableHead>
@@ -186,10 +183,10 @@ function MercadoriasTable({ data, aliquotas, tipo, anoProjecao }: MercadoriasTab
                 <TableCell className="text-right font-mono text-xs font-semibold bg-muted/30">{formatCurrency(totalImpostosPagar)}</TableCell>
                 <TableCell className="text-right">
                   <Badge
-                    variant={diferencaReal > 0 ? 'destructive' : diferencaReal < 0 ? 'default' : 'secondary'}
-                    className={`text-xs ${diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}`}
+                    variant={diferencaReal < 0 ? 'destructive' : 'default'}
+                    className={`text-xs ${diferencaReal >= 0 ? 'bg-positive text-positive-foreground' : ''}`}
                   >
-                    {diferencaReal > 0 ? '+' : ''}{formatCurrency(diferencaReal)}
+                    {diferencaReal >= 0 ? '+' : ''}{formatCurrency(diferencaReal)}
                   </Badge>
                 </TableCell>
               </TableRow>
@@ -403,7 +400,7 @@ export default function Mercadorias() {
     <div className="space-y-4 sm:space-y-6 animate-fade-in">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <h1 className="text-lg sm:text-xl font-bold text-foreground">Painel de Operações de Compra e Venda</h1>
+          <h1 className="text-lg sm:text-xl font-bold text-foreground">Painel de Mercadorias</h1>
           <p className="text-xs sm:text-sm text-muted-foreground">Comparativo PIS+COFINS vs IBS+CBS agregado por Filial e Mês</p>
         </div>
         <div className="flex items-center gap-2">

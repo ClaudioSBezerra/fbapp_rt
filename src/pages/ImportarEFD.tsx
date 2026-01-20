@@ -8,14 +8,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Loader2, CheckCircle, FileText, ArrowRight, AlertCircle, Upload, Clock, XCircle, RefreshCw, Zap, Trash2, AlertTriangle, Shield, Files } from 'lucide-react';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Loader2, CheckCircle, FileText, ArrowRight, AlertCircle, Upload, Clock, XCircle, RefreshCw, Zap, Trash2, AlertTriangle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useRole } from '@/hooks/useRole';
 import { useSessionInfo } from '@/hooks/useSessionInfo';
-import { useUploadQueue, QueuedFile } from '@/hooks/useUploadQueue';
-import { MultiUploadProgress } from '@/components/MultiUploadProgress';
+import { useResumableUpload } from '@/hooks/useResumableUpload';
+import { UploadProgressDisplay } from '@/components/UploadProgress';
 import { toast } from 'sonner';
 import { formatCNPJMasked } from '@/lib/formatFilial';
 
@@ -131,14 +130,16 @@ function getStatusInfo(status: ImportJob['status']) {
 export default function ImportarEFD() {
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [selectedEmpresa, setSelectedEmpresa] = useState<string>('');
+  const [processingImport, setProcessingImport] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [jobs, setJobs] = useState<ImportJob[]>([]);
   const [recordLimit, setRecordLimit] = useState<number>(0);
   const [importScope, setImportScope] = useState<'all' | 'only_a' | 'only_c' | 'only_d'>('all');
   const [isClearing, setIsClearing] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [clearProgress, setClearProgress] = useState<{
-    status: 'counting' | 'deleting' | 'refreshing_views' | 'done';
+    status: 'counting' | 'deleting' | 'done';
     currentTable: string;
     estimated: number;
     deleted: number;
@@ -147,93 +148,39 @@ export default function ImportarEFD() {
   const [statusMessage, setStatusMessage] = useState('');
   const [refreshingViews, setRefreshingViews] = useState(false);
   const [viewsStatus, setViewsStatus] = useState<'loading' | 'empty' | 'ok'>('loading');
+  const [currentUploadPath, setCurrentUploadPath] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { session } = useAuth();
   const { isAdmin } = useRole();
   const { empresas: userEmpresas, isLoading: sessionLoading } = useSessionInfo();
   const navigate = useNavigate();
 
-  // Trigger parse-efd after upload completes
-  const triggerParseEfd = useCallback(async (queuedFile: QueuedFile, filePath: string) => {
-    if (!selectedEmpresa || !session) {
-      throw new Error('Empresa não selecionada');
-    }
-    
-    console.log('Calling parse-efd for:', filePath);
-    
-    // Use fetch directly to properly handle 409 status code
-    const response = await fetch(
-      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/parse-efd`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          empresa_id: selectedEmpresa,
-          file_path: filePath,
-          file_name: queuedFile.file.name,
-          file_size: queuedFile.file.size,
-          record_limit: recordLimit,
-          import_scope: importScope,
-        }),
-      }
-    );
-
-    const data = await response.json();
-
-    // Check for duplicate (409 Conflict)
-    if (response.status === 409 && data.duplicate) {
-      const duplicateError: any = new Error(data.error || 'Período já importado');
-      duplicateError.duplicate = true;
-      duplicateError.context = { json: data };
-      throw duplicateError;
-    }
-
-    if (!response.ok || data.error) {
-      await supabase.storage.from('efd-files').remove([filePath]);
-      throw new Error(data.error || 'Erro ao iniciar importação');
-    }
-
-    console.log('Import job created:', data.job_id);
-  }, [selectedEmpresa, session, recordLimit, importScope]);
-
-  // Upload queue hook
+  // Resumable upload hook
   const {
-    queue,
-    addFiles,
-    removeFile,
-    clearQueue,
-    startQueue,
-    pauseQueue,
-    cancelAll,
-    retryFailed,
-    isProcessing,
+    progress: uploadProgress,
+    startUpload,
+    pauseUpload,
+    resumeUpload,
+    cancelUpload,
+    resetUpload,
+    isUploading,
     isPaused,
-    overallProgress,
-    hasFiles,
-    hasPendingFiles,
-  } = useUploadQueue({
+    isCompleted: uploadCompleted,
+    hasError: uploadHasError,
+  } = useResumableUpload({
     bucketName: 'efd-files',
-    onFileComplete: triggerParseEfd,
-    onAllComplete: () => {
-      toast.success('Todos os arquivos foram enviados para processamento!');
-      clearQueue();
+    onComplete: async (filePath) => {
+      console.log('Upload completed, starting parse-efd:', filePath);
+      await triggerParseEfd(filePath);
     },
-    onError: (file, error) => {
-      console.error(`Error uploading ${file.file.name}:`, error);
-      toast.error(`Erro no upload de ${file.file.name}: ${error.message}`);
-    },
-    onDuplicate: (file, duplicateInfo) => {
-      toast.warning(`${file.file.name}: Período ${duplicateInfo.period} já foi importado para esta filial.`, {
-        duration: 6000,
-      });
+    onError: (error) => {
+      console.error('Upload failed:', error);
+      toast.error(`Erro no upload: ${error.message}`);
     },
   });
 
-  // Track if upload is in progress
-  const uploading = isProcessing;
+  // Track if upload is in progress (uploading or paused)
+  const uploading = isUploading || isPaused || processingImport;
 
   // Check views status when jobs change
   useEffect(() => {
@@ -260,6 +207,7 @@ export default function ImportarEFD() {
     try {
       toast.info('Atualizando painéis... Isso pode levar alguns segundos.');
       
+      // Call the dedicated edge function for refresh with timeout
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 120000);
       
@@ -308,6 +256,7 @@ export default function ImportarEFD() {
   useEffect(() => {
     if (sessionLoading) return;
     
+    // Usar empresas do hook useSessionInfo que já respeita admin vs user
     if (userEmpresas.length > 0) {
       setEmpresas(userEmpresas.map(e => ({ ...e, grupo_id: '' })));
       setSelectedEmpresa(userEmpresas[0].id);
@@ -317,7 +266,7 @@ export default function ImportarEFD() {
     }
   }, [userEmpresas, sessionLoading]);
 
-  // Load existing jobs function
+  // Load existing jobs function (extracted for reuse)
   const loadJobs = useCallback(async () => {
     if (!session?.user?.id) return;
     
@@ -343,6 +292,7 @@ export default function ImportarEFD() {
 
     loadJobs();
 
+    // Subscribe to realtime updates
     const channel = supabase
       .channel('import-jobs-realtime')
       .on(
@@ -375,6 +325,7 @@ export default function ImportarEFD() {
                 : job
             ));
             
+            // Show toast on completion and redirect
             if (updatedJob.status === 'completed') {
               const counts = updatedJob.counts as ImportCounts;
               const total = counts.mercadorias + counts.energia_agua + counts.fretes + (counts.servicos || 0);
@@ -386,9 +337,14 @@ export default function ImportarEFD() {
                 );
                 setViewsStatus('empty');
               } else {
-                toast.success(`Importação concluída! ${total} registros importados.`);
+                toast.success(`Importação concluída! ${total} registros importados. Redirecionando...`);
                 setViewsStatus('ok');
               }
+              
+              // Redirect to Mercadorias after 3 seconds
+              setTimeout(() => {
+                navigate('/mercadorias');
+              }, 3000);
             } else if (updatedJob.status === 'failed') {
               toast.error(`Importação falhou: ${updatedJob.error_message || 'Erro desconhecido'}`);
             }
@@ -405,7 +361,7 @@ export default function ImportarEFD() {
     };
   }, [session?.user?.id, loadJobs]);
 
-  // Polling fallback
+  // Polling fallback: refresh jobs every 15s when there are active jobs
   useEffect(() => {
     const hasActiveJobs = jobs.some(j => 
       j.status === 'pending' || j.status === 'processing' || j.status === 'refreshing_views' || j.status === 'generating'
@@ -413,9 +369,11 @@ export default function ImportarEFD() {
     
     if (!hasActiveJobs || !session?.user?.id) return;
     
+    console.log('Starting polling fallback for active jobs');
     const pollInterval = setInterval(() => {
+      console.log('Polling jobs (fallback)...');
       loadJobs();
-    }, 15000);
+    }, 15000); // Every 15 seconds
     
     return () => {
       clearInterval(pollInterval);
@@ -426,6 +384,7 @@ export default function ImportarEFD() {
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible' && session?.user?.id) {
+        console.log('Tab became visible, refreshing jobs...');
         loadJobs();
       }
     };
@@ -437,38 +396,119 @@ export default function ImportarEFD() {
     };
   }, [session?.user?.id, loadJobs]);
 
-  const handleFilesSelect = (files: File[]) => {
-    const validFiles = files.filter(file => {
-      if (!file.name.toLowerCase().endsWith('.txt')) {
-        toast.error(`Arquivo ignorado (não é .txt): ${file.name}`);
-        return false;
-      }
-      if (file.size > 1024 * 1024 * 1024) {
-        toast.error(`Arquivo muito grande (>1GB): ${file.name}`);
-        return false;
-      }
-      return true;
-    });
+  // Trigger parse-efd after upload completes
+  const triggerParseEfd = useCallback(async (filePath: string) => {
+    if (!selectedFile || !selectedEmpresa || !session) return;
+    
+    setProcessingImport(true);
+    
+    try {
+      console.log('Calling parse-efd for:', filePath);
+      
+      const response = await supabase.functions.invoke('parse-efd', {
+        body: {
+          empresa_id: selectedEmpresa,
+          file_path: filePath,
+          file_name: selectedFile.name,
+          file_size: selectedFile.size,
+          record_limit: recordLimit,
+          import_scope: importScope,
+        },
+      });
 
-    if (validFiles.length > 0) {
-      const added = addFiles(validFiles);
-      if (added > 0) {
-        toast.success(`${added} arquivo${added > 1 ? 's' : ''} adicionado${added > 1 ? 's' : ''} à fila`);
+      if (response.error) {
+        await supabase.storage.from('efd-files').remove([filePath]);
+        throw new Error(response.error.message || 'Erro ao iniciar importação');
       }
+
+      const data = response.data;
+      if (data.error) {
+        await supabase.storage.from('efd-files').remove([filePath]);
+        throw new Error(data.error);
+      }
+
+      setSelectedFile(null);
+      setCurrentUploadPath('');
+      resetUpload();
+      toast.success('Importação iniciada! Acompanhe o progresso abaixo.');
+    } catch (error) {
+      console.error('Error starting import:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Erro ao iniciar importação';
+      toast.error(errorMessage);
+    } finally {
+      setProcessingImport(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  }, [selectedFile, selectedEmpresa, session, recordLimit, importScope, resetUpload]);
+
+  const handleStartImport = async () => {
+    if (!selectedFile || !selectedEmpresa || !session) return;
+
+    try {
+      const timestamp = Date.now();
+      const filePath = `${session.user.id}/${timestamp}_${selectedFile.name}`;
+      setCurrentUploadPath(filePath);
+      
+      console.log('Starting resumable upload:', filePath, 'Size:', selectedFile.size);
+      await startUpload(selectedFile, filePath);
+    } catch (error) {
+      console.error('Error starting upload:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Erro ao iniciar upload';
+      toast.error(errorMessage);
     }
   };
 
+  const handleCancelUpload = () => {
+    cancelUpload();
+    setSelectedFile(null);
+    setCurrentUploadPath('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+    toast.info('Upload cancelado.');
+  };
+
+  const handleRetryUpload = async () => {
+    if (!selectedFile || !session) return;
+    
+    resetUpload();
+    const timestamp = Date.now();
+    const filePath = `${session.user.id}/${timestamp}_${selectedFile.name}`;
+    setCurrentUploadPath(filePath);
+    
+    try {
+      await startUpload(selectedFile, filePath);
+    } catch (error) {
+      console.error('Error retrying upload:', error);
+    }
+  };
+
+  const handleFileSelect = (file: File) => {
+    if (!file.name.endsWith('.txt')) {
+      toast.error('Por favor, selecione um arquivo .txt');
+      return;
+    }
+    // Warn for very large files (now supports up to 1GB)
+    if (file.size > 1024 * 1024 * 1024) {
+      toast.error('Arquivo muito grande (>1GB). Limite máximo é 1GB.');
+      return;
+    }
+    
+    setSelectedFile(file);
+  };
+
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files || []);
-    if (files.length > 0) handleFilesSelect(files);
-    if (fileInputRef.current) fileInputRef.current.value = '';
+    const file = event.target.files?.[0];
+    if (file) handleFileSelect(file);
   };
 
   const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     setIsDragOver(false);
-    const files = Array.from(event.dataTransfer.files);
-    handleFilesSelect(files);
+    const file = event.dataTransfer.files?.[0];
+    if (file) handleFileSelect(file);
   };
 
   const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
@@ -478,6 +518,11 @@ export default function ImportarEFD() {
 
   const handleDragLeave = () => {
     setIsDragOver(false);
+  };
+
+  const handleRetryJob = async (jobId: string) => {
+    // For now, just show a message - full retry would require re-uploading the file
+    toast.info('Para reprocessar, faça upload do arquivo novamente.');
   };
 
   const handleCancelJob = async (jobId: string) => {
@@ -507,7 +552,7 @@ export default function ImportarEFD() {
 
   // Animated progress effect for database clearing
   useEffect(() => {
-    if (!clearProgress || clearProgress.status === 'done' || clearProgress.status === 'refreshing_views') return;
+    if (!clearProgress || clearProgress.status === 'done') return;
     
     const messages = [
       'Contando registros...',
@@ -565,22 +610,10 @@ export default function ImportarEFD() {
         throw new Error(data.error);
       }
 
+      // Update progress to show completion
       const totalDeleted = (data?.deleted?.mercadorias || 0) + 
                           (data?.deleted?.energia_agua || 0) + 
                           (data?.deleted?.fretes || 0);
-      
-      // Mostrar status de atualização de views
-      setProgressAnimation(95);
-      setClearProgress({
-        status: 'refreshing_views',
-        currentTable: 'Atualizando painéis...',
-        estimated: totalDeleted,
-        deleted: totalDeleted
-      });
-      setStatusMessage('Atualizando painéis...');
-
-      // Aguardar um momento para mostrar o status antes de concluir
-      await new Promise(resolve => setTimeout(resolve, 2000));
       
       setProgressAnimation(100);
       setClearProgress({
@@ -589,8 +622,8 @@ export default function ImportarEFD() {
         estimated: totalDeleted,
         deleted: totalDeleted
       });
-      setViewsStatus('empty'); // Views foram limpas
 
+      // Wait a bit to show completion, then close
       setTimeout(() => {
         setJobs([]);
         toast.success(data?.message || 'Base de dados limpa com sucesso!');
@@ -768,17 +801,8 @@ export default function ImportarEFD() {
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
             Importe arquivos EFD Contribuições para cadastrar mercadorias, energia/água e fretes.
-            <strong className="text-foreground"> Suporta múltiplos arquivos!</strong> Arquivos grandes são processados em background.
+            Arquivos grandes são processados em background.
           </p>
-
-          <Alert className="border-positive/50 bg-positive/5">
-            <Shield className="h-4 w-4 text-positive" />
-            <AlertTitle className="text-positive">Segurança da Informação</AlertTitle>
-            <AlertDescription className="text-muted-foreground">
-              Por questões de segurança, o arquivo TXT é automaticamente excluído 
-              do servidor após a importação ser concluída com sucesso.
-            </AlertDescription>
-          </Alert>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -844,7 +868,6 @@ export default function ImportarEFD() {
             </div>
           </div>
 
-          {/* Drag & Drop Area */}
           <div
             className={`
               relative border-2 border-dashed rounded-lg p-8 transition-colors cursor-pointer
@@ -852,7 +875,7 @@ export default function ImportarEFD() {
               ${uploading ? 'pointer-events-none opacity-60' : ''}
               ${!selectedEmpresa ? 'pointer-events-none opacity-40' : ''}
             `}
-            onClick={() => fileInputRef.current?.click()}
+            onClick={() => !selectedFile && fileInputRef.current?.click()}
             onDrop={handleDrop}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
@@ -861,41 +884,75 @@ export default function ImportarEFD() {
               ref={fileInputRef}
               type="file"
               accept=".txt"
-              multiple
               onChange={handleFileChange}
               className="hidden"
               disabled={uploading || !selectedEmpresa}
             />
             
             <div className="flex flex-col items-center gap-3">
-              <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
-                <Files className="h-6 w-6 text-muted-foreground" />
-              </div>
-              <div className="space-y-1 text-center">
-                <p className="text-sm font-medium text-foreground">
-                  Arraste os arquivos ou clique para selecionar
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Aceita múltiplos arquivos .txt (EFD Contribuições) - até 1GB cada
-                </p>
-              </div>
+              {/* Show upload progress when uploading */}
+              {(isUploading || isPaused || uploadHasError) && selectedFile ? (
+                <div className="w-full">
+                  <UploadProgressDisplay
+                    progress={uploadProgress}
+                    fileName={selectedFile.name}
+                    onPause={pauseUpload}
+                    onResume={resumeUpload}
+                    onCancel={handleCancelUpload}
+                    onRetry={handleRetryUpload}
+                  />
+                </div>
+              ) : processingImport ? (
+                <>
+                  <Loader2 className="h-10 w-10 text-primary animate-spin" />
+                  <div className="space-y-1 text-center">
+                    <p className="text-sm font-medium text-foreground">Iniciando processamento...</p>
+                    <p className="text-xs text-muted-foreground">O processamento continuará em background</p>
+                  </div>
+                </>
+              ) : selectedFile ? (
+                <>
+                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                    <FileText className="h-6 w-6 text-primary" />
+                  </div>
+                  <div className="space-y-1 text-center">
+                    <p className="text-sm font-medium text-foreground">{selectedFile.name}</p>
+                    <p className="text-xs text-muted-foreground">{formatFileSize(selectedFile.size)}</p>
+                  </div>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={(e) => { e.stopPropagation(); setSelectedFile(null); }}
+                  >
+                    Remover
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
+                    <FileText className="h-6 w-6 text-muted-foreground" />
+                  </div>
+                  <div className="space-y-1 text-center">
+                    <p className="text-sm font-medium text-foreground">
+                      Arraste o arquivo ou clique para selecionar
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Aceita arquivos .txt (EFD Contribuições) - até 1GB
+                    </p>
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
-          {/* Multi Upload Progress */}
-          {hasFiles && (
-            <MultiUploadProgress
-              queue={queue}
-              overallProgress={overallProgress}
-              isProcessing={isProcessing}
-              isPaused={isPaused}
-              onRemoveFile={removeFile}
-              onStartQueue={startQueue}
-              onPauseQueue={pauseQueue}
-              onCancelAll={cancelAll}
-              onRetryFailed={retryFailed}
-              onClearQueue={clearQueue}
-            />
+          {selectedFile && !uploading && (
+            <Button 
+              onClick={handleStartImport} 
+              className="w-full"
+              disabled={!selectedEmpresa}
+            >
+              Iniciar Importação
+            </Button>
           )}
         </CardContent>
       </Card>
@@ -961,6 +1018,7 @@ export default function ImportarEFD() {
                     </div>
                   </div>
 
+                  {/* Last Updated indicator */}
                   {updateInfo && (
                     <div className={`flex items-center gap-2 text-xs ${updateInfo.isStale ? 'text-warning' : 'text-muted-foreground'}`}>
                       <Clock className="h-3 w-3" />
@@ -1067,6 +1125,7 @@ export default function ImportarEFD() {
                         <div className="text-center mt-2 pt-2 border-t border-border">
                           <p className="text-sm font-medium text-foreground">{totalRecords + (job.counts.servicos || 0)} registros importados</p>
                         </div>
+                        {/* Seen Counts for diagnostics */}
                         {job.counts.seen && (job.counts.seen.d100 !== undefined || job.counts.seen.d500 !== undefined) && (
                           <div className="text-center mt-2 pt-2 border-t border-border">
                             <p className="text-xs text-muted-foreground">
@@ -1077,10 +1136,6 @@ export default function ImportarEFD() {
                             </p>
                           </div>
                         )}
-                        <div className="flex items-center justify-center gap-2 text-xs text-positive mt-2 pt-2 border-t border-border">
-                          <Shield className="h-3 w-3" />
-                          <span>Arquivo original excluído por segurança</span>
-                        </div>
                       </div>
                     )}
 
@@ -1099,7 +1154,7 @@ export default function ImportarEFD() {
       )}
 
       {/* Empty State */}
-      {jobs.length === 0 && !hasFiles && (
+      {jobs.length === 0 && (
         <Card>
           <CardContent className="py-12 text-center">
             <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />

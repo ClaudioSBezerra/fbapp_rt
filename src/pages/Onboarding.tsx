@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
-import { Building2, Users, Store, ArrowRight, Copy, Check, FileText, Key, Loader2, Search, ChevronRight } from 'lucide-react';
+import { Building2, Users, Store, ArrowRight, Copy, Check, FileText, Key, Loader2, Search } from 'lucide-react';
 
 interface OnboardingData {
   tenantNome: string;
@@ -34,11 +34,6 @@ interface TenantStructure {
   grupos: Grupo[];
 }
 
-interface TenantInfo {
-  id: string;
-  nome: string;
-}
-
 type JoinState = 'idle' | 'loading' | 'selecting' | 'joining';
 
 export default function Onboarding() {
@@ -58,11 +53,6 @@ export default function Onboarding() {
   const [tenantStructure, setTenantStructure] = useState<TenantStructure | null>(null);
   const [selectedGrupoId, setSelectedGrupoId] = useState<string>('');
   const [selectedEmpresaId, setSelectedEmpresaId] = useState<string>('');
-  
-  // New: List of available tenants
-  const [availableTenants, setAvailableTenants] = useState<TenantInfo[]>([]);
-  const [loadingTenants, setLoadingTenants] = useState(true);
-  const [showManualCode, setShowManualCode] = useState(false);
   
   const { user } = useAuth();
   const { isAdmin, isLoading: roleLoading } = useRole();
@@ -85,34 +75,6 @@ export default function Onboarding() {
 
     checkUserTenant();
   }, [user, navigate]);
-
-  // Fetch available tenants for non-admin users
-  useEffect(() => {
-    const fetchTenants = async () => {
-      if (!user || isAdmin || roleLoading) return;
-      
-      setLoadingTenants(true);
-      try {
-        const { data: result, error } = await supabase.functions.invoke('list-tenants');
-        
-        if (error) {
-          console.error('Error fetching tenants:', error);
-          setAvailableTenants([]);
-        } else if (result?.success) {
-          setAvailableTenants(result.tenants || []);
-        }
-      } catch (err) {
-        console.error('Error:', err);
-        setAvailableTenants([]);
-      } finally {
-        setLoadingTenants(false);
-      }
-    };
-
-    if (!isAdmin && !roleLoading) {
-      fetchTenants();
-    }
-  }, [user, isAdmin, roleLoading]);
 
   // Get empresas for selected grupo
   const selectedGrupo = tenantStructure?.grupos.find(g => g.id === selectedGrupoId);
@@ -161,36 +123,6 @@ export default function Onboarding() {
       toast.error(errorMessage);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleSelectTenant = async (tenant: TenantInfo) => {
-    if (!user) return;
-    setJoinState('loading');
-    setTenantCode(tenant.id);
-
-    try {
-      const { data: result, error } = await supabase.functions.invoke('get-tenant-structure', {
-        body: { tenantId: tenant.id }
-      });
-
-      if (error) {
-        console.error('Edge function error:', error);
-        throw new Error(error.message || 'Erro na comunicação com o servidor');
-      }
-
-      if (!result?.success) {
-        console.error('Fetch structure failed:', result);
-        throw new Error(result?.error || 'Erro ao buscar estrutura do ambiente');
-      }
-
-      setTenantStructure(result);
-      setJoinState('selecting');
-    } catch (error: any) {
-      console.error('Error:', error);
-      const errorMessage = error?.message || 'Erro ao buscar ambiente.';
-      toast.error(errorMessage);
-      setJoinState('idle');
     }
   };
 
@@ -262,7 +194,6 @@ export default function Onboarding() {
     setSelectedGrupoId('');
     setSelectedEmpresaId('');
     setTenantCode('');
-    setShowManualCode(false);
   };
 
   const canProceed = () => {
@@ -290,7 +221,7 @@ export default function Onboarding() {
     );
   }
 
-  // Non-admin flow: Show available tenants or enter code
+  // Non-admin flow: Enter tenant code and select empresa
   if (!isAdmin) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
@@ -299,131 +230,41 @@ export default function Onboarding() {
             <CardHeader className="space-y-1">
               <div className="flex items-center gap-2 mb-2">
                 <div className="p-2 bg-primary/10 rounded-lg">
-                  <Building2 className="h-5 w-5 text-primary" />
+                  <Key className="h-5 w-5 text-primary" />
                 </div>
               </div>
               <CardTitle className="text-xl">Entrar em um Ambiente</CardTitle>
               <CardDescription>
-                {joinState === 'idle' && !showManualCode && 'Selecione o ambiente que deseja acessar.'}
-                {joinState === 'idle' && showManualCode && 'Insira o código do ambiente fornecido pelo administrador.'}
+                {joinState === 'idle' && 'Para acessar o sistema, insira o código do ambiente fornecido pelo administrador.'}
                 {joinState === 'loading' && 'Buscando estrutura do ambiente...'}
                 {(joinState === 'selecting' || joinState === 'joining') && `Ambiente: ${tenantStructure?.tenant_nome}`}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Initial state: Show tenant list or manual code input */}
+              {/* Step 1: Enter tenant code */}
               {joinState === 'idle' && (
                 <>
-                  {!showManualCode ? (
-                    <>
-                      {loadingTenants ? (
-                        <div className="flex items-center justify-center py-8">
-                          <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                        </div>
-                      ) : availableTenants.length > 0 ? (
-                        <>
-                          <Label className="text-sm font-medium">Ambientes Disponíveis</Label>
-                          <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                            {availableTenants.map((tenant) => (
-                              <button
-                                key={tenant.id}
-                                onClick={() => handleSelectTenant(tenant)}
-                                className="w-full p-4 border border-border rounded-lg hover:border-primary hover:bg-primary/5 transition-colors flex items-center justify-between group text-left"
-                              >
-                                <div className="flex items-center gap-3">
-                                  <div className="p-2 bg-muted rounded-lg group-hover:bg-primary/10">
-                                    <Building2 className="h-4 w-4 text-muted-foreground group-hover:text-primary" />
-                                  </div>
-                                  <span className="font-medium">{tenant.nome}</span>
-                                </div>
-                                <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary" />
-                              </button>
-                            ))}
-                          </div>
-                          
-                          <div className="relative py-2">
-                            <div className="absolute inset-0 flex items-center">
-                              <span className="w-full border-t border-border" />
-                            </div>
-                            <div className="relative flex justify-center text-xs uppercase">
-                              <span className="bg-card px-2 text-muted-foreground">ou</span>
-                            </div>
-                          </div>
-                          
-                          <Button
-                            variant="outline"
-                            className="w-full"
-                            onClick={() => setShowManualCode(true)}
-                          >
-                            <Key className="h-4 w-4 mr-2" />
-                            Tenho um código de ambiente
-                          </Button>
-                        </>
-                      ) : (
-                        <>
-                          <div className="text-center py-4 text-muted-foreground">
-                            <Building2 className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                            <p className="text-sm">Nenhum ambiente disponível.</p>
-                            <p className="text-xs mt-1">Insira um código de ambiente abaixo.</p>
-                          </div>
-                          
-                          <div className="space-y-2">
-                            <Label htmlFor="tenantCode">Código do Ambiente</Label>
-                            <Input
-                              id="tenantCode"
-                              placeholder="Ex: b5e7dc15-ec38-46e8-9c12-944..."
-                              value={tenantCode}
-                              onChange={(e) => setTenantCode(e.target.value)}
-                              className="font-mono text-sm"
-                            />
-                          </div>
-                          <Button
-                            className="w-full"
-                            onClick={handleFetchTenantStructure}
-                            disabled={!tenantCode.trim()}
-                          >
-                            <Search className="h-4 w-4 mr-2" />
-                            Buscar Ambiente
-                          </Button>
-                        </>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <div className="space-y-2">
-                        <Label htmlFor="tenantCode">Código do Ambiente</Label>
-                        <Input
-                          id="tenantCode"
-                          placeholder="Ex: b5e7dc15-ec38-46e8-9c12-944..."
-                          value={tenantCode}
-                          onChange={(e) => setTenantCode(e.target.value)}
-                          className="font-mono text-sm"
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          Solicite o código ao administrador do ambiente que deseja acessar.
-                        </p>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button
-                          variant="outline"
-                          onClick={() => {
-                            setShowManualCode(false);
-                            setTenantCode('');
-                          }}
-                        >
-                          Voltar
-                        </Button>
-                        <Button
-                          className="flex-1"
-                          onClick={handleFetchTenantStructure}
-                          disabled={!tenantCode.trim()}
-                        >
-                          <Search className="h-4 w-4 mr-2" />
-                          Buscar Ambiente
-                        </Button>
-                      </div>
-                    </>
-                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor="tenantCode">Código do Ambiente</Label>
+                    <Input
+                      id="tenantCode"
+                      placeholder="Ex: b5e7dc15-ec38-46e8-9c12-944..."
+                      value={tenantCode}
+                      onChange={(e) => setTenantCode(e.target.value)}
+                      className="font-mono text-sm"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Solicite o código ao administrador do ambiente que deseja acessar.
+                    </p>
+                  </div>
+                  <Button
+                    className="w-full"
+                    onClick={handleFetchTenantStructure}
+                    disabled={!tenantCode.trim()}
+                  >
+                    <Search className="h-4 w-4 mr-2" />
+                    Buscar Ambiente
+                  </Button>
                 </>
               )}
 
@@ -699,7 +540,7 @@ export default function Onboarding() {
                 </div>
 
                 <Button className="w-full" onClick={() => navigate('/mercadorias')}>
-                  Ir para Operações de Compra e Venda
+                  Ir para Mercadorias
                   <ArrowRight className="h-4 w-4 ml-2" />
                 </Button>
               </CardContent>

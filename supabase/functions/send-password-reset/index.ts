@@ -11,8 +11,8 @@ const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-// Domínio da aplicação - usar variável de ambiente ou fallback para preview
-const APP_URL = Deno.env.get("APP_URL") || "https://id-preview--3525ecda-3b58-4d38-9831-7d74a5209fe5.lovable.app";
+// Domínio da aplicação
+const APP_URL = Deno.env.get("APP_URL") || "https://id-preview--bcf834fc-87e9-406a-a604-0175a90e2b80.lovable.app";
 
 interface PasswordResetRequest {
   email: string;
@@ -74,7 +74,7 @@ serve(async (req) => {
 
     // Enviar email com Resend
     const emailResponse = await resend.emails.send({
-      from: "Simulador IBS/CBS <onboarding@resend.dev>",
+      from: "Simulador IBS/CBS <noreply@resend.dev>",
       to: [email],
       subject: "Recuperação de Senha - Simulador IBS/CBS",
       html: `
@@ -127,32 +127,7 @@ serve(async (req) => {
       `,
     });
 
-    console.log("Email response:", emailResponse);
-
-    // Check if Resend returned an error
-    if (emailResponse.error) {
-      console.error("Resend error:", emailResponse.error);
-      
-      // Handle domain validation error specifically
-      const errorMessage = String(emailResponse.error.message || emailResponse.error);
-      if (errorMessage.includes("verify a domain") || errorMessage.includes("403")) {
-        return new Response(
-          JSON.stringify({ 
-            error: "domain_not_verified",
-            message: "O serviço de email ainda não está configurado para enviar para destinatários externos. Por favor, use a recuperação por palavra-chave ou entre em contato com o suporte."
-          }),
-          { status: 403, headers: { "Content-Type": "application/json", ...corsHeaders } }
-        );
-      }
-      
-      return new Response(
-        JSON.stringify({ 
-          error: "email_send_failed",
-          message: errorMessage || "Erro ao enviar email de recuperação"
-        }),
-        { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
-      );
-    }
+    console.log("Email sent successfully:", emailResponse);
 
     return new Response(
       JSON.stringify({ success: true, message: "Email de recuperação enviado com sucesso" }),

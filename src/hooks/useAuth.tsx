@@ -9,7 +9,7 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string, fullName?: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
-  resetPassword: (email: string) => Promise<{ error: Error | null; data?: any }>;
+  resetPassword: (email: string) => Promise<{ error: Error | null }>;
   updatePassword: (newPassword: string) => Promise<{ error: Error | null }>;
 }
 
@@ -76,50 +76,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(null);
   };
 
-  const resetPassword = async (email: string): Promise<{ error: Error | null; data?: any }> => {
-    try {
-      const { data, error } = await supabase.functions.invoke('send-password-reset', {
-        body: { email }
-      });
-      
-      // supabase.functions.invoke throws error for non-2xx responses
-      // but sometimes passes the response in data
-      if (error) {
-        // Try to parse the error context if available
-        const errorContext = (error as any)?.context;
-        if (errorContext) {
-          try {
-            const parsed = JSON.parse(errorContext);
-            if (parsed?.error === 'domain_not_verified') {
-              return { 
-                error: new Error('domain_not_verified'), 
-                data: { error: 'domain_not_verified', message: parsed.message } 
-              };
-            }
-          } catch {}
-        }
-        return { error: new Error(error.message || 'Erro ao enviar email de recuperação') };
-      }
-      
-      // Check if the response contains an error field
-      if (data?.error) {
-        return { 
-          error: new Error(data.error), 
-          data 
-        };
-      }
-      
-      return { error: null, data };
-    } catch (err: any) {
-      // Handle FunctionsHttpError which includes response body
-      if (err?.message?.includes('domain_not_verified') || err?.message?.includes('403')) {
-        return { 
-          error: new Error('domain_not_verified'), 
-          data: { error: 'domain_not_verified' } 
-        };
-      }
-      return { error: new Error(err.message || 'Erro de conexão') };
-    }
+  const resetPassword = async (email: string) => {
+    const redirectUrl = `${window.location.origin}/reset-password`;
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: redirectUrl,
+    });
+    return { error: error as Error | null };
   };
 
   const updatePassword = async (newPassword: string) => {

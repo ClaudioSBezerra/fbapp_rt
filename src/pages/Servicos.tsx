@@ -4,7 +4,6 @@ import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -139,11 +138,7 @@ const ServicosTable = ({ data, tipo, aliquotas, selectedYear }: ServicosTablePro
                 </TooltipTrigger>
                 <TooltipContent side="top" className="max-w-xs">
                   <p className="font-semibold mb-1">Fórmula:</p>
-                  <p className="font-mono text-xs">(ISS Proj. + PIS/COFINS Proj. + IBS + CBS) − (ISS + PIS/COFINS)</p>
-                  <p className="text-muted-foreground text-xs mt-1">
-                    Diferença entre impostos projetados e atuais.<br/>
-                    <span className="text-green-600 dark:text-green-400">Negativo = Economia</span> | <span className="text-red-600 dark:text-red-400">Positivo = Aumento</span>
-                  </p>
+                  <p className="font-mono text-xs">(ISS + PIS/COFINS) − (ISS Proj. + PIS/COFINS Proj. + IBS + CBS)</p>
                 </TooltipContent>
               </Tooltip>
             </TableHead>
@@ -199,10 +194,10 @@ const ServicosTable = ({ data, tipo, aliquotas, selectedYear }: ServicosTablePro
                 <TableCell className="text-right font-mono text-xs font-semibold bg-muted/30 py-1 px-2">{formatCurrency(totalImpostosPagar)}</TableCell>
                 <TableCell className="text-right py-1 px-2">
                   <Badge 
-                    variant={diferencaReal > 0 ? 'destructive' : diferencaReal < 0 ? 'default' : 'secondary'}
-                    className={`text-xs ${diferencaReal < 0 ? 'bg-positive text-positive-foreground' : ''}`}
+                    variant={diferencaReal < 0 ? 'destructive' : 'default'}
+                    className={`text-xs ${diferencaReal >= 0 ? 'bg-positive text-positive-foreground' : ''}`}
                   >
-                    {diferencaReal > 0 ? '+' : ''}{formatCurrency(diferencaReal)}
+                    {diferencaReal >= 0 ? '+' : ''}{formatCurrency(diferencaReal)}
                   </Badge>
                 </TableCell>
               </TableRow>
@@ -434,15 +429,15 @@ export default function Servicos() {
       {/* Filters */}
       <Card>
         <CardContent className="pt-6">
-          <div className="flex flex-wrap gap-3 items-end">
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Filial</Label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">Filial</label>
               <Select value={selectedFilial} onValueChange={setSelectedFilial}>
-                <SelectTrigger className="w-[220px]">
-                  <SelectValue placeholder="Todas" />
+                <SelectTrigger>
+                  <SelectValue placeholder="Todas as filiais" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Todas</SelectItem>
+                  <SelectItem value="all">Todas as filiais</SelectItem>
                   {filiais.map(f => (
                     <SelectItem key={f.id} value={f.id}>
                       {formatFilialDisplayFormatted(f.cod_est, f.cnpj)}
@@ -452,14 +447,14 @@ export default function Servicos() {
               </Select>
             </div>
 
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Período</Label>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">Período</label>
               <Select value={selectedMonthYear} onValueChange={setSelectedMonthYear}>
-                <SelectTrigger className="w-[140px]">
-                  <SelectValue placeholder="Todos" />
+                <SelectTrigger>
+                  <SelectValue placeholder="Todos os períodos" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Todos</SelectItem>
+                  <SelectItem value="all">Todos os períodos</SelectItem>
                   {uniqueMonths.map(m => (
                     <SelectItem key={m} value={m}>{formatMonthYear(m)}</SelectItem>
                   ))}
@@ -467,10 +462,10 @@ export default function Servicos() {
               </Select>
             </div>
 
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Ano Projeção</Label>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">Ano Projeção</label>
               <Select value={selectedYear.toString()} onValueChange={(v) => setSelectedYear(parseInt(v))}>
-                <SelectTrigger className="w-[100px]">
+                <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -481,10 +476,12 @@ export default function Servicos() {
               </Select>
             </div>
 
-            <Badge variant="outline" className="h-10 px-4 flex items-center gap-2">
-              <Building2 className="h-4 w-4" />
-              {filteredData.length} registros
-            </Badge>
+            <div className="flex items-end">
+              <Badge variant="outline" className="h-10 px-4 flex items-center gap-2">
+                <Building2 className="h-4 w-4" />
+                {filteredData.length} registros
+              </Badge>
+            </div>
           </div>
         </CardContent>
       </Card>

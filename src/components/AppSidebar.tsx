@@ -35,7 +35,6 @@ import { TrendingUp } from 'lucide-react';
 
 interface MenuItem {
   title: string;
-  subtitle?: string;
   url: string;
   icon: React.ComponentType<{ className?: string }>;
   adminOnly?: boolean;
@@ -45,15 +44,15 @@ const allMenuItems: MenuItem[] = [
   { title: 'Configurações e Parâmetros Gerais', url: '/configuracoes', icon: Settings, adminOnly: true },
   { title: 'Empresas', url: '/empresas', icon: Building2, adminOnly: true },
   { title: 'Alíquotas', url: '/aliquotas', icon: Calculator },
-  { title: 'Operações', subtitle: 'de Compra e Venda', url: '/mercadorias', icon: Package },
-  { title: 'Compra e Venda', subtitle: 'por Participante', url: '/mercadorias-participante', icon: Users },
+  { title: 'Mercadorias', url: '/mercadorias', icon: Package },
+  { title: 'Por Participante', url: '/mercadorias-participante', icon: Users },
   { title: 'Serviços', url: '/servicos', icon: FileText },
   { title: 'Energia e Água', url: '/energia-agua', icon: Zap },
   { title: 'Fretes', url: '/fretes', icon: Truck },
   { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard },
-  { title: 'Importar EFD', subtitle: 'Contribuições', url: '/importar-efd', icon: Upload },
-  { title: 'Importar EFD', subtitle: 'ICMS/IPI', url: '/importar-efd-icms', icon: Upload },
-  { title: 'Uso Consumo', subtitle: 'e Imobilizado', url: '/uso-consumo', icon: Package },
+  { title: 'Importar EFD Contribuições', url: '/importar-efd', icon: Upload },
+  { title: 'Importação de EFD ICMS/IPI', url: '/importar-efd-icms', icon: Upload },
+  { title: 'Uso Consumo e Imobilizado', url: '/uso-consumo', icon: Package },
   { title: 'Dashboard Uso Consumo', url: '/dashboard-uso-consumo', icon: LayoutDashboard },
 ];
 
@@ -100,7 +99,7 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {menuItems.map((item) => (
-                <SidebarMenuItem key={item.url}>
+                <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton
                     asChild
                     isActive={isActive(item.url)}
@@ -113,14 +112,7 @@ export function AppSidebar() {
                       activeClassName="bg-sidebar-accent text-sidebar-accent-foreground"
                     >
                       <item.icon className="h-4 w-4 shrink-0" />
-                      {item.subtitle ? (
-                        <div className="flex flex-col min-w-0">
-                          <span className="truncate leading-tight">{item.title}</span>
-                          <span className="text-[11px] text-sidebar-foreground/60 truncate leading-tight">{item.subtitle}</span>
-                        </div>
-                      ) : (
-                        <span className="truncate">{item.title}</span>
-                      )}
+                      <span className="truncate">{item.title}</span>
                     </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>

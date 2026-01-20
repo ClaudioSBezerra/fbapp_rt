@@ -49,17 +49,6 @@ function formatPeriod(dtIni: string): { mesAno: string; displayPeriod: string } 
   return { mesAno: "", displayPeriod: "" };
 }
 
-function formatDateTime(isoDate: string): string {
-  const date = new Date(isoDate);
-  return date.toLocaleString('pt-BR', { 
-    day: '2-digit', 
-    month: '2-digit', 
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
-}
-
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -286,33 +275,7 @@ serve(async (req) => {
       console.log(`Created new filial: ${filialId}`);
     }
 
-    // VALIDATION: Check for duplicate import (same filial, period, and scope)
-    const { data: existingImport } = await supabase
-      .from("import_jobs")
-      .select("id, completed_at, file_name")
-      .eq("filial_id", filialId)
-      .eq("mes_ano", mesAno)
-      .eq("import_scope", "icms_uso_consumo")
-      .eq("status", "completed")
-      .maybeSingle();
-
-    if (existingImport) {
-      console.log(`Duplicate import detected: existing job ${existingImport.id}`);
-      await supabase.storage.from("efd-files").remove([filePath]);
-      const completedDate = existingImport.completed_at ? formatDateTime(existingImport.completed_at) : 'data desconhecida';
-      return new Response(
-        JSON.stringify({ 
-          error: `Já existe uma importação de EFD ICMS/IPI para o período ${displayPeriod} nesta filial (${formatCNPJ(header.cnpj)}). Arquivo: ${existingImport.file_name}. Importado em: ${completedDate}.`,
-          duplicate: true,
-          existing_import_id: existingImport.id,
-          period: displayPeriod,
-          cnpj: header.cnpj,
-        }),
-        { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Create import job with scope 'icms_uso_consumo' and mes_ano
+    // Create import job with scope 'icms_uso_consumo'
     const { data: job, error: jobError } = await supabase
       .from("import_jobs")
       .insert({
@@ -328,7 +291,6 @@ serve(async (req) => {
         counts: { uso_consumo_imobilizado: 0, participantes: 0, estabelecimentos: 0 },
         record_limit: 0,
         import_scope: "icms_uso_consumo",
-        mes_ano: mesAno,
       })
       .select()
       .single();

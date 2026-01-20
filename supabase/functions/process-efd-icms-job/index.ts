@@ -501,41 +501,10 @@ serve(async (req) => {
       .update({ status: "refreshing_views", progress: 98 })
       .eq("id", jobId);
 
-    // Refresh materialized views individually for better reliability
-    console.log(`Job ${jobId}: Refreshing materialized views individually...`);
-    const viewsToRefresh = [
-      'extensions.mv_mercadorias_aggregated',
-      'extensions.mv_fretes_aggregated',
-      'extensions.mv_energia_agua_aggregated',
-      'extensions.mv_servicos_aggregated',
-      'extensions.mv_mercadorias_participante',
-      'extensions.mv_dashboard_stats',
-      'extensions.mv_uso_consumo_aggregated',
-      'extensions.mv_uso_consumo_detailed',
-      'extensions.mv_fretes_detailed',
-      'extensions.mv_energia_agua_detailed',
-    ];
-
-    let refreshError = null;
-    let viewsRefreshed = 0;
-    for (const view of viewsToRefresh) {
-      try {
-        const { error } = await supabase.rpc('exec_sql', {
-          sql: `REFRESH MATERIALIZED VIEW ${view}`
-        });
-        if (error) {
-          console.warn(`Job ${jobId}: Failed to refresh ${view}:`, error.message);
-          refreshError = error;
-        } else {
-          viewsRefreshed++;
-          console.log(`Job ${jobId}: Refreshed ${view}`);
-        }
-      } catch (err) {
-        console.warn(`Job ${jobId}: Exception refreshing ${view}:`, err);
-        refreshError = err;
-      }
+    const { error: refreshError } = await supabase.rpc('refresh_materialized_views_async');
+    if (refreshError) {
+      console.warn(`Job ${jobId}: Failed to refresh views:`, refreshError);
     }
-    console.log(`Job ${jobId}: Refreshed ${viewsRefreshed}/${viewsToRefresh.length} views`);
 
     await supabase
       .from("import_jobs")
@@ -714,7 +683,7 @@ async function processLine(
       // Item do Documento (C170 filho de C100)
       // EFD ICMS/IPI: |C170|NUM_ITEM|COD_ITEM|DESCR_COMPL|QTD|UNID|VL_ITEM|VL_DESC|IND_MOV|CST_ICMS|CFOP|COD_NAT|VL_BC_ICMS|ALIQ_ICMS|VL_ICMS|VL_BC_ICMS_ST|...
       // Índices relevantes: 7=VL_ITEM, 11=CFOP, 15=VL_ICMS
-      // Campos corretos: 15=VL_ICMS, 30=VL_PIS, 36=VL_COFINS
+      // PIS: campo 25 = VL_PIS, COFINS: campo 28 = VL_COFINS
       if (fields.length > 11 && context.currentC100 && context.currentFilialId) {
         const cfop = fields[11] || "";
         
@@ -727,8 +696,8 @@ async function processLine(
         if (valor <= 0) return;
         
         const icms = fields.length > 15 ? parseNumber(fields[15]) : 0;
-        const pis = fields.length > 30 ? parseNumber(fields[30]) : 0;    // Campo 30 = VL_PIS
-        const cofins = fields.length > 36 ? parseNumber(fields[36]) : 0; // Campo 36 = VL_COFINS
+        const pis = fields.length > 25 ? parseNumber(fields[25]) : 0;
+        const cofins = fields.length > 28 ? parseNumber(fields[28]) : 0;
         
         // Determine tipo_operacao based on CFOP
         let tipoOperacao: string;
