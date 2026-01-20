@@ -1105,13 +1105,12 @@ serve(async (req) => {
       // Use upsert with ignoreDuplicates to avoid inserting duplicate records
       // This requires unique constraints on the tables (will be added via migration after data cleanup)
       const onConflictMap: Record<keyof BatchBuffers, string | undefined> = {
-        mercadorias: 'filial_id,mes_ano,tipo,descricao,valor,pis,cofins,icms,ipi',
-        fretes: 'filial_id,mes_ano,tipo,valor,pis,cofins,icms',
-        energia_agua: 'filial_id,mes_ano,tipo_operacao,tipo_servico,valor,pis,cofins,icms',
-        // Servicos now has a proper unique constraint 'idx_servicos_upsert_key'
-        // We reference it by name to be explicit and avoid column inference issues
+        // Using explicit constraint names is safer than column lists for Upsert detection
+        mercadorias: 'mercadorias_unique_record',
+        fretes: 'fretes_unique_record',
+        energia_agua: 'energia_agua_unique_record',
         servicos: 'idx_servicos_upsert_key', 
-        participantes: 'filial_id,cod_part',
+        participantes: 'participantes_filial_id_cod_part_key',
       };
       
       const conflictTarget = onConflictMap[table];
