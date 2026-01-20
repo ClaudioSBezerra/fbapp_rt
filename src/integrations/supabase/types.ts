@@ -1165,6 +1165,10 @@ export type Database = {
         Returns: Json
       }
       consolidar_servicos: { Args: { p_job_id: string }; Returns: Json }
+      delete_efd_raw_lines_batch: {
+        Args: { _batch_size?: number; _job_ids: string[] }
+        Returns: number
+      }
       delete_energia_agua_batch: {
         Args: { _batch_size?: number; _filial_ids: string[]; _user_id: string }
         Returns: number
@@ -1519,6 +1523,7 @@ export type Database = {
         Args: { _tenant_id: string; _user_id: string }
         Returns: boolean
       }
+      refresh_all_materialized_views: { Args: never; Returns: Json }
       refresh_materialized_views: { Args: never; Returns: undefined }
       refresh_materialized_views_async: { Args: never; Returns: undefined }
     }

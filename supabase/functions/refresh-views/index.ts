@@ -8,27 +8,12 @@ const corsHeaders = {
 interface RefreshResult {
   success: boolean;
   views_refreshed: string[];
-  views_failed: string[];
+  views_failed: Array<{ view: string; error: string; duration_ms: number }>;
+  total_views: number;
+  refreshed_count: number;
+  failed_count: number;
   duration_ms: number;
-  error?: string;
-  details?: string;
 }
-
-// Lista de views com seus timeouts (views pesadas têm timeout maior)
-// OTIMIZADO: mercadorias agora usa dados pré-agregados (~117k registros vs 1.1M anteriores)
-const MATERIALIZED_VIEWS: { name: string; timeoutSeconds: number }[] = [
-  { name: 'extensions.mv_mercadorias_aggregated', timeoutSeconds: 60 },
-  { name: 'extensions.mv_fretes_aggregated', timeoutSeconds: 60 },
-  { name: 'extensions.mv_energia_agua_aggregated', timeoutSeconds: 60 },
-  { name: 'extensions.mv_servicos_aggregated', timeoutSeconds: 60 },
-  { name: 'extensions.mv_mercadorias_participante', timeoutSeconds: 60 }, // Antes 300s, agora muito mais rápida
-  { name: 'extensions.mv_dashboard_stats', timeoutSeconds: 60 },
-  { name: 'extensions.mv_uso_consumo_aggregated', timeoutSeconds: 60 },
-  { name: 'extensions.mv_uso_consumo_detailed', timeoutSeconds: 120 },
-  { name: 'extensions.mv_fretes_detailed', timeoutSeconds: 60 },
-  { name: 'extensions.mv_energia_agua_detailed', timeoutSeconds: 60 },
-  { name: 'extensions.mv_participantes_cache', timeoutSeconds: 60 }, // Cache de participantes
-];
 
 Deno.serve(async (req) => {
   // Handle CORS preflight
@@ -37,8 +22,6 @@ Deno.serve(async (req) => {
   }
 
   const startTime = Date.now();
-  const viewsRefreshed: string[] = [];
-  const viewsFailed: string[] = [];
   
   try {
     // Get Supabase client with service role for admin operations
@@ -49,53 +32,61 @@ Deno.serve(async (req) => {
       auth: { persistSession: false }
     });
 
-    console.log("[refresh-views] Starting materialized views refresh...");
-    console.log(`[refresh-views] Total views to refresh: ${MATERIALIZED_VIEWS.length}`);
+    console.log("[refresh-views] Calling centralized refresh_all_materialized_views RPC...");
 
-    // Refresh each view individually with its specific timeout
-    for (const viewConfig of MATERIALIZED_VIEWS) {
-      const viewStartTime = Date.now();
-      const viewName = viewConfig.name;
-      const timeout = viewConfig.timeoutSeconds;
+    // Usar o RPC centralizado que conhece todas as 11 views na ordem correta
+    const { data: result, error } = await supabase.rpc('refresh_all_materialized_views');
+
+    if (error) {
+      console.error("[refresh-views] RPC error:", error);
       
-      console.log(`[refresh-views] Refreshing ${viewName} (timeout: ${timeout}s)...`);
-      
-      // Set timeout and refresh in single transaction
-      const { error } = await supabase.rpc('exec_sql', {
-        sql: `SET LOCAL statement_timeout = '${timeout}s'; REFRESH MATERIALIZED VIEW ${viewName};`
-      });
-      
-      const viewDuration = Date.now() - viewStartTime;
-      
-      if (error) {
-        console.error(`[refresh-views] Failed to refresh ${viewName} (${viewDuration}ms):`, error.message);
-        viewsFailed.push(viewName.replace('extensions.', ''));
-      } else {
-        console.log(`[refresh-views] Successfully refreshed ${viewName} (${viewDuration}ms)`);
-        viewsRefreshed.push(viewName.replace('extensions.', ''));
-      }
+      return new Response(
+        JSON.stringify({
+          success: false,
+          views_refreshed: [],
+          views_failed: [{ view: 'RPC', error: error.message, duration_ms: Date.now() - startTime }],
+          total_views: 11,
+          refreshed_count: 0,
+          failed_count: 1,
+          duration_ms: Date.now() - startTime,
+          error: "Erro ao chamar refresh_all_materialized_views",
+          details: error.message,
+        } as RefreshResult),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
+      );
     }
 
-    const duration = Date.now() - startTime;
-    const success = viewsFailed.length === 0;
+    const refreshResult = result as RefreshResult;
     
-    console.log(`[refresh-views] Completed in ${duration}ms. Success: ${viewsRefreshed.length}/${MATERIALIZED_VIEWS.length}`);
+    console.log(`[refresh-views] Completed: ${refreshResult.refreshed_count}/${refreshResult.total_views} views refreshed in ${refreshResult.duration_ms}ms`);
     
-    if (viewsFailed.length > 0) {
-      console.warn(`[refresh-views] Failed views: ${viewsFailed.join(', ')}`);
+    if (refreshResult.failed_count > 0) {
+      console.warn(`[refresh-views] Failed views:`, refreshResult.views_failed);
     }
+
+    // Remover prefixo 'extensions.' dos nomes para UI mais limpa
+    const cleanedRefreshed = refreshResult.views_refreshed?.map(v => 
+      v.replace('extensions.', '')
+    ) || [];
+    
+    const cleanedFailed = refreshResult.views_failed?.map(f => ({
+      ...f,
+      view: f.view?.replace('extensions.', '') || f.view
+    })) || [];
 
     return new Response(
       JSON.stringify({
-        success,
-        views_refreshed: viewsRefreshed,
-        views_failed: viewsFailed,
-        duration_ms: duration,
-        error: success ? undefined : `${viewsFailed.length} views falharam ao atualizar`,
+        success: refreshResult.success,
+        views_refreshed: cleanedRefreshed,
+        views_failed: cleanedFailed,
+        total_views: refreshResult.total_views,
+        refreshed_count: refreshResult.refreshed_count,
+        failed_count: refreshResult.failed_count,
+        duration_ms: refreshResult.duration_ms,
       } as RefreshResult),
       { 
         headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: success ? 200 : 207 // 207 Multi-Status for partial success
+        status: refreshResult.success ? 200 : 207 // 207 Multi-Status for partial success
       }
     );
 
@@ -105,8 +96,11 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: false,
-        views_refreshed: viewsRefreshed,
-        views_failed: viewsFailed,
+        views_refreshed: [],
+        views_failed: [],
+        total_views: 11,
+        refreshed_count: 0,
+        failed_count: 0,
         duration_ms: Date.now() - startTime,
         error: "Erro inesperado ao atualizar views.",
         details: err.message,

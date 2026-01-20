@@ -49,6 +49,46 @@ async function deleteWithRpc(
   return totalDeleted;
 }
 
+// Helper function to delete efd_raw_lines in batches
+async function deleteRawLinesInBatches(
+  supabase: any,
+  jobIds: string[],
+  batchSize: number = 50000,
+  maxIterations: number = 500
+): Promise<number> {
+  let totalDeleted = 0;
+  let iterations = 0;
+  let hasMore = true;
+
+  console.log(`Starting efd_raw_lines deletion for ${jobIds.length} jobs...`);
+
+  while (hasMore && iterations < maxIterations) {
+    iterations++;
+    
+    const { data: deletedCount, error } = await supabase.rpc('delete_efd_raw_lines_batch', {
+      _job_ids: jobIds,
+      _batch_size: batchSize
+    });
+
+    if (error) {
+      console.error(`Error in efd_raw_lines batch ${iterations}:`, error);
+      throw error;
+    }
+
+    const deleted = deletedCount || 0;
+    totalDeleted += deleted;
+
+    if (deleted > 0) {
+      console.log(`efd_raw_lines batch ${iterations}: deleted ${deleted} (total: ${totalDeleted})`);
+    }
+
+    hasMore = deleted >= batchSize;
+  }
+
+  console.log(`Finished efd_raw_lines: ${totalDeleted} records deleted in ${iterations} iterations`);
+  return totalDeleted;
+}
+
 Deno.serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === "OPTIONS") {
@@ -226,6 +266,15 @@ Deno.serve(async (req) => {
 
     const counts: Record<string, number> = {};
 
+    // =========== BUSCAR IMPORT_JOB_IDS ANTES DE TUDO ===========
+    const { data: importJobs } = await supabaseAdmin
+      .from("import_jobs")
+      .select("id")
+      .in("empresa_id", empresaIds);
+
+    const importJobIds = importJobs?.map(j => j.id) || [];
+    console.log(`Found ${importJobIds.length} import_jobs to clean`);
+
     // Delete transactional data using RPCs (respecting dependencies)
     if (filialIds.length > 0) {
       // 0. Collect CNPJs from participantes BEFORE deleting them (for simples_nacional cleanup)
@@ -298,18 +347,19 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 8. Get import_job_ids BEFORE deleting them (for RAW table cleanup)
-    const { data: importJobs } = await supabaseAdmin
-      .from("import_jobs")
-      .select("id")
-      .in("empresa_id", empresaIds);
-
-    const importJobIds = importJobs?.map(j => j.id) || [];
-
-    // 8a. Delete RAW tables explicitly (redundancy for CASCADE)
+    // =========== 8. LIMPAR TABELAS RAW (CRÍTICO) ===========
     if (importJobIds.length > 0) {
       console.log(`Cleaning RAW tables for ${importJobIds.length} import jobs...`);
       
+      // 8a. Delete efd_raw_lines em lotes (GRANDE - usa RPC)
+      try {
+        counts.efd_raw_lines = await deleteRawLinesInBatches(supabaseAdmin, importJobIds);
+      } catch (rawError) {
+        console.error("Error deleting efd_raw_lines:", rawError);
+        counts.efd_raw_lines = 0;
+      }
+
+      // 8b. Delete outras tabelas RAW (menores - delete direto)
       const { count: rawC100 } = await supabaseAdmin
         .from("efd_raw_c100")
         .delete({ count: "exact" })
@@ -334,24 +384,24 @@ Deno.serve(async (req) => {
         .in("import_job_id", importJobIds);
       counts.efd_raw_a100 = rawA100 || 0;
 
-      console.log(`Deleted RAW tables: c100=${rawC100}, c500=${rawC500}, fretes=${rawFretes}, a100=${rawA100}`);
+      console.log(`Deleted RAW tables: lines=${counts.efd_raw_lines}, c100=${rawC100}, c500=${rawC500}, fretes=${rawFretes}, a100=${rawA100}`);
     }
 
-    // 8b. Delete import_jobs
+    // 9. Delete import_jobs
     const { count: importJobsCount } = await supabaseAdmin
       .from("import_jobs")
       .delete({ count: "exact" })
       .in("empresa_id", empresaIds);
     counts.import_jobs = importJobsCount || 0;
 
-    // 9. Delete filiais (only data, structure remains with empresas)
+    // 10. Delete filiais (only data, structure remains with empresas)
     const { count: filiaisCount } = await supabaseAdmin
       .from("filiais")
       .delete({ count: "exact" })
       .in("empresa_id", empresaIds);
     counts.filiais = filiaisCount || 0;
 
-    // Log the action
+    // 11. Log the action
     await supabaseAdmin.from("audit_logs").insert({
       user_id: user.id,
       tenant_id: tenantId,
@@ -360,39 +410,51 @@ Deno.serve(async (req) => {
       details: {
         target_id: scope === "empresa" ? empresaId : grupoId,
         target_name: targetName,
-        counts
+        counts,
+        import_job_ids: importJobIds
       },
       record_count: Object.values(counts).reduce((a, b) => a + b, 0)
     });
 
-    // Refresh materialized views one by one for better error handling
-    console.log("Starting materialized views refresh...");
-    const viewsToRefresh = [
-      "mv_mercadorias_aggregated",
-      "mv_mercadorias_participante",
-      "mv_fretes_aggregated", 
-      "mv_fretes_detailed",
-      "mv_energia_agua_aggregated",
-      "mv_energia_agua_detailed",
-      "mv_servicos_aggregated",
-      "mv_uso_consumo_aggregated",
-      "mv_uso_consumo_detailed",
-      "mv_dashboard_stats",
-      "mv_participantes_cache"
-    ];
-    
-    for (const view of viewsToRefresh) {
-      try {
-        console.log(`Refreshing ${view}...`);
-        await supabaseAdmin.rpc("exec_sql", {
-          sql: `REFRESH MATERIALIZED VIEW extensions.${view}`
-        });
-        console.log(`✓ Refreshed ${view}`);
-      } catch (e) {
-        console.error(`✗ Failed to refresh ${view}:`, e);
+    // =========== 12. REFRESH VIEWS (RPC CENTRALIZADO) ===========
+    console.log("Refreshing materialized views using centralized RPC...");
+    const { data: refreshResult, error: refreshError } = await supabaseAdmin
+      .rpc('refresh_all_materialized_views');
+
+    if (refreshError) {
+      console.error("Error refreshing views via RPC:", refreshError);
+    } else {
+      console.log(`Views refresh result: ${refreshResult?.refreshed_count || 0}/${refreshResult?.total_views || 11} refreshed in ${refreshResult?.duration_ms || 0}ms`);
+      if (refreshResult?.views_failed?.length > 0) {
+        console.warn("Failed views:", refreshResult.views_failed);
       }
     }
-    console.log("Finished refreshing views");
+
+    // =========== 13. VERIFICAÇÃO PÓS-LIMPEZA ===========
+    console.log("Running post-cleanup verification...");
+    const verification: Record<string, number> = {};
+    
+    if (filialIds.length > 0) {
+      const [postMercadorias, postServicos, postParticipantes] = await Promise.all([
+        supabaseAdmin.from('mercadorias').select('*', { count: 'exact', head: true }).in('filial_id', filialIds),
+        supabaseAdmin.from('servicos').select('*', { count: 'exact', head: true }).in('filial_id', filialIds),
+        supabaseAdmin.from('participantes').select('*', { count: 'exact', head: true }).in('filial_id', filialIds),
+      ]);
+      verification.mercadorias_remaining = postMercadorias.count || 0;
+      verification.servicos_remaining = postServicos.count || 0;
+      verification.participantes_remaining = postParticipantes.count || 0;
+    }
+
+    if (importJobIds.length > 0) {
+      const { count: postRawLines } = await supabaseAdmin
+        .from('efd_raw_lines')
+        .select('*', { count: 'exact', head: true })
+        .in('job_id', importJobIds);
+      verification.efd_raw_lines_remaining = postRawLines || 0;
+    }
+
+    const allClean = Object.values(verification).every(v => v === 0);
+    console.log(`Verification: all_clean=${allClean}`, verification);
 
     const totalDeleted = Object.values(counts).reduce((a, b) => a + b, 0);
     console.log(`Successfully deleted ${totalDeleted} records`);
@@ -401,7 +463,9 @@ Deno.serve(async (req) => {
       JSON.stringify({
         success: true,
         message: `Dados de "${targetName}" limpos com sucesso`,
-        counts
+        counts,
+        verification: { ...verification, all_clean: allClean },
+        refresh_result: refreshResult || null
       }),
       { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
     );
