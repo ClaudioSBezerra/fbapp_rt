@@ -8,8 +8,6 @@ DECLARE
     v_filial_ids uuid[];
 BEGIN
     -- Verifica permissão (Admin ou Usuário com acesso ao Tenant)
-    -- Se o usuário está na tabela user_tenants para este tenant, ele tem permissão de gerenciar os dados
-    -- (No futuro, pode-se refinar para verificar role específico dentro do tenant, ex: 'tenant_owner')
     IF NOT EXISTS (
         SELECT 1 
         FROM public.empresas e
@@ -17,8 +15,6 @@ BEGIN
         JOIN public.user_tenants ut ON ut.tenant_id = ge.tenant_id
         WHERE e.id = p_empresa_id
         AND ut.user_id = auth.uid()
-        -- Removida restrição estrita de 'admin' global. 
-        -- A presença em user_tenants + autenticação é suficiente para este contexto de "Dono" do ambiente.
     ) THEN
         RAISE EXCEPTION 'Acesso negado para limpar dados desta empresa';
     END IF;
@@ -27,17 +23,24 @@ BEGIN
     SELECT array_agg(id) INTO v_filial_ids FROM public.filiais WHERE empresa_id = p_empresa_id;
 
     IF v_filial_ids IS NOT NULL AND array_length(v_filial_ids, 1) > 0 THEN
-        -- Limpeza explícita de tabelas filhas para evitar erros de FK se CASCADE não estiver presente
-        -- e para garantir performance usando IDs filtrados
         
+        -- IMPORTANTE: Ordem de exclusão é crítica devido às FKs
+        -- 1. Tabelas de movimento (dependem de Filiais e Participantes)
         DELETE FROM public.mercadorias WHERE filial_id = ANY(v_filial_ids);
         DELETE FROM public.servicos WHERE filial_id = ANY(v_filial_ids);
         DELETE FROM public.fretes WHERE filial_id = ANY(v_filial_ids);
         DELETE FROM public.energia_agua WHERE filial_id = ANY(v_filial_ids);
+        DELETE FROM public.import_jobs WHERE filial_id = ANY(v_filial_ids);
+        
+        -- 2. Participantes (dependem de Filiais, mas Mercadorias dependem deles)
+        -- Como já apagamos mercadorias acima, agora é seguro apagar participantes
         DELETE FROM public.participantes WHERE filial_id = ANY(v_filial_ids);
         
-        -- Finalmente, deletar as filiais
+        -- 3. Finalmente, deletar as filiais
         DELETE FROM public.filiais WHERE id = ANY(v_filial_ids);
+        
+        -- Refresh views para refletir a limpeza imediatamente
+        PERFORM public.refresh_materialized_views_async();
     END IF;
     
     -- O registro na tabela 'empresas' permanece intacto.
