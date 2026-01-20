@@ -13,6 +13,7 @@ const corsHeaders = {
 
 const BATCH_SIZE = 1000;
 const PROGRESS_UPDATE_INTERVAL = 5000;
+const BLOCK_C_CHUNK_SIZE = 50000; // Process Block C in chunks to avoid timeout
 
 // Valid prefixes by scope
 const ALL_PREFIXES = ["|0000|", "|0140|", "|0150|", "|A010|", "|A100|", "|C010|", "|C100|", "|C500|", "|C600|", "|D010|", "|D100|", "|D101|", "|D105|", "|D500|", "|D501|", "|D505|"];
@@ -117,6 +118,8 @@ interface InsertCounts {
   raw_a100: number;
   participantes: number;
   estabelecimentos: number;
+  block_c_line_offset?: number;
+  block_c_total_lines?: number;
 }
 
 // ============================================================================
@@ -338,6 +341,82 @@ async function processBlock0(
   }
 
   console.log(`Job ${jobId}: Block 0 completed - ${context.filialMap.size} filiais, ${context.participantesMap.size} participantes`);
+  
+  return context;
+}
+
+// ============================================================================
+// BLOCK 0 QUICK - Extract context only (no inserts) for resumption
+// ============================================================================
+
+async function processBlock0Quick(
+  lines: string[],
+  supabase: any,
+  empresaId: string,
+  jobId: string
+): Promise<BlockContext> {
+  console.log(`Job ${jobId}: Quick processing Block 0 for context - ${lines.length} lines`);
+  
+  const context: BlockContext = {
+    period: '',
+    efdType: null,
+    filialMap: new Map(),
+    participantesMap: new Map(),
+    estabelecimentosMap: new Map(),
+  };
+
+  // Pre-load existing filiais (needed for context)
+  const { data: existingFiliais } = await supabase
+    .from("filiais")
+    .select("id, cnpj")
+    .eq("empresa_id", empresaId);
+  
+  for (const f of existingFiliais || []) {
+    context.filialMap.set(f.cnpj, f.id);
+  }
+
+  for (const line of lines) {
+    const fields = line.split("|");
+    const registro = fields[1];
+
+    switch (registro) {
+      case "0000":
+        if (fields.length > 9) {
+          context.efdType = detectEFDType(fields);
+          context.period = getPeriodFromHeader(fields, context.efdType);
+        }
+        break;
+
+      case "0140":
+        if (fields.length > 4) {
+          const codEst = fields[2] || "";
+          const nome = fields[3] || "";
+          const cnpj = fields[4]?.replace(/\D/g, "") || "";
+          
+          if (codEst && cnpj) {
+            context.estabelecimentosMap.set(cnpj, { cnpj, nome: nome || `Filial ${cnpj}`, codEst });
+          }
+        }
+        break;
+
+      case "0150":
+        if (fields.length > 3) {
+          const codPart = fields[2] || "";
+          const nome = (fields[3] || "").substring(0, 100);
+          const cnpj = fields.length > 5 ? (fields[5]?.replace(/\D/g, "") || null) : null;
+          const cpf = fields.length > 6 ? (fields[6]?.replace(/\D/g, "") || null) : null;
+          const ie = fields.length > 7 ? (fields[7] || null) : null;
+          const codMun = fields.length > 8 ? (fields[8] || null) : null;
+          
+          if (codPart && nome) {
+            context.participantesMap.set(codPart, { codPart, nome, cnpj, cpf, ie, codMun });
+          }
+        }
+        break;
+    }
+  }
+
+  console.log(`Job ${jobId}: Quick Block 0 - period: ${context.period}, ${context.filialMap.size} filiais`);
   
   return context;
 }
@@ -1087,6 +1166,8 @@ serve(async (req) => {
       raw_a100: existingCounts.raw_a100 || 0,
       participantes: existingCounts.participantes || 0,
       estabelecimentos: existingCounts.estabelecimentos || 0,
+      block_c_line_offset: existingCounts.block_c_line_offset || 0,
+      block_c_total_lines: existingCounts.block_c_total_lines || 0,
     };
 
     // ===========================================================================
@@ -1170,10 +1251,54 @@ serve(async (req) => {
 
       // ===========================================================================
       // PHASE 5: BLOCK C - Process mercadorias and energia/agua (C100, C500, C600)
+      // With chunking for large files to avoid timeout
       // ===========================================================================
       if (importScope === 'all' || importScope === 'only_c') {
-        console.log(`Job ${jobId}: Starting Block C processing...`);
-        await processBlockC(blocks.blockCLines, supabase, context, jobId, recordLimit, counts);
+        const totalBlockCLines = blocks.blockCLines.length;
+        counts.block_c_total_lines = totalBlockCLines;
+        
+        if (totalBlockCLines > BLOCK_C_CHUNK_SIZE) {
+          // Large Block C - process first chunk and fire-and-forget for remaining
+          console.log(`Job ${jobId}: Block C has ${totalBlockCLines} lines, processing in chunks...`);
+          
+          const firstChunk = blocks.blockCLines.slice(0, BLOCK_C_CHUNK_SIZE);
+          await processBlockC(firstChunk, supabase, context, jobId, recordLimit, counts);
+          
+          counts.block_c_line_offset = BLOCK_C_CHUNK_SIZE;
+          
+          await supabase.from("import_jobs").update({ 
+            progress: 50 + Math.floor((BLOCK_C_CHUNK_SIZE / totalBlockCLines) * 15),
+            counts
+          }).eq("id", jobId);
+          
+          // Fire-and-forget for next chunk
+          const selfUrl = `${supabaseUrl}/functions/v1/process-efd-job`;
+          EdgeRuntime.waitUntil(
+            fetch(selfUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${supabaseKey}`,
+              },
+              body: JSON.stringify({ job_id: jobId }),
+            }).catch(err => console.error(`Job ${jobId}: Failed to invoke next chunk: ${err}`))
+          );
+          
+          console.log(`Job ${jobId}: First Block C chunk processed (${BLOCK_C_CHUNK_SIZE} lines), fire-and-forget for next chunk`);
+          
+          return new Response(
+            JSON.stringify({ 
+              success: true, 
+              message: `Block C chunk 0-${BLOCK_C_CHUNK_SIZE} processed, continuing...`,
+              counts
+            }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        } else {
+          // Small Block C - process all at once
+          console.log(`Job ${jobId}: Starting Block C processing (${totalBlockCLines} lines)...`);
+          await processBlockC(blocks.blockCLines, supabase, context, jobId, recordLimit, counts);
+        }
       }
 
       await supabase.from("import_jobs").update({ 
@@ -1253,7 +1378,128 @@ serve(async (req) => {
       );
     }
 
-    // If we reach here, job is in an unexpected phase - try to resume from consolidation
+    // ===========================================================================
+    // RESUMPTION: BLOCK C - Continue processing remaining chunks
+    // ===========================================================================
+    if (currentPhase === 'block_c') {
+      const lineOffset = counts.block_c_line_offset || 0;
+      const totalLines = counts.block_c_total_lines || 0;
+      
+      console.log(`Job ${jobId}: Resuming Block C from line ${lineOffset} of ${totalLines}`);
+
+      // Re-download file and re-extract context
+      const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+        .from("efd-files")
+        .createSignedUrl(job.file_path, 3600);
+
+      if (signedUrlError || !signedUrlData) {
+        throw new Error("Failed to get file URL for resumption");
+      }
+
+      const fetchResponse = await fetch(signedUrlData.signedUrl);
+      if (!fetchResponse.ok) {
+        throw new Error(`Failed to fetch file: ${fetchResponse.status}`);
+      }
+
+      const fileContent = await fetchResponse.text();
+      const blocks = separateBlocks(fileContent, validPrefixes);
+      
+      // Quick processing of Block 0 to restore context (no inserts)
+      const context = await processBlock0Quick(blocks.block0Lines, supabase, job.empresa_id, jobId);
+      
+      const actualTotalLines = blocks.blockCLines.length;
+      const chunkEnd = Math.min(lineOffset + BLOCK_C_CHUNK_SIZE, actualTotalLines);
+      
+      console.log(`Job ${jobId}: Processing Block C chunk ${lineOffset}-${chunkEnd} of ${actualTotalLines}`);
+      
+      const chunk = blocks.blockCLines.slice(lineOffset, chunkEnd);
+      await processBlockC(chunk, supabase, context, jobId, recordLimit, counts);
+      
+      if (chunkEnd < actualTotalLines) {
+        // More chunks to process
+        counts.block_c_line_offset = chunkEnd;
+        const progress = 50 + Math.floor((chunkEnd / actualTotalLines) * 15);
+        
+        await supabase.from("import_jobs").update({ 
+          progress,
+          counts
+        }).eq("id", jobId);
+        
+        // Fire-and-forget for next chunk
+        const selfUrl = `${supabaseUrl}/functions/v1/process-efd-job`;
+        EdgeRuntime.waitUntil(
+          fetch(selfUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${supabaseKey}`,
+            },
+            body: JSON.stringify({ job_id: jobId }),
+          }).catch(err => console.error(`Job ${jobId}: Failed to invoke next chunk: ${err}`))
+        );
+        
+        console.log(`Job ${jobId}: Block C chunk ${lineOffset}-${chunkEnd} processed, fire-and-forget for next`);
+        
+        return new Response(
+          JSON.stringify({ 
+            success: true, 
+            message: `Block C chunk ${lineOffset}-${chunkEnd} processed, continuing...`,
+            counts
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      
+      // All Block C chunks done - proceed to consolidation
+      console.log(`Job ${jobId}: Block C completed all chunks, proceeding to consolidation`);
+      
+      await supabase.from("import_jobs").update({ 
+        progress: 65,
+        counts,
+        current_phase: "consolidating"
+      }).eq("id", jobId);
+      
+      const consolidationResult = await consolidateData(supabase, jobId);
+      
+      await supabase.from("import_jobs").update({ 
+        progress: 90,
+        current_phase: "refreshing_views"
+      }).eq("id", jobId);
+
+      const viewsRefreshed = await refreshMaterializedViews(supabase, jobId);
+
+      await supabase.from("import_jobs").update({ 
+        status: "completed",
+        progress: 100,
+        current_phase: "completed",
+        counts: { ...counts, consolidation: consolidationResult, refresh_success: viewsRefreshed > 0 },
+        completed_at: new Date().toISOString() 
+      }).eq("id", jobId);
+
+      // Delete file from storage
+      await supabase.storage.from("efd-files").remove([job.file_path]);
+
+      // Send email notification
+      try {
+        const emailUrl = `${supabaseUrl}/functions/v1/send-import-email`;
+        await fetch(emailUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${supabaseKey}` },
+          body: JSON.stringify({ job_id: jobId }),
+        });
+      } catch (emailErr) {
+        console.warn(`Job ${jobId}: Failed to send email:`, emailErr);
+      }
+
+      return new Response(
+        JSON.stringify({ success: true, message: "Import completed (resumed from block_c)" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // ===========================================================================
+    // RESUMPTION: CONSOLIDATING
+    // ===========================================================================
     if (currentPhase === 'consolidating') {
       console.log(`Job ${jobId}: Resuming from consolidation phase...`);
       
