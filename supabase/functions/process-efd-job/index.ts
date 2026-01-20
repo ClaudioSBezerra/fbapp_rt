@@ -14,8 +14,8 @@ const corsHeaders = {
 
 const BATCH_SIZE = 1000;
 const PROGRESS_UPDATE_INTERVAL = 5000;
-const BLOCK_C_CHUNK_SIZE = 50000; // Process Block C in chunks to avoid timeout
-const BLOCK_D_CHUNK_SIZE = 20000; // Process Block D in chunks to avoid timeout (smaller for faster queries)
+const BLOCK_C_CHUNK_SIZE = 1000; // Match Supabase default row limit
+const BLOCK_D_CHUNK_SIZE = 1000; // Match Supabase default row limit
 const PARSING_CHUNK_SIZE = 200000; // Lines per parsing invocation for chunked streaming (increased)
 const RAW_LINES_INSERT_BATCH_SIZE = 3000; // Batch size for inserting into efd_raw_lines (increased from 500)
 const SELF_INVOKE_MAX_RETRIES = 7; // Increased from 5 to 7 for better resilience
