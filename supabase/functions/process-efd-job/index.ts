@@ -15,6 +15,7 @@ const corsHeaders = {
 const BATCH_SIZE = 1000;
 const PROGRESS_UPDATE_INTERVAL = 5000;
 const BLOCK_C_CHUNK_SIZE = 50000; // Process Block C in chunks to avoid timeout
+const PARSING_CHUNK_SIZE = 150000; // Lines per parsing invocation for chunked streaming
 
 // Valid prefixes by scope
 const ALL_PREFIXES = ["|0000|", "|0140|", "|0150|", "|A010|", "|A100|", "|C010|", "|C100|", "|C500|", "|C600|", "|D010|", "|D100|", "|D101|", "|D105|", "|D500|", "|D501|", "|D505|"];
@@ -204,16 +205,29 @@ function separateBlocks(fileContent: string, validPrefixes: string[]): Separated
   };
 }
 
-// Streaming version - processes file line by line without loading entire content into memory
-async function separateBlocksStreaming(
+// Chunked streaming version - processes file in chunks to avoid CPU timeout
+// Returns hasMore=true if there are more lines to process
+interface ChunkedParsingResult {
+  blocks: SeparatedBlocks;
+  hasMore: boolean;
+  nextOffset: number;
+  processedInChunk: number;
+}
+
+async function separateBlocksChunked(
   fetchResponse: Response, 
-  validPrefixes: string[]
-): Promise<SeparatedBlocks> {
+  validPrefixes: string[],
+  skipLines: number,
+  maxLines: number
+): Promise<ChunkedParsingResult> {
   const block0Lines: string[] = [];
   const blockALines: string[] = [];
   const blockCLines: string[] = [];
   const blockDLines: string[] = [];
-  let totalLines = 0;
+  let lineCount = 0;
+  let processedInChunk = 0;
+
+  console.log(`separateBlocksChunked: Starting at offset ${skipLines}, max lines ${maxLines}`);
 
   const lineStream = fetchResponse.body!
     .pipeThrough(new TextDecoderStream())
@@ -223,7 +237,29 @@ async function separateBlocksStreaming(
     const trimmed = line.trim();
     if (!trimmed) continue;
     
-    totalLines++;
+    lineCount++;
+    
+    // Skip lines already processed in previous chunks
+    if (lineCount <= skipLines) continue;
+    
+    // Check chunk limit - if we've processed maxLines, return early
+    if (processedInChunk >= maxLines) {
+      console.log(`separateBlocksChunked: Chunk limit reached at line ${lineCount}, returning early`);
+      return {
+        blocks: { 
+          block0Lines, 
+          blockALines, 
+          blockCLines, 
+          blockDLines, 
+          totalLines: lineCount - 1 // Approximate, will be updated
+        },
+        hasMore: true,
+        nextOffset: lineCount - 1, // Next chunk starts here
+        processedInChunk
+      };
+    }
+    
+    processedInChunk++;
     
     // Check if line starts with any valid prefix
     if (!validPrefixes.some(p => trimmed.startsWith(p))) continue;
@@ -239,12 +275,19 @@ async function separateBlocksStreaming(
     }
   }
 
+  console.log(`separateBlocksChunked: Completed - total ${lineCount} lines, processed ${processedInChunk} in this chunk`);
+
   return {
-    block0Lines,
-    blockALines,
-    blockCLines,
-    blockDLines,
-    totalLines,
+    blocks: { 
+      block0Lines, 
+      blockALines, 
+      blockCLines, 
+      blockDLines, 
+      totalLines: lineCount 
+    },
+    hasMore: false,
+    nextOffset: lineCount,
+    processedInChunk
   };
 }
 
@@ -1315,14 +1358,24 @@ serve(async (req) => {
     };
 
     // ===========================================================================
-    // PHASE 1: PARSING - Download and separate file into blocks
+    // PHASE 1: PARSING - Download and separate file into blocks (CHUNKED)
+    // Uses chunked streaming to avoid CPU timeout on large files
     // ===========================================================================
     if (currentPhase === 'pending' || currentPhase === 'parsing') {
       await supabase.from("import_jobs").update({ 
         status: "processing", 
         current_phase: "parsing",
-        started_at: new Date().toISOString() 
+        started_at: job.started_at || new Date().toISOString() 
       }).eq("id", jobId);
+
+      // Get current parsing offset from job
+      const parsingOffset = (job as any).parsing_offset || 0;
+      
+      // Get temporary block arrays from previous chunks (if any)
+      const tempBlock0 = (job as any).temp_block0_lines || [];
+      const tempBlockA = (job as any).temp_blocka_lines || [];
+      const tempBlockC = (job as any).temp_blockc_lines || [];
+      const tempBlockD = (job as any).temp_blockd_lines || [];
 
       // Get signed URL for file
       const { data: signedUrlData, error: signedUrlError } = await supabase.storage
@@ -1333,22 +1386,86 @@ serve(async (req) => {
         throw new Error("Failed to get file URL");
       }
 
-      console.log(`Job ${jobId}: Starting streaming download for large file support...`);
+      console.log(`Job ${jobId}: Starting chunked parsing at offset ${parsingOffset}...`);
       const fetchResponse = await fetch(signedUrlData.signedUrl);
       
       if (!fetchResponse.ok) {
         throw new Error(`Failed to fetch file: ${fetchResponse.status} ${fetchResponse.statusText}`);
       }
 
-      // Use streaming to process large files without loading entire content into memory
-      console.log(`Job ${jobId}: Streaming file and separating blocks...`);
-      const blocks = await separateBlocksStreaming(fetchResponse, validPrefixes);
-      console.log(`Job ${jobId}: Blocks separated via streaming - Block0: ${blocks.block0Lines.length}, BlockA: ${blocks.blockALines.length}, BlockC: ${blocks.blockCLines.length}, BlockD: ${blocks.blockDLines.length}, Total lines: ${blocks.totalLines}`);
+      // Use chunked streaming to process large files
+      const result = await separateBlocksChunked(fetchResponse, validPrefixes, parsingOffset, PARSING_CHUNK_SIZE);
+      
+      console.log(`Job ${jobId}: Chunk processed - Block0: ${result.blocks.block0Lines.length}, BlockA: ${result.blocks.blockALines.length}, BlockC: ${result.blocks.blockCLines.length}, BlockD: ${result.blocks.blockDLines.length}, hasMore: ${result.hasMore}`);
 
+      if (result.hasMore) {
+        // More lines to parse - save progress and self-invoke
+        const newBlock0 = [...tempBlock0, ...result.blocks.block0Lines];
+        const newBlockA = [...tempBlockA, ...result.blocks.blockALines];
+        const newBlockC = [...tempBlockC, ...result.blocks.blockCLines];
+        const newBlockD = [...tempBlockD, ...result.blocks.blockDLines];
+        
+        // Estimate progress based on file size
+        const estimatedTotalLines = job.file_size / 100; // rough estimate: ~100 bytes per line
+        const progress = Math.min(9, Math.floor((result.nextOffset / estimatedTotalLines) * 9));
+        
+        await supabase.from("import_jobs").update({ 
+          progress,
+          parsing_offset: result.nextOffset,
+          parsing_total_lines: result.nextOffset,
+          temp_block0_lines: newBlock0,
+          temp_blocka_lines: newBlockA,
+          temp_blockc_lines: newBlockC,
+          temp_blockd_lines: newBlockD
+        }).eq("id", jobId);
+        
+        console.log(`Job ${jobId}: Parsing chunk done, offset now ${result.nextOffset}, firing next chunk...`);
+        
+        // Fire-and-forget for next chunk
+        const selfUrl = `${supabaseUrl}/functions/v1/process-efd-job`;
+        EdgeRuntime.waitUntil(
+          fetch(selfUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${supabaseKey}`,
+            },
+            body: JSON.stringify({ job_id: jobId }),
+          }).catch(err => console.error(`Job ${jobId}: Failed to invoke next parsing chunk: ${err}`))
+        );
+        
+        return new Response(
+          JSON.stringify({ 
+            success: true, 
+            message: `Parsing chunk processed, offset: ${result.nextOffset}`,
+            hasMore: true
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Parsing complete - merge all temp arrays with final chunk
+      const blocks: SeparatedBlocks = {
+        block0Lines: [...tempBlock0, ...result.blocks.block0Lines],
+        blockALines: [...tempBlockA, ...result.blocks.blockALines],
+        blockCLines: [...tempBlockC, ...result.blocks.blockCLines],
+        blockDLines: [...tempBlockD, ...result.blocks.blockDLines],
+        totalLines: result.blocks.totalLines
+      };
+      
+      console.log(`Job ${jobId}: Parsing complete - Block0: ${blocks.block0Lines.length}, BlockA: ${blocks.blockALines.length}, BlockC: ${blocks.blockCLines.length}, BlockD: ${blocks.blockDLines.length}, Total lines: ${blocks.totalLines}`);
+
+      // Clear temp arrays
       await supabase.from("import_jobs").update({ 
         progress: 10,
         total_lines: blocks.totalLines,
-        current_phase: "block_0"
+        current_phase: "block_0",
+        parsing_offset: 0,
+        parsing_total_lines: blocks.totalLines,
+        temp_block0_lines: [],
+        temp_blocka_lines: [],
+        temp_blockc_lines: [],
+        temp_blockd_lines: []
       }).eq("id", jobId);
 
       // ===========================================================================
@@ -1556,9 +1673,10 @@ serve(async (req) => {
         throw new Error(`Failed to fetch file: ${fetchResponse.status}`);
       }
 
-      // Use streaming for resumption as well
-      console.log(`Job ${jobId}: Streaming file for resumption...`);
-      const blocks = await separateBlocksStreaming(fetchResponse, validPrefixes);
+      // Use chunked streaming for resumption (full parse needed for context)
+      console.log(`Job ${jobId}: Streaming file for Block C resumption...`);
+      const parseResult = await separateBlocksChunked(fetchResponse, validPrefixes, 0, 999999999);
+      const blocks = parseResult.blocks;
       
       // Quick processing of Block 0 to restore context (no inserts)
       const context = await processBlock0Quick(blocks.block0Lines, supabase, job.empresa_id, jobId);
