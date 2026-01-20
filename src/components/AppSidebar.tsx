@@ -46,7 +46,7 @@ const allMenuItems: MenuItem[] = [
   { title: 'Empresas', url: '/empresas', icon: Building2, adminOnly: true },
   { title: 'Alíquotas', url: '/aliquotas', icon: Calculator },
   { title: 'Operações', subtitle: 'de Compra e Venda', url: '/mercadorias', icon: Package },
-  { title: 'Compra e Venda por Participante', url: '/mercadorias-participante', icon: Users },
+  { title: 'Compra e Venda', subtitle: 'por Participante', url: '/mercadorias-participante', icon: Users },
   { title: 'Serviços', url: '/servicos', icon: FileText },
   { title: 'Energia e Água', url: '/energia-agua', icon: Zap },
   { title: 'Fretes', url: '/fretes', icon: Truck },
@@ -116,7 +116,7 @@ export function AppSidebar() {
                       {item.subtitle ? (
                         <div className="flex flex-col min-w-0">
                           <span className="truncate leading-tight">{item.title}</span>
-                          <span className="text-[10px] text-sidebar-foreground/60 truncate leading-tight">{item.subtitle}</span>
+                          <span className="text-[11px] text-sidebar-foreground/60 truncate leading-tight">{item.subtitle}</span>
                         </div>
                       ) : (
                         <span className="truncate">{item.title}</span>
