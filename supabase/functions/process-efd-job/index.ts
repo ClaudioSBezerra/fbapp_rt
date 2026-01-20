@@ -1086,12 +1086,14 @@ serve(async (req) => {
       if (batches[table].length === 0) return null;
 
       // Use upsert with ignoreDuplicates to avoid inserting duplicate records
-      // This requires unique constraints on the tables (will be added via migration after data cleanup)
+      // Aligned with database unique indexes (idx_mercadorias_upsert_key, idx_servicos_upsert_key)
       const onConflictMap: Record<keyof BatchBuffers, string> = {
-        mercadorias: 'filial_id,mes_ano,tipo,descricao,valor,pis,cofins,icms,ipi',
+        // idx_mercadorias_upsert_key: (filial_id, mes_ano, tipo, COALESCE(cod_part), valor, pis, cofins, icms, ipi)
+        mercadorias: 'filial_id,mes_ano,tipo,cod_part,valor,pis,cofins,icms,ipi',
         fretes: 'filial_id,mes_ano,tipo,valor,pis,cofins,icms',
         energia_agua: 'filial_id,mes_ano,tipo_operacao,tipo_servico,valor,pis,cofins,icms',
-        servicos: 'filial_id,mes_ano,tipo,descricao,valor,pis,cofins,iss',
+        // idx_servicos_upsert_key: (filial_id, mes_ano, tipo, valor, pis, cofins, iss)
+        servicos: 'filial_id,mes_ano,tipo,valor,pis,cofins,iss',
         participantes: 'filial_id,cod_part',
       };
       
@@ -1100,18 +1102,27 @@ serve(async (req) => {
         ignoreDuplicates: true 
       });
       if (error) {
-        // If unique constraint doesn't exist yet, fall back to insert
-        if (error.message.includes('constraint') || error.message.includes('unique')) {
-          console.log(`Job ${jobId}: Constraint not found for ${table}, using insert (duplicates may occur)`);
-          const { error: insertError } = await supabase.from(table).insert(batches[table]);
-          if (insertError) {
-            console.error(`Insert error for ${table}:`, insertError);
-            return insertError.message;
-          }
-        } else {
-          console.error(`Upsert error for ${table}:`, error);
-          return error.message;
+        // Check if error is "ON CONFLICT specification mismatch" - this is a critical config error
+        const isMismatchError = error.message.includes('no unique or exclusion constraint') || 
+                                error.message.includes('ON CONFLICT specification');
+        
+        if (isMismatchError) {
+          // Critical: Database schema doesn't match expected constraints - fail immediately
+          console.error(`Job ${jobId}: CRITICAL - ON CONFLICT mismatch for ${table}. Database index missing or incompatible.`);
+          console.error(`Expected columns: ${onConflictMap[table]}`);
+          console.error(`Error: ${error.message}`);
+          return `Erro de configuração: índice único incompatível para ${table}. Contate o suporte.`;
         }
+        
+        // For duplicate key errors, just log and continue (data already exists)
+        if (error.message.includes('duplicate key')) {
+          console.log(`Job ${jobId}: Duplicate keys found for ${table}, skipping batch`);
+          batches[table] = [];
+          return null;
+        }
+        
+        console.error(`Upsert error for ${table}:`, error);
+        return error.message;
       }
 
       counts[table] += batches[table].length;
