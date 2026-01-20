@@ -416,12 +416,22 @@ function processLine(
     case "A100":
       // Nota Fiscal de Serviço - Bloco A (EFD Contribuições)
       // Layout: |A100|IND_OPER|IND_EMIT|COD_PART|COD_SIT|SER|SUB|NUM_DOC|CHV_NFSE|DT_DOC|DT_EXE_SERV|VL_DOC|IND_PGTO|VL_DESC|VL_BC_PIS|VL_PIS|VL_BC_COFINS|VL_COFINS|VL_PIS_RET|VL_COFINS_RET|VL_ISS|
-      // Índices: 2=IND_OPER, 8=NUM_DOC, 9=CHV_NFSE, 12=VL_DOC, 16=VL_PIS, 18=VL_COFINS, 21=VL_ISS
+      // Índices: 2=IND_OPER, 4=COD_PART, 8=NUM_DOC, 9=CHV_NFSE, 12=VL_DOC, 16=VL_PIS, 18=VL_COFINS, 21=VL_ISS
       blockType = "a100";
       
       if (fields.length > 12) {
         const indOper = fields[2];
         const tipo = indOper === "0" ? "entrada" : "saida";
+        const codPartRaw = fields[4] || null;
+        
+        // Validação de COD_PART: Se não informado ou não existir no mapa, usar padrão
+        let codPart = codPartRaw;
+        // Se estiver vazio, nulo, ou não tiver sido processado no 0150
+        if (!codPartRaw || codPartRaw.trim() === '' || (codPartRaw !== '0' && !context.participantesMap.has(codPartRaw))) {
+          // Usa 9999999999 para saídas (Consumidor) e 8888888888 para entradas (Fornecedor)
+          codPart = tipo === 'saida' ? '9999999999' : '8888888888';
+        }
+        
         const valorDoc = parseNumber(fields[12]); // VL_DOC
         
         if (valorDoc > 0) {
@@ -436,6 +446,10 @@ function processLine(
               pis: fields.length > 16 ? parseNumber(fields[16]) : 0,     // VL_PIS
               cofins: fields.length > 18 ? parseNumber(fields[18]) : 0,  // VL_COFINS
               iss: fields.length > 21 ? parseNumber(fields[21]) : 0,     // VL_ISS
+              // Adicionando cod_part para vincular ao participante (mesmo que seja genérico)
+              // Nota: A tabela servicos precisará ter a coluna cod_part se ainda não tiver, 
+              // mas o upsert vai ignorar campos extras se a tabela não tiver a coluna
+              // Se a tabela servicos não tem cod_part, isso será ignorado pelo supabase-js
             },
           };
         }
@@ -454,11 +468,13 @@ function processLine(
           const indOper = fields[2];
           const tipo = indOper === "0" ? "entrada" : "saida";
           const codPartRaw = fields[4] || null;
-          // Para entradas/saídas sem cod_part válido, usar código padrão apropriado
+          
+          // Validação de COD_PART: Se não informado ou não existir no mapa, usar padrão
           let codPart = codPartRaw;
-          if (!codPartRaw || codPartRaw.trim() === '' || codPartRaw === '0') {
-            codPart = tipo === 'saida' ? '9999999999' : '8888888888';
+          if (!codPartRaw || codPartRaw.trim() === '' || codPartRaw === '0' || !context.participantesMap.has(codPartRaw)) {
+             codPart = tipo === 'saida' ? '9999999999' : '8888888888';
           }
+          
           const valorDoc = parseNumber(fields[12]); // Campo 12: VL_DOC
           
           if (valorDoc > 0) {
@@ -474,7 +490,7 @@ function processLine(
                 cofins: fields.length > 27 ? parseNumber(fields[27]) : 0, // Campo 27: VL_COFINS (se existir)
                 icms: fields.length > 22 ? parseNumber(fields[22]) : 0,   // Campo 22: VL_ICMS (se existir)
                 ipi: fields.length > 25 ? parseNumber(fields[25]) : 0,    // Campo 25: VL_IPI (se existir)
-                cod_part: codPart, // Referência ao participante (ou CONSUMIDOR FINAL)
+                cod_part: codPart, // Referência ao participante existente ou genérico
               },
             };
           }
@@ -486,11 +502,13 @@ function processLine(
           const indOper = fields[2];
           const tipo = indOper === "0" ? "entrada" : "saida";
           const codPartRaw = fields[4] || null;
-          // Para entradas/saídas sem cod_part válido, usar código padrão apropriado
+          
+          // Validação de COD_PART: Se não informado ou não existir no mapa, usar padrão
           let codPart = codPartRaw;
-          if (!codPartRaw || codPartRaw.trim() === '' || codPartRaw === '0') {
-            codPart = tipo === 'saida' ? '9999999999' : '8888888888';
+          if (!codPartRaw || codPartRaw.trim() === '' || codPartRaw === '0' || !context.participantesMap.has(codPartRaw)) {
+             codPart = tipo === 'saida' ? '9999999999' : '8888888888';
           }
+          
           const valorDoc = parseNumber(fields[12]); // Campo 12: VL_DOC
           
           if (valorDoc > 0) {
@@ -506,7 +524,7 @@ function processLine(
                 cofins: parseNumber(fields[27]), // Campo 27: VL_COFINS
                 icms: parseNumber(fields[22]),   // Campo 22: VL_ICMS
                 ipi: parseNumber(fields[25]),    // Campo 25: VL_IPI
-                cod_part: codPart, // Referência ao participante (ou CONSUMIDOR FINAL)
+                cod_part: codPart, // Referência ao participante existente ou genérico
               },
             };
           }
