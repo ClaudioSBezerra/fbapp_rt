@@ -216,7 +216,9 @@ interface InsertCounts {
   estabelecimentos: number;
   block_c_line_offset?: number;
   block_c_total_lines?: number;
-  block_c_last_filial_id?: string | null;  // NEW: Persist filial ID across chunks
+  block_c_last_filial_id?: string | null;
+  block_d_cursor?: number;
+  block_d_total_lines?: number;
 }
 
 // ============================================================================
@@ -1734,7 +1736,7 @@ serve(async (req) => {
 
     console.log(`Job ${jobId}: Current phase: ${currentPhase}, scope: ${importScope}, recordLimit: ${recordLimit}`);
 
-    // Initialize counts
+    // Initialize counts - IMPORTANT: include ALL cursor/offset fields from existingCounts!
     const existingCounts = job.counts as any || {};
     const counts: InsertCounts = {
       raw_c100: existingCounts.raw_c100 || 0,
@@ -1745,6 +1747,8 @@ serve(async (req) => {
       estabelecimentos: existingCounts.estabelecimentos || 0,
       block_c_line_offset: existingCounts.block_c_line_offset || 0,
       block_c_total_lines: existingCounts.block_c_total_lines || 0,
+      block_d_cursor: existingCounts.block_d_cursor || 0,
+      block_d_total_lines: existingCounts.block_d_total_lines || 0,
     };
 
     // ===========================================================================
