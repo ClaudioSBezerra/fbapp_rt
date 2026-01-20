@@ -1027,8 +1027,8 @@ serve(async (req) => {
       currentCNPJ: existingContext?.currentCNPJ || "",
       currentFilialId: existingContext?.currentFilialId || job.filial_id,
       efdType: existingContext?.efdType || null,
-      pendingD100: null, // Pending records are finalized at chunk end
-      pendingD500: null,
+      pendingD100: existingContext?.pendingD100 || null, // Restore pending record
+      pendingD500: existingContext?.pendingD500 || null, // Restore pending record
       filialMap,
       participantesMap: new Map(), // Will be populated from 0150 records (not persisted between chunks)
       estabelecimentosMap: new Map(), // Will be populated from 0140 records (not persisted between chunks)
@@ -1091,7 +1091,8 @@ serve(async (req) => {
     };
 
     const flushAllBatches = async (): Promise<string | null> => {
-      for (const table of ["mercadorias", "energia_agua", "fretes", "servicos", "participantes"] as const) {
+      // CRITICAL: Flush participantes first to avoid FK violations
+      for (const table of ["participantes", "mercadorias", "energia_agua", "fretes", "servicos"] as const) {
         const err = await flushBatch(table);
         if (err) return err;
       }
@@ -1450,6 +1451,15 @@ serve(async (req) => {
           });
 
           if (batches[table].length >= BATCH_SIZE) {
+            // CRITICAL: Flush participantes first if there are any pending, to satisfy FK constraints
+            if (batches.participantes.length > 0 && table !== "participantes") {
+              const pErr = await flushBatch("participantes");
+              if (pErr) {
+                console.warn(`Job ${jobId}: Pre-flush participantes warning: ${pErr}`);
+                // Continue anyway, as the main flush will likely fail and be caught below
+              }
+            }
+
             const err = await flushBatch(table);
             if (err) {
               await supabase
@@ -1525,29 +1535,33 @@ serve(async (req) => {
     console.log(`Job ${jobId}: Block counts - A100: ${blockLimits.a100.count}, C100: ${blockLimits.c100.count}, C500: ${blockLimits.c500.count}, C600: ${blockLimits.c600.count}, D100: ${blockLimits.d100.count}, D500: ${blockLimits.d500.count}`);
     console.log(`Job ${jobId}: Seen counts - A100: ${seenCounts.a100}, C100: ${seenCounts.c100}, C500: ${seenCounts.c500}, C600: ${seenCounts.c600}, D100: ${seenCounts.d100}, D101: ${seenCounts.d101}, D105: ${seenCounts.d105}, D500: ${seenCounts.d500}, D501: ${seenCounts.d501}, D505: ${seenCounts.d505}`);
 
-    // Finalize any pending D100/D500 records before flushing (important for chunk boundaries)
-    const chunkFinalD100 = finalizePendingD100(context);
-    if (chunkFinalD100 && chunkFinalD100.data.mes_ano) {
-      if (blockLimits.d100.limit === 0 || blockLimits.d100.count < blockLimits.d100.limit) {
-        blockLimits.d100.count++;
-        batches.fretes.push({
-          ...chunkFinalD100.data,
-          filial_id: context.currentFilialId || job.filial_id,
-        });
-        console.log(`Job ${jobId}: Finalized pending D100 at chunk end`);
+    // Finalize any pending D100/D500 records ONLY if we are finishing the file (not just pausing for chunk)
+    if (!shouldContinueNextChunk) {
+      const chunkFinalD100 = finalizePendingD100(context);
+      if (chunkFinalD100 && chunkFinalD100.data.mes_ano) {
+        if (blockLimits.d100.limit === 0 || blockLimits.d100.count < blockLimits.d100.limit) {
+          blockLimits.d100.count++;
+          batches.fretes.push({
+            ...chunkFinalD100.data,
+            filial_id: context.currentFilialId || job.filial_id,
+          });
+          console.log(`Job ${jobId}: Finalized pending D100 at EOF`);
+        }
       }
-    }
-    
-    const chunkFinalD500 = finalizePendingD500(context);
-    if (chunkFinalD500 && chunkFinalD500.data.mes_ano) {
-      if (blockLimits.d500.limit === 0 || blockLimits.d500.count < blockLimits.d500.limit) {
-        blockLimits.d500.count++;
-        batches.fretes.push({
-          ...chunkFinalD500.data,
-          filial_id: context.currentFilialId || job.filial_id,
-        });
-        console.log(`Job ${jobId}: Finalized pending D500 at chunk end`);
+      
+      const chunkFinalD500 = finalizePendingD500(context);
+      if (chunkFinalD500 && chunkFinalD500.data.mes_ano) {
+        if (blockLimits.d500.limit === 0 || blockLimits.d500.count < blockLimits.d500.limit) {
+          blockLimits.d500.count++;
+          batches.fretes.push({
+            ...chunkFinalD500.data,
+            filial_id: context.currentFilialId || job.filial_id,
+          });
+          console.log(`Job ${jobId}: Finalized pending D500 at EOF`);
+        }
       }
+    } else {
+      console.log(`Job ${jobId}: Preserving pending records for next chunk (D100: ${!!context.pendingD100}, D500: ${!!context.pendingD500})`);
     }
 
     // Final flush for this chunk
@@ -1598,6 +1612,8 @@ serve(async (req) => {
               currentCNPJ: context.currentCNPJ,
               currentFilialId: context.currentFilialId,
               efdType: context.efdType,
+              pendingD100: context.pendingD100, // Save pending record
+              pendingD500: context.pendingD500, // Save pending record
               filialMapEntries: Array.from(context.filialMap.entries()),
               // participantesMap and estabelecimentosMap are rebuilt from DB if needed
             }
