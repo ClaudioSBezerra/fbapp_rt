@@ -253,6 +253,7 @@ serve(async (req) => {
       'extensions.mv_uso_consumo_detailed',
       'extensions.mv_fretes_detailed',
       'extensions.mv_energia_agua_detailed',
+      'extensions.mv_participantes_cache',
     ];
 
     for (const view of views) {

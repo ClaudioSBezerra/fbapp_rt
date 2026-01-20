@@ -377,7 +377,8 @@ Deno.serve(async (req) => {
       "mv_servicos_aggregated",
       "mv_uso_consumo_aggregated",
       "mv_uso_consumo_detailed",
-      "mv_dashboard_stats"
+      "mv_dashboard_stats",
+      "mv_participantes_cache"
     ];
     
     for (const view of viewsToRefresh) {
