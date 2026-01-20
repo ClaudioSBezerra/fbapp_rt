@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { TextLineStream } from "https://deno.land/std@0.168.0/streams/text_line_stream.ts";
 
 // Declare EdgeRuntime for fire-and-forget background tasks
 declare const EdgeRuntime: {
@@ -200,6 +201,50 @@ function separateBlocks(fileContent: string, validPrefixes: string[]): Separated
     blockCLines,
     blockDLines,
     totalLines: allLines.length,
+  };
+}
+
+// Streaming version - processes file line by line without loading entire content into memory
+async function separateBlocksStreaming(
+  fetchResponse: Response, 
+  validPrefixes: string[]
+): Promise<SeparatedBlocks> {
+  const block0Lines: string[] = [];
+  const blockALines: string[] = [];
+  const blockCLines: string[] = [];
+  const blockDLines: string[] = [];
+  let totalLines = 0;
+
+  const lineStream = fetchResponse.body!
+    .pipeThrough(new TextDecoderStream())
+    .pipeThrough(new TextLineStream());
+
+  for await (const line of lineStream) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    
+    totalLines++;
+    
+    // Check if line starts with any valid prefix
+    if (!validPrefixes.some(p => trimmed.startsWith(p))) continue;
+
+    if (trimmed.startsWith('|0')) {
+      block0Lines.push(trimmed);
+    } else if (trimmed.startsWith('|A')) {
+      blockALines.push(trimmed);
+    } else if (trimmed.startsWith('|C')) {
+      blockCLines.push(trimmed);
+    } else if (trimmed.startsWith('|D')) {
+      blockDLines.push(trimmed);
+    }
+  }
+
+  return {
+    block0Lines,
+    blockALines,
+    blockCLines,
+    blockDLines,
+    totalLines,
   };
 }
 
@@ -1288,19 +1333,17 @@ serve(async (req) => {
         throw new Error("Failed to get file URL");
       }
 
-      console.log(`Job ${jobId}: Downloading file...`);
+      console.log(`Job ${jobId}: Starting streaming download for large file support...`);
       const fetchResponse = await fetch(signedUrlData.signedUrl);
       
       if (!fetchResponse.ok) {
         throw new Error(`Failed to fetch file: ${fetchResponse.status} ${fetchResponse.statusText}`);
       }
 
-      const fileContent = await fetchResponse.text();
-      console.log(`Job ${jobId}: File downloaded, ${fileContent.length} bytes`);
-
-      // Separate into blocks
-      const blocks = separateBlocks(fileContent, validPrefixes);
-      console.log(`Job ${jobId}: Blocks separated - Block0: ${blocks.block0Lines.length}, BlockA: ${blocks.blockALines.length}, BlockC: ${blocks.blockCLines.length}, BlockD: ${blocks.blockDLines.length}`);
+      // Use streaming to process large files without loading entire content into memory
+      console.log(`Job ${jobId}: Streaming file and separating blocks...`);
+      const blocks = await separateBlocksStreaming(fetchResponse, validPrefixes);
+      console.log(`Job ${jobId}: Blocks separated via streaming - Block0: ${blocks.block0Lines.length}, BlockA: ${blocks.blockALines.length}, BlockC: ${blocks.blockCLines.length}, BlockD: ${blocks.blockDLines.length}, Total lines: ${blocks.totalLines}`);
 
       await supabase.from("import_jobs").update({ 
         progress: 10,
@@ -1513,8 +1556,9 @@ serve(async (req) => {
         throw new Error(`Failed to fetch file: ${fetchResponse.status}`);
       }
 
-      const fileContent = await fetchResponse.text();
-      const blocks = separateBlocks(fileContent, validPrefixes);
+      // Use streaming for resumption as well
+      console.log(`Job ${jobId}: Streaming file for resumption...`);
+      const blocks = await separateBlocksStreaming(fetchResponse, validPrefixes);
       
       // Quick processing of Block 0 to restore context (no inserts)
       const context = await processBlock0Quick(blocks.block0Lines, supabase, job.empresa_id, jobId);
