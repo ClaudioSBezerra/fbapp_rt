@@ -1109,6 +1109,56 @@ serve(async (req) => {
         if (error) {
           // If unique constraint doesn't exist yet, fall back to insert
           if (error.message.includes('constraint') || error.message.includes('unique') || error.message.includes('does not exist')) {
+            // Special handling for foreign key violation (missing participante)
+            if (error.message.includes('foreign key') && error.message.includes('participantes')) {
+              const msg = `Foreign key violation for ${table}: missing participante. Creating placeholders...`;
+              console.log(`Job ${jobId}: ${msg}`);
+              logJobEvent(supabase, jobId!, 'warning', msg);
+              
+              // Extract missing cod_part from error if possible or batches
+              // Since we can't easily parse it from error message, we try to ensure all referenced participants exist
+              // Iterate through batch and ensure referenced participants exist
+              const missingParts = new Set<string>();
+              batches[table].forEach(item => {
+                if (item.cod_part && item.filial_id) {
+                  missingParts.add(`${item.filial_id}|${item.cod_part}`);
+                }
+              });
+              
+              // Create placeholders for potentially missing participants
+              if (missingParts.size > 0) {
+                const placeholders: any[] = [];
+                for (const key of missingParts) {
+                  const [filialId, codPart] = key.split('|');
+                  placeholders.push({
+                    filial_id: filialId,
+                    cod_part: codPart,
+                    nome: `PARTICIPANTE ${codPart} (AUTO-CRIADO)`,
+                    cnpj: null
+                  });
+                }
+                
+                // Batch insert placeholders with ignore duplicates
+                const { error: placeholderError } = await supabase
+                  .from('participantes')
+                  .upsert(placeholders, { onConflict: 'filial_id,cod_part', ignoreDuplicates: true });
+                  
+                if (placeholderError) {
+                  console.error(`Failed to create placeholders: ${placeholderError.message}`);
+                } else {
+                  console.log(`Created ${placeholders.length} placeholder participants, retrying upsert...`);
+                  // Retry original upsert
+                  const { error: retryError } = await supabase.from(table).upsert(batches[table], { 
+                    onConflict: conflictTarget,
+                    ignoreDuplicates: true 
+                  });
+                  
+                  if (!retryError) return null; // Success on retry
+                  console.error(`Retry failed: ${retryError.message}`);
+                }
+              }
+            }
+            
             const msg = `Constraint issue for ${table} (${error.message}), using insert fallback`;
             console.log(`Job ${jobId}: ${msg}`);
             logJobEvent(supabase, jobId!, 'warning', msg);
