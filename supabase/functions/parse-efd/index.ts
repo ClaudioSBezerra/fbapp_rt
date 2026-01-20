@@ -121,6 +121,24 @@ serve(async (req) => {
       );
     }
 
+    // Check demo import limits
+    const { data: limitCheck, error: limitError } = await supabase.rpc("check_demo_import_limits", {
+      _empresa_id: empresaId,
+      _file_type: "contrib",
+      _mes_ano: null, // Will check overall limit
+    });
+
+    if (!limitError && limitCheck && !limitCheck.allowed) {
+      await supabase.storage.from("efd-files").remove([filePath]);
+      return new Response(
+        JSON.stringify({ 
+          error: limitCheck.reason || "Limite de importações do período de demonstração atingido",
+          demo_limit_reached: true 
+        }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // Extract header from file using Range request (only first 16KB, not entire file)
     console.log(`Extracting header from file: ${filePath}`);
     

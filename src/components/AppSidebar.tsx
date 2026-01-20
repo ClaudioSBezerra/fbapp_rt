@@ -10,12 +10,14 @@ import {
   Truck,
   Upload,
   FileText,
-  Users
+  Users,
+  TrendingUp
 } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { useAuth } from '@/hooks/useAuth';
 import { useRole } from '@/hooks/useRole';
 import { useSessionInfo } from '@/hooks/useSessionInfo';
+import { useDemoStatus } from '@/hooks/useDemoStatus';
 import { useLocation } from 'react-router-dom';
 import {
   Sidebar,
@@ -31,7 +33,7 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
-import { TrendingUp } from 'lucide-react';
+import { TrialStatusFooter } from '@/components/TrialStatusFooter';
 
 interface MenuItem {
   title: string;
@@ -63,6 +65,7 @@ export function AppSidebar() {
   const { signOut, user } = useAuth();
   const { isAdmin } = useRole();
   const { tenantNome, grupoNome, empresas } = useSessionInfo();
+  const { isDemo, daysRemaining, trialExpired } = useDemoStatus();
 
   const isActive = (path: string) => location.pathname === path;
 
@@ -124,11 +127,19 @@ export function AppSidebar() {
 
       <SidebarFooter className="border-t border-sidebar-border p-4">
         {!collapsed && user && (
-          <div className="mb-3 px-2 space-y-1">
+          <div className="mb-3 px-2 space-y-2">
+            {/* Trial status for demo users */}
+            {isDemo && (
+              <TrialStatusFooter 
+                daysRemaining={daysRemaining} 
+                trialExpired={trialExpired} 
+              />
+            )}
+            
             {/* Informações da sessão */}
             <div className="text-xs space-y-0.5">
               {/* Ambiente e Grupo na mesma linha */}
-              {(tenantNome || grupoNome) && (
+              {(tenantNome || grupoNome) && !isDemo && (
                 <p className="text-sidebar-foreground/80">
                   {tenantNome}
                   {tenantNome && grupoNome && ' | '}
