@@ -176,7 +176,7 @@ serve(async (req) => {
 
     console.log(`Estimated records to delete: mercadorias=${estimated.mercadorias}, energia_agua=${estimated.energia_agua}, fretes=${estimated.fretes}`);
 
-    let totalDeleted = { mercadorias: 0, energia_agua: 0, fretes: 0, import_jobs: 0, filiais: 0 };
+    let totalDeleted = { mercadorias: 0, energia_agua: 0, fretes: 0, servicos: 0, import_jobs: 0, filiais: 0 };
 
     // Deletar mercadorias em lotes usando RPC
     const batchSize = 10000;
@@ -268,6 +268,35 @@ serve(async (req) => {
       }
     }
 
+    // Deletar servicos usando RPC
+    console.log("Starting servicos deletion using RPC batches...");
+    hasMore = true;
+    iterations = 0;
+
+    while (hasMore && iterations < maxIterations) {
+      iterations++;
+      
+      const { data: deletedCount, error: deleteError } = await supabaseAdmin
+        .rpc('delete_servicos_batch', {
+          _user_id: userId,
+          _filial_ids: filialIds,
+          _batch_size: batchSize
+        });
+
+      if (deleteError) {
+        console.error(`Servicos batch ${iterations} delete error:`, deleteError);
+        break;
+      }
+
+      if (deletedCount === 0 || deletedCount === null) {
+        hasMore = false;
+        console.log(`Servicos batch ${iterations}: No more records to delete`);
+      } else {
+        totalDeleted.servicos += deletedCount;
+        console.log(`Servicos batch ${iterations}: Deleted ${deletedCount} (total: ${totalDeleted.servicos})`);
+      }
+    }
+
     // Deletar import_jobs do usuário
     console.log("Deleting import_jobs...");
     const { error: jobsError, count: jobsCount } = await supabaseAdmin
@@ -330,6 +359,7 @@ serve(async (req) => {
       'extensions.mv_uso_consumo_detailed',
       'extensions.mv_fretes_detailed',
       'extensions.mv_energia_agua_detailed',
+      'extensions.mv_participantes_cache',
     ];
 
     for (const view of views) {
@@ -344,7 +374,7 @@ serve(async (req) => {
     }
     console.log("Materialized views refresh completed");
 
-    const message = `Deletados: ${totalDeleted.mercadorias.toLocaleString('pt-BR')} mercadorias, ${totalDeleted.energia_agua.toLocaleString('pt-BR')} energia/água, ${totalDeleted.fretes.toLocaleString('pt-BR')} fretes, ${totalDeleted.filiais.toLocaleString('pt-BR')} filiais`;
+    const message = `Deletados: ${totalDeleted.mercadorias.toLocaleString('pt-BR')} mercadorias, ${totalDeleted.servicos.toLocaleString('pt-BR')} servicos, ${totalDeleted.energia_agua.toLocaleString('pt-BR')} energia/água, ${totalDeleted.fretes.toLocaleString('pt-BR')} fretes, ${totalDeleted.filiais.toLocaleString('pt-BR')} filiais`;
     console.log(`Cleanup completed: ${message}`);
 
     return new Response(JSON.stringify({ 
