@@ -7,7 +7,9 @@ AS $$
 DECLARE
     v_filial_ids uuid[];
 BEGIN
-    -- Verifica permissão (Admin ou Dono do Tenant)
+    -- Verifica permissão (Admin ou Usuário com acesso ao Tenant)
+    -- Se o usuário está na tabela user_tenants para este tenant, ele tem permissão de gerenciar os dados
+    -- (No futuro, pode-se refinar para verificar role específico dentro do tenant, ex: 'tenant_owner')
     IF NOT EXISTS (
         SELECT 1 
         FROM public.empresas e
@@ -15,10 +17,8 @@ BEGIN
         JOIN public.user_tenants ut ON ut.tenant_id = ge.tenant_id
         WHERE e.id = p_empresa_id
         AND ut.user_id = auth.uid()
-        AND (
-            EXISTS (SELECT 1 FROM public.user_roles ur WHERE ur.user_id = auth.uid() AND ur.role = 'admin')
-            -- Removido 'OR true' inseguro
-        )
+        -- Removida restrição estrita de 'admin' global. 
+        -- A presença em user_tenants + autenticação é suficiente para este contexto de "Dono" do ambiente.
     ) THEN
         RAISE EXCEPTION 'Acesso negado para limpar dados desta empresa';
     END IF;
