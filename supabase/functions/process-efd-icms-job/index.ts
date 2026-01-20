@@ -501,41 +501,26 @@ serve(async (req) => {
       .update({ status: "refreshing_views", progress: 98 })
       .eq("id", jobId);
 
-    // Refresh materialized views individually for better reliability
-    console.log(`Job ${jobId}: Refreshing materialized views individually...`);
-    const viewsToRefresh = [
-      'extensions.mv_mercadorias_aggregated',
-      'extensions.mv_fretes_aggregated',
-      'extensions.mv_energia_agua_aggregated',
-      'extensions.mv_servicos_aggregated',
-      'extensions.mv_mercadorias_participante',
-      'extensions.mv_dashboard_stats',
-      'extensions.mv_uso_consumo_aggregated',
-      'extensions.mv_uso_consumo_detailed',
-      'extensions.mv_fretes_detailed',
-      'extensions.mv_energia_agua_detailed',
-    ];
-
-    let refreshError = null;
-    let viewsRefreshed = 0;
-    for (const view of viewsToRefresh) {
-      try {
-        const { error } = await supabase.rpc('exec_sql', {
-          sql: `REFRESH MATERIALIZED VIEW ${view}`
-        });
-        if (error) {
-          console.warn(`Job ${jobId}: Failed to refresh ${view}:`, error.message);
-          refreshError = error;
-        } else {
-          viewsRefreshed++;
-          console.log(`Job ${jobId}: Refreshed ${view}`);
+    // Refresh materialized views using centralized RPC
+    console.log(`Job ${jobId}: Refreshing materialized views via centralized RPC...`);
+    
+    let refreshResult: any = null;
+    try {
+      const { data: result, error } = await supabase.rpc('refresh_all_materialized_views');
+      
+      if (error) {
+        console.warn(`Job ${jobId}: Failed to refresh views via RPC:`, error.message);
+      } else {
+        refreshResult = result;
+        console.log(`Job ${jobId}: Refreshed ${result.refreshed_count}/${result.total_views} views in ${result.duration_ms}ms`);
+        
+        if (result.failed_count > 0) {
+          console.warn(`Job ${jobId}: Failed views:`, result.views_failed);
         }
-      } catch (err) {
-        console.warn(`Job ${jobId}: Exception refreshing ${view}:`, err);
-        refreshError = err;
       }
+    } catch (err) {
+      console.warn(`Job ${jobId}: Exception refreshing views:`, err);
     }
-    console.log(`Job ${jobId}: Refreshed ${viewsRefreshed}/${viewsToRefresh.length} views`);
 
     await supabase
       .from("import_jobs")
@@ -543,7 +528,11 @@ serve(async (req) => {
         status: "completed", 
         progress: 100,
         total_lines: totalLinesProcessed,
-        counts: { ...counts, refresh_success: !refreshError },
+        counts: { 
+          ...counts, 
+          refresh_success: refreshResult?.success ?? false,
+          views_refreshed: refreshResult?.refreshed_count ?? 0
+        },
         completed_at: new Date().toISOString() 
       })
       .eq("id", jobId);
