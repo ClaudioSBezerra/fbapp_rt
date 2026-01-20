@@ -555,6 +555,30 @@ export default function ImportarEFD() {
     }
   };
 
+  const handleResumeJob = async (jobId: string) => {
+    try {
+      toast.info('Retomando importação...');
+      
+      const { error } = await supabase.functions.invoke('process-efd-job', {
+        body: { job_id: jobId }
+      });
+      
+      if (error) throw error;
+      
+      // Clear error message in UI
+      setJobs(prevJobs => prevJobs.map(j => 
+        j.id === jobId ? { ...j, error_message: null } : j
+      ));
+      
+      toast.success('Job retomado com sucesso!');
+      loadJobs();
+    } catch (err) {
+      console.error('Error resuming job:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Erro ao retomar importação';
+      toast.error(errorMessage);
+    }
+  };
+
   const activeJobs = jobs.filter(j => j.status === 'pending' || j.status === 'processing' || j.status === 'refreshing_views');
   const completedJobs = jobs.filter(j => j.status === 'completed' || j.status === 'failed' || j.status === 'cancelled');
 
@@ -1044,6 +1068,36 @@ export default function ImportarEFD() {
                         </Button>
                       )}
                     </div>
+                  )}
+
+                  {/* Show error message with resume button */}
+                  {job.error_message && job.status === 'processing' && (
+                    <div className="flex items-center gap-3 p-2 rounded-lg bg-warning/10 border border-warning/30">
+                      <AlertTriangle className="h-4 w-4 text-warning flex-shrink-0" />
+                      <span className="text-xs text-warning flex-1">{job.error_message}</span>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        className="border-warning text-warning hover:bg-warning hover:text-warning-foreground h-7 text-xs"
+                        onClick={() => handleResumeJob(job.id)}
+                      >
+                        <RefreshCw className="h-3 w-3 mr-1" />
+                        Retomar
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Show resume button for stale processing jobs */}
+                  {updateInfo?.isStale && job.status === 'processing' && !job.error_message && (
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      className="border-primary text-primary hover:bg-primary hover:text-primary-foreground"
+                      onClick={() => handleResumeJob(job.id)}
+                    >
+                      <RefreshCw className="h-3 w-3 mr-1" />
+                      Retomar Processamento
+                    </Button>
                   )}
 
                   {(job.status === 'processing' || job.status === 'refreshing_views' || job.status === 'generating') && (() => {

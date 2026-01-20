@@ -16,6 +16,65 @@ const BATCH_SIZE = 1000;
 const PROGRESS_UPDATE_INTERVAL = 5000;
 const BLOCK_C_CHUNK_SIZE = 50000; // Process Block C in chunks to avoid timeout
 const PARSING_CHUNK_SIZE = 150000; // Lines per parsing invocation for chunked streaming
+const SELF_INVOKE_MAX_RETRIES = 3;
+const SELF_INVOKE_BASE_DELAY_MS = 2000;
+
+// Helper function to self-invoke with retry mechanism
+async function selfInvokeWithRetry(
+  supabaseUrl: string, 
+  supabaseKey: string, 
+  jobId: string,
+  supabase: any,
+  maxRetries: number = SELF_INVOKE_MAX_RETRIES,
+  baseDelayMs: number = SELF_INVOKE_BASE_DELAY_MS
+): Promise<boolean> {
+  const selfUrl = `${supabaseUrl}/functions/v1/process-efd-job`;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`Job ${jobId}: Self-invoke attempt ${attempt}/${maxRetries}...`);
+      
+      const response = await fetch(selfUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${supabaseKey}`,
+        },
+        body: JSON.stringify({ job_id: jobId }),
+      });
+      
+      if (response.ok) {
+        console.log(`Job ${jobId}: Self-invoke successful on attempt ${attempt}`);
+        return true;
+      }
+      
+      console.warn(`Job ${jobId}: Self-invoke attempt ${attempt} failed with status ${response.status}`);
+      
+      if (attempt < maxRetries) {
+        const delay = baseDelayMs * attempt;
+        console.log(`Job ${jobId}: Waiting ${delay}ms before retry...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    } catch (err) {
+      console.error(`Job ${jobId}: Self-invoke attempt ${attempt} error:`, err);
+      
+      if (attempt < maxRetries) {
+        const delay = baseDelayMs * attempt;
+        console.log(`Job ${jobId}: Waiting ${delay}ms before retry...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+  
+  console.error(`Job ${jobId}: All ${maxRetries} self-invoke attempts failed`);
+  
+  // Mark job as needing manual intervention
+  await supabase.from("import_jobs").update({ 
+    error_message: "Conexão perdida durante processamento. Clique em 'Retomar' para continuar.",
+  }).eq("id", jobId);
+  
+  return false;
+}
 
 // Valid prefixes by scope
 const ALL_PREFIXES = ["|0000|", "|0140|", "|0150|", "|A010|", "|A100|", "|C010|", "|C100|", "|C500|", "|C600|", "|D010|", "|D100|", "|D101|", "|D105|", "|D500|", "|D501|", "|D505|"];
@@ -1421,17 +1480,12 @@ serve(async (req) => {
         
         console.log(`Job ${jobId}: Parsing chunk done, offset now ${result.nextOffset}, firing next chunk...`);
         
-        // Fire-and-forget for next chunk
-        const selfUrl = `${supabaseUrl}/functions/v1/process-efd-job`;
+        // Add delay before self-invoke to prevent rate limiting
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Fire-and-forget for next chunk with retry mechanism
         EdgeRuntime.waitUntil(
-          fetch(selfUrl, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${supabaseKey}`,
-            },
-            body: JSON.stringify({ job_id: jobId }),
-          }).catch(err => console.error(`Job ${jobId}: Failed to invoke next parsing chunk: ${err}`))
+          selfInvokeWithRetry(supabaseUrl, supabaseKey, jobId, supabase)
         );
         
         return new Response(
