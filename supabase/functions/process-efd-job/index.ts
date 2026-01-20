@@ -15,7 +15,7 @@ const corsHeaders = {
 const BATCH_SIZE = 1000;
 const PROGRESS_UPDATE_INTERVAL = 5000;
 const BLOCK_C_CHUNK_SIZE = 50000; // Process Block C in chunks to avoid timeout
-const BLOCK_D_CHUNK_SIZE = 50000; // Process Block D in chunks to avoid timeout
+const BLOCK_D_CHUNK_SIZE = 20000; // Process Block D in chunks to avoid timeout (smaller for faster queries)
 const PARSING_CHUNK_SIZE = 200000; // Lines per parsing invocation for chunked streaming (increased)
 const RAW_LINES_INSERT_BATCH_SIZE = 3000; // Batch size for inserting into efd_raw_lines (increased from 500)
 const SELF_INVOKE_MAX_RETRIES = 7; // Increased from 5 to 7 for better resilience
@@ -771,33 +771,20 @@ async function processBlockDFromTable(
 ): Promise<{ processedLines: number; hasMore: boolean }> {
   console.log(`Job ${jobId}: Processing Block D from efd_raw_lines table, offset: ${lineOffset}, maxLines: ${maxLines}`);
   
-  // Build query for Block D lines with pagination
+  // Use range-based pagination for efficiency (avoids full table scan before limit)
+  const rangeStart = lineOffset;
+  const rangeEnd = maxLines > 0 ? lineOffset + maxLines - 1 : undefined;
+  
   let query = supabase
     .from('efd_raw_lines')
-    .select('content, line_number')
+    .select('content')
     .eq('job_id', jobId)
     .eq('block_type', 'D')
     .order('line_number', { ascending: true });
   
-  // Apply offset using line_number comparison for efficiency
-  if (lineOffset > 0) {
-    // Get the line_number at the offset position
-    const { data: offsetData } = await supabase
-      .from('efd_raw_lines')
-      .select('line_number')
-      .eq('job_id', jobId)
-      .eq('block_type', 'D')
-      .order('line_number', { ascending: true })
-      .range(lineOffset, lineOffset);
-    
-    if (offsetData && offsetData.length > 0) {
-      query = query.gte('line_number', offsetData[0].line_number);
-    }
-  }
-  
-  // Apply limit if chunking
-  if (maxLines > 0) {
-    query = query.limit(maxLines);
+  // Apply range if chunking
+  if (rangeEnd !== undefined) {
+    query = query.range(rangeStart, rangeEnd);
   }
 
   const { data: rawLines, error: fetchError } = await query;
