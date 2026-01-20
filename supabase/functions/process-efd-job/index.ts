@@ -1359,7 +1359,10 @@ async function processBlockCFromTable(
   console.log(`Job ${jobId}: Block C chunk completed - C100: ${c100Count}, C500: ${c500Count}, C600: ${c600Count}, lastFilialId: ${currentFilialId}`);
   
   // Determine if there are more lines to process
+  // This works correctly now that BLOCK_C_CHUNK_SIZE = 1000 matches Supabase default row limit
   const hasMore = maxLines > 0 && lines.length === maxLines;
+  
+  console.log(`Job ${jobId}: hasMore calculation - maxLines: ${maxLines}, lines.length: ${lines.length}, hasMore: ${hasMore}`);
   
   // Return the last filial ID for persistence across chunks
   return { processedLines: lines.length, hasMore, lastFilialId: currentFilialId };
@@ -2309,18 +2312,9 @@ serve(async (req) => {
           counts
         }).eq("id", jobId);
         
-        // Fire-and-forget for next chunk
-        const selfUrl = `${supabaseUrl}/functions/v1/process-efd-job`;
-        EdgeRuntime.waitUntil(
-          fetch(selfUrl, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${supabaseKey}`,
-            },
-            body: JSON.stringify({ job_id: jobId }),
-          }).catch(err => console.error(`Job ${jobId}: Failed to invoke next chunk: ${err}`))
-        );
+        // Fire-and-forget for next chunk with retry mechanism
+        await new Promise(resolve => setTimeout(resolve, 500));
+        EdgeRuntime.waitUntil(selfInvokeWithRetry(supabaseUrl, supabaseKey, jobId, supabase));
         
         console.log(`Job ${jobId}: Block C chunk ${lineOffset}-${lineOffset + processedLines} processed, fire-and-forget for next`);
         
