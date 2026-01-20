@@ -1618,6 +1618,7 @@ serve(async (req) => {
   try {
     const body = await req.json();
     jobId = body.job_id;
+    const forcePhase = body.force_phase as ProcessingPhase | undefined;
 
     if (!jobId) {
       return new Response(
@@ -1626,7 +1627,7 @@ serve(async (req) => {
       );
     }
 
-    console.log(`Job ${jobId}: Starting processing...`);
+    console.log(`Job ${jobId}: Starting processing...${forcePhase ? ` (force_phase: ${forcePhase})` : ''}`);
 
     // Fetch job details
     const { data: job, error: jobError } = await supabase
@@ -1660,7 +1661,22 @@ serve(async (req) => {
       );
     }
 
+    // Use force_phase if provided, otherwise use job's current_phase
+    // Also update job status and phase in DB when force_phase is used
     let currentPhase = (job.current_phase || 'pending') as ProcessingPhase;
+    
+    if (forcePhase && ['pending', 'parsing', 'block_0', 'block_d', 'block_a', 'block_c', 'consolidating', 'refreshing_views'].includes(forcePhase)) {
+      console.log(`Job ${jobId}: Force-overriding phase from ${currentPhase} to ${forcePhase}`);
+      currentPhase = forcePhase;
+      
+      // Update job in DB to reflect forced phase
+      await supabase.from("import_jobs").update({ 
+        status: "processing",
+        current_phase: forcePhase,
+        error_message: null
+      }).eq("id", jobId);
+    }
+    
     const recordLimit = job.record_limit || 0;
     const importScope = (job.import_scope || 'all') as ImportScope;
     const validPrefixes = getValidPrefixes(importScope);
