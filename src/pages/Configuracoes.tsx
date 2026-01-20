@@ -264,6 +264,29 @@ export default function Configuracoes() {
     }
   };
 
+  const handleCleanEmpresa = async (empresaId: string) => {
+    if (!confirm('ATENÇÃO: Isso apagará TODAS as filiais, notas fiscais e dados desta EMPRESA. Esta ação é irreversível. Deseja continuar?')) {
+      return;
+    }
+
+    setCleaning(empresaId);
+    try {
+      const { error } = await supabase.rpc('clean_empresa_data', { p_empresa_id: empresaId });
+
+      if (error) throw error;
+
+      toast.success('Dados da empresa limpos com sucesso!');
+      
+      // Refresh page data
+      window.location.reload();
+    } catch (error: any) {
+      console.error('Error cleaning empresa:', error);
+      toast.error('Erro ao limpar dados: ' + error.message);
+    } finally {
+      setCleaning(null);
+    }
+  };
+
   const isUserLinked = (userId: string, empresaId: string) => {
     return userEmpresas.some(ue => ue.user_id === userId && ue.empresa_id === empresaId);
   };
@@ -532,12 +555,42 @@ export default function Configuracoes() {
                         ) : (
                           <Trash2 className="h-4 w-4 mr-2" />
                         )}
-                        Limpar Tudo
+                        Limpar Grupo
                       </Button>
                     </div>
                   ))}
                   {grupos.length === 0 && !loading && (
                     <p className="text-sm italic text-muted-foreground">Nenhum grupo encontrado.</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-red-200">
+                <h3 className="font-medium mb-2">Limpar Dados por Empresa</h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Excluir uma empresa específica e todas as suas filiais/dados, mantendo o restante do grupo intacto.
+                </p>
+                <div className="space-y-2">
+                  {empresas.map(empresa => (
+                    <div key={empresa.id} className="flex items-center justify-between p-3 border border-red-200 rounded-md bg-white">
+                      <span className="font-medium">{empresa.nome}</span>
+                      <Button 
+                        variant="destructive" 
+                        size="sm"
+                        onClick={() => handleCleanEmpresa(empresa.id)}
+                        disabled={cleaning === empresa.id}
+                      >
+                        {cleaning === empresa.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        ) : (
+                          <Trash2 className="h-4 w-4 mr-2" />
+                        )}
+                        Limpar Empresa
+                      </Button>
+                    </div>
+                  ))}
+                  {empresas.length === 0 && !loading && (
+                    <p className="text-sm italic text-muted-foreground">Nenhuma empresa encontrada.</p>
                   )}
                 </div>
               </div>
