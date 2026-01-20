@@ -425,21 +425,38 @@ async function processBlock0FromTable(
 ): Promise<BlockContext> {
   console.log(`Job ${jobId}: Processing Block 0 from efd_raw_lines table`);
   
-  // Fetch Block 0 lines from the table
-  const { data: rawLines, error: fetchError } = await supabase
-    .from('efd_raw_lines')
-    .select('content')
-    .eq('job_id', jobId)
-    .eq('block_type', '0')
-    .order('line_number', { ascending: true });
+  // Fetch Block 0 lines from the table with pagination to get all records
+  // Supabase default limit is 1000, so we need to paginate for large Block 0
+  const allLines: string[] = [];
+  let offset = 0;
+  const PAGE_SIZE = 5000;
+  let hasMore = true;
+  
+  while (hasMore) {
+    const { data: rawLines, error: fetchError } = await supabase
+      .from('efd_raw_lines')
+      .select('content')
+      .eq('job_id', jobId)
+      .eq('block_type', '0')
+      .order('id', { ascending: true })
+      .range(offset, offset + PAGE_SIZE - 1);
 
-  if (fetchError) {
-    console.error(`Job ${jobId}: Error fetching Block 0 lines:`, fetchError);
-    throw new Error(`Failed to fetch Block 0 lines: ${fetchError.message}`);
+    if (fetchError) {
+      console.error(`Job ${jobId}: Error fetching Block 0 lines:`, fetchError);
+      throw new Error(`Failed to fetch Block 0 lines: ${fetchError.message}`);
+    }
+
+    if (!rawLines || rawLines.length === 0) {
+      hasMore = false;
+    } else {
+      allLines.push(...rawLines.map((r: { content: string }) => r.content));
+      offset += rawLines.length;
+      hasMore = rawLines.length === PAGE_SIZE;
+    }
   }
-
-  const lines = rawLines?.map((r: { content: string }) => r.content) || [];
-  console.log(`Job ${jobId}: Found ${lines.length} Block 0 lines in table`);
+  
+  const lines = allLines;
+  console.log(`Job ${jobId}: Found ${lines.length} Block 0 lines in table (fetched with pagination)`);
 
   const context: BlockContext = {
     period: '',
@@ -771,20 +788,18 @@ async function processBlockDFromTable(
 ): Promise<{ processedLines: number; hasMore: boolean }> {
   console.log(`Job ${jobId}: Processing Block D from efd_raw_lines table, offset: ${lineOffset}, maxLines: ${maxLines}`);
   
-  // Use range-based pagination for efficiency (avoids full table scan before limit)
-  const rangeStart = lineOffset;
-  const rangeEnd = maxLines > 0 ? lineOffset + maxLines - 1 : undefined;
-  
+  // Use id-based pagination for efficiency (id is auto-increment with PK index)
+  // This avoids expensive ORDER BY line_number on large datasets
   let query = supabase
     .from('efd_raw_lines')
-    .select('content')
+    .select('content, id')
     .eq('job_id', jobId)
     .eq('block_type', 'D')
-    .order('line_number', { ascending: true });
+    .order('id', { ascending: true });
   
-  // Apply range if chunking
-  if (rangeEnd !== undefined) {
-    query = query.range(rangeStart, rangeEnd);
+  // Apply range if chunking (using Supabase range which is offset-based)
+  if (maxLines > 0) {
+    query = query.range(lineOffset, lineOffset + maxLines - 1);
   }
 
   const { data: rawLines, error: fetchError } = await query;
