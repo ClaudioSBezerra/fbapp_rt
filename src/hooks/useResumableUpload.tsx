@@ -79,7 +79,7 @@ export function useResumableUpload(options: UseResumableUploadOptions) {
     }, 60000); // 60 seconds without progress
   }, []);
 
-  const startUpload = useCallback(async (file: File, filePath: string): Promise<void> => {
+  const startUpload = useCallback(async (file: File, filePath: string, additionalMetadata: Record<string, string | number | null> = {}): Promise<void> => {
     return new Promise(async (resolve, reject) => {
       try {
         // Get session for auth
@@ -122,6 +122,7 @@ export function useResumableUpload(options: UseResumableUploadOptions) {
             objectName: filePath,
             contentType: file.type || 'text/plain',
             cacheControl: '3600',
+            ...additionalMetadata as Record<string, string>, // Spread additional metadata
           },
           onError: (error) => {
             console.error('TUS upload error:', error);

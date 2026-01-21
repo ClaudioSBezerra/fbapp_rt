@@ -452,7 +452,15 @@ export default function ImportarEFD() {
       setCurrentUploadPath(filePath);
       
       console.log('Starting resumable upload:', filePath, 'Size:', selectedFile.size);
-      await startUpload(selectedFile, filePath);
+      
+      // Pass metadata for the trigger to pick up
+      await startUpload(selectedFile, filePath, {
+        empresa_id: selectedEmpresa,
+        import_scope: importScope,
+        record_limit: recordLimit,
+        file_name: selectedFile.name,
+        file_size: selectedFile.size
+      });
     } catch (error) {
       console.error('Error starting upload:', error);
       const errorMessage = error instanceof Error ? error.message : 'Erro ao iniciar upload';
