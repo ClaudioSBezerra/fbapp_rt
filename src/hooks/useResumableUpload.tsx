@@ -110,7 +110,7 @@ export function useResumableUpload(options: UseResumableUploadOptions) {
         const upload = new tus.Upload(file, {
           endpoint: uploadUrl,
           retryDelays: [0, 1000, 3000, 5000, 10000], // Retry delays in ms
-          chunkSize: 50 * 1024 * 1024, // 50MB chunks to reduce request count and potential overhead
+          chunkSize: 6 * 1024 * 1024, // 6MB chunks (Safer for stability and progress tracking)
           headers: {
             authorization: `Bearer ${session.access_token}`,
             'x-upsert': 'true', // Changed to true to allow overwriting if needed, helps with retries
