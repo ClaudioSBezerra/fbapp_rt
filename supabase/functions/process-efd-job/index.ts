@@ -505,10 +505,12 @@ function processLine(
           const tipo = indOper === "0" ? "entrada" : "saida";
           const codPartRaw = fields[4] || null;
           
-          // Validação de COD_PART: Se não informado, usar padrão
+          // Validação de COD_PART: Se não informado, enviar NULL
+          // Não aplicamos lógica de default para permitir importação bruta
+          // A View tratará de exibir "Consumidor Final" ou "Fornecedor Não Identificado"
           let codPart = codPartRaw;
           if (!codPartRaw || codPartRaw.trim() === '' || codPartRaw === '0') {
-             codPart = tipo === 'saida' ? '9999999999' : '8888888888';
+             codPart = null; // Envia NULL explicitamente
           }
           
           const valorDoc = parseNumber(fields[12]); // Campo 12: VL_DOC
@@ -526,7 +528,7 @@ function processLine(
                 cofins: fields.length > 27 ? parseNumber(fields[27]) : 0, // Campo 27: VL_COFINS (se existir)
                 icms: fields.length > 22 ? parseNumber(fields[22]) : 0,   // Campo 22: VL_ICMS (se existir)
                 ipi: fields.length > 25 ? parseNumber(fields[25]) : 0,    // Campo 25: VL_IPI (se existir)
-                cod_part: codPart, // Referência ao participante existente ou genérico
+                cod_part: codPart, // COD_PART original ou NULL
               },
             };
           }
@@ -1194,9 +1196,6 @@ serve(async (req) => {
       
       // If we have a conflict target defined, try upsert
       if (conflictTarget) {
-        // Check if target is a constraint name (single string without commas) or column list
-        const isConstraintName = !conflictTarget.includes(',');
-        
         const { error } = await supabase.from(table).upsert(batches[table], { 
           onConflict: conflictTarget,
           ignoreDuplicates: true 
@@ -1205,59 +1204,10 @@ serve(async (req) => {
         if (error) {
           // If unique constraint doesn't exist yet, fall back to insert
           if (error.message.includes('constraint') || error.message.includes('unique') || error.message.includes('does not exist')) {
-            // Special handling for foreign key violation (missing participante)
-            if (error.message.includes('foreign key') && error.message.includes('participantes')) {
-              const msg = `Foreign key violation for ${table}: missing participante. Creating placeholders...`;
-              console.log(`Job ${jobId}: ${msg}`);
-              logJobEvent(supabase, jobId!, 'warning', msg);
-              
-              // Extract missing cod_part from error if possible or batches
-              // Since we can't easily parse it from error message, we try to ensure all referenced participants exist
-              // Iterate through batch and ensure referenced participants exist
-              const missingParts = new Set<string>();
-              batches[table].forEach(item => {
-                if (item.cod_part && item.filial_id) {
-                  missingParts.add(`${item.filial_id}|${item.cod_part}`);
-                }
-              });
-              
-              // Create placeholders for potentially missing participants
-              if (missingParts.size > 0) {
-                const placeholders: any[] = [];
-                for (const key of missingParts) {
-                  const [filialId, codPart] = key.split('|');
-                  placeholders.push({
-                    filial_id: filialId,
-                    cod_part: codPart,
-                    nome: `PARTICIPANTE ${codPart} (AUTO-CRIADO)`,
-                    cnpj: null
-                  });
-                }
-                
-                // Batch insert placeholders with ignore duplicates
-                const { error: placeholderError } = await supabase
-                  .from('participantes')
-                  .upsert(placeholders, { onConflict: 'filial_id,cod_part', ignoreDuplicates: true });
-                  
-                if (placeholderError) {
-                  console.error(`Failed to create placeholders: ${placeholderError.message}`);
-                } else {
-                  console.log(`Created ${placeholders.length} placeholder participants, retrying upsert...`);
-                  // Retry original upsert
-                  const { error: retryError } = await supabase.from(table).upsert(batches[table], { 
-                    onConflict: conflictTarget,
-                    ignoreDuplicates: true 
-                  });
-                  
-                  if (!retryError) return null; // Success on retry
-                  console.error(`Retry failed: ${retryError.message}`);
-                }
-              }
-            }
-            
+            // Simplified fallback: Just try insert
+            // Since we removed FK constraints, we don't need to create placeholders anymore
             const msg = `Constraint issue for ${table} (${error.message}), using insert fallback`;
             console.log(`Job ${jobId}: ${msg}`);
-            logJobEvent(supabase, jobId!, 'warning', msg);
             
             const { error: insertError } = await supabase.from(table).insert(batches[table]);
             if (insertError) {
