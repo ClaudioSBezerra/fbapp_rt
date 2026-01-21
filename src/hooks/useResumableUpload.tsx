@@ -122,7 +122,10 @@ export function useResumableUpload(options: UseResumableUploadOptions) {
             objectName: filePath,
             contentType: file.type || 'text/plain',
             cacheControl: '3600',
-            ...additionalMetadata as Record<string, string>, // Spread additional metadata
+            ...Object.fromEntries(
+                Object.entries(additionalMetadata as Record<string, string | number | null>)
+                  .map(([k, v]) => [k, v === null ? '' : String(v)])
+              ), // Spread additional metadata ensuring strings
           },
           onError: (error) => {
             console.error('TUS upload error:', error);
