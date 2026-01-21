@@ -533,17 +533,35 @@ function processLine(
         }
       } else {
         // Layout EFD ICMS/IPI - C100 (após split com índice 0 vazio):
-        // 2=IND_OPER, 4=COD_PART, 8=NUM_DOC, 12=VL_DOC, 22=VL_ICMS, 25=VL_IPI, 26=VL_PIS, 27=VL_COFINS
-        if (fields.length > 27) {
-          const indOper = fields[2];
-          const tipo = indOper === "0" ? "entrada" : "saida";
-          const codPartRaw = fields[4] || null;
-          
-          // Validação de COD_PART: Se não informado, usar padrão
-          let codPart = codPartRaw;
-          if (!codPartRaw || codPartRaw.trim() === '' || codPartRaw === '0') {
-             codPart = tipo === 'saida' ? '9999999999' : '8888888888';
+      // 2=IND_OPER, 4=COD_PART, 5=COD_MOD, 8=NUM_DOC, 12=VL_DOC, 22=VL_ICMS, 25=VL_IPI, 26=VL_PIS, 27=VL_COFINS
+      if (fields.length > 27) {
+        const indOper = fields[2];
+        const tipo = indOper === "0" ? "entrada" : "saida";
+        const codMod = fields[5] || "";
+        const codPartRaw = fields[4] || null;
+        
+        let codPart = codPartRaw;
+        const isPartEmpty = !codPartRaw || codPartRaw.trim() === '' || codPartRaw === '0';
+
+        if (isPartEmpty) {
+          if (tipo === 'entrada') {
+            // Entradas SEMPRE exigem participante. Se vazio, é erro do arquivo ou Fornecedor Não Identificado
+            codPart = '8888888888'; 
+          } else {
+            // Saídas
+            if (codMod === '65') {
+              // Modelo 65 (NFC-e): Venda a Consumidor. Pode ser anônima.
+              codPart = '9999999999'; // Consumidor Final
+            } else if (codMod === '55') {
+              // Modelo 55 (NF-e): Exige destinatário identificado
+              // Se veio vazio no arquivo, forçamos um Cliente Genérico ou Consumidor Final para não quebrar a FK
+              codPart = '9999999999';
+            } else {
+              // Outros modelos (ex: Cupom Fiscal antigo), assume consumidor final
+              codPart = '9999999999';
+            }
           }
+        }
           
           const valorDoc = parseNumber(fields[12]); // Campo 12: VL_DOC
           
