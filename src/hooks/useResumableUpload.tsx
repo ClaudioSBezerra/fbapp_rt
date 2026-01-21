@@ -110,12 +110,12 @@ export function useResumableUpload(options: UseResumableUploadOptions) {
         const upload = new tus.Upload(file, {
           endpoint: uploadUrl,
           retryDelays: [0, 1000, 3000, 5000, 10000], // Retry delays in ms
-          chunkSize: 6 * 1024 * 1024, // 6MB chunks (Supabase default)
+          chunkSize: 50 * 1024 * 1024, // 50MB chunks to reduce request count and potential overhead
           headers: {
             authorization: `Bearer ${session.access_token}`,
-            'x-upsert': 'false',
+            'x-upsert': 'true', // Changed to true to allow overwriting if needed, helps with retries
           },
-          uploadDataDuringCreation: true,
+          uploadDataDuringCreation: false, // Changed to false to prevent 413 on initial creation
           removeFingerprintOnSuccess: true,
           metadata: {
             bucketName: bucketName,
