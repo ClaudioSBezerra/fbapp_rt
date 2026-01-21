@@ -1188,7 +1188,7 @@ serve(async (req) => {
         mercadorias: 'mercadorias_unique_record',
         fretes: 'fretes_unique_record',
         energia_agua: 'energia_agua_unique_record',
-        servicos: 'idx_servicos_upsert_key', 
+        servicos: 'servicos_unique_record', // Updated to standard naming (migration 20260120230000)
         participantes: 'participantes_filial_id_cod_part_key',
       };
       
