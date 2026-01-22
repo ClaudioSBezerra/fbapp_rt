@@ -227,7 +227,7 @@ function parseNumber(value: string | undefined): number {
 }
 
 // Helper to sanitize nullable UUIDs/Strings to avoid "invalid input syntax"
-function parseNullableString(value: string | undefined): string | null {
+function parseNullableString(value: string | null | undefined): string | null {
   if (!value) return null;
   const trimmed = value.trim();
   // Return null for empty strings or strings that are just whitespace
@@ -1601,9 +1601,9 @@ serve(async (req) => {
             filial_id: context.currentFilialId || job.filial_id,
           });
 
-          if (batches[table].length >= BATCH_SIZE) {
+        if (batches[table].length >= BATCH_SIZE) {
             // CRITICAL: Flush participantes first if there are any pending, to satisfy FK constraints
-            if (batches.participantes.length > 0 && table !== "participantes") {
+            if (batches.participantes.length > 0) {
               const pErr = await flushBatch("participantes");
               if (pErr) {
                 console.warn(`Job ${jobId}: Pre-flush participantes warning: ${pErr}`);
