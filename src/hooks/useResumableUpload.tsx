@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import * as tus from 'tus-js-client';
 import { supabase } from '@/integrations/supabase/client';
+import { logger } from '@/lib/logger';
 
 export interface UploadProgress {
   percentage: number;
@@ -128,12 +129,20 @@ export function useResumableUpload(options: UseResumableUploadOptions) {
               ), // Spread additional metadata ensuring strings
           },
           onError: (error) => {
-            console.error('TUS upload error:', error);
+            logger.error('TUS upload error', { error: error.message, originalError: error }, 'UploadHook');
+            
             if (noProgressTimeout.current) {
               clearTimeout(noProgressTimeout.current);
             }
             
-            const errorMessage = error.message || 'Erro desconhecido no upload';
+            let errorMessage = error.message || 'Erro desconhecido no upload';
+            
+            // Tratamento específico para erro 413 (Payload Too Large)
+            if (errorMessage.includes('413') || errorMessage.includes('Payload Too Large')) {
+                errorMessage = 'Erro 413: O servidor rejeitou o tamanho do pacote de dados (Chunk). Tente reduzir o tamanho do arquivo ou verifique a conexão.';
+                logger.error('Erro 413 detectado. Considere reduzir o chunkSize.', { currentChunkSize: 6 * 1024 * 1024 }, 'UploadHook');
+            }
+
             setProgress(prev => ({
               ...prev,
               status: 'error',
@@ -158,10 +167,13 @@ export function useResumableUpload(options: UseResumableUploadOptions) {
               status: 'uploading',
             });
 
-            console.log(`Upload progress: ${percentage}% (${formatBytes(bytesUploaded)}/${formatBytes(bytesTotal)}) - ${formatBytes(speed)}/s`);
+            // Log de progresso a cada 10% para não poluir
+            if (percentage % 10 === 0) {
+                 logger.debug(`Upload progress: ${percentage}%`, { bytesUploaded, bytesTotal, speed: formatBytes(speed) + '/s' }, 'UploadHook');
+            }
           },
           onSuccess: () => {
-            console.log('TUS upload completed:', filePath);
+            logger.info('TUS upload completed successfully', { filePath }, 'UploadHook');
             if (noProgressTimeout.current) {
               clearTimeout(noProgressTimeout.current);
             }
@@ -188,7 +200,7 @@ export function useResumableUpload(options: UseResumableUploadOptions) {
 
         upload.start();
       } catch (error) {
-        console.error('Failed to start upload:', error);
+        logger.error('Failed to start upload process', error, 'UploadHook');
         const err = error instanceof Error ? error : new Error('Falha ao iniciar upload');
         setProgress(prev => ({
           ...prev,

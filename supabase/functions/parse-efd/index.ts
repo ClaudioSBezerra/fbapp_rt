@@ -164,15 +164,29 @@ serve(async (req) => {
     });
 
     if (!rangeResponse.ok && rangeResponse.status !== 206) {
-      console.error("Range request failed:", rangeResponse.status);
+      console.error("Range request failed:", rangeResponse.status, await rangeResponse.text());
       await supabase.storage.from("efd-files").remove([filePath]);
       return new Response(
-        JSON.stringify({ error: "Failed to download file header" }),
+        JSON.stringify({ error: `Failed to download file header (Status ${rangeResponse.status})` }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const text = await rangeResponse.text();
+    // Decode as ISO-8859-1 (standard for SPED/EFD files) to avoid UTF-8 errors
+    let buffer: ArrayBuffer;
+    if (rangeResponse.status === 200 && rangeResponse.body) {
+      console.log("Server ignored Range header (200 OK), reading stream manually to avoid OOM");
+      const reader = rangeResponse.body.getReader();
+      const { value } = await reader.read();
+      buffer = value?.buffer || new ArrayBuffer(0);
+      reader.cancel(); // Cancel the rest of the download
+    } else {
+      buffer = await rangeResponse.arrayBuffer();
+    }
+    
+    const decoder = new TextDecoder("iso-8859-1");
+    const text = decoder.decode(buffer);
+    
     const lines = text.split("\n");
     
     let header: EfdHeader | null = null;
