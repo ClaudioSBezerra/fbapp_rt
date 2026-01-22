@@ -248,7 +248,7 @@ export default function Configuracoes() {
 
     setCleaning(grupoId);
     try {
-      const { error } = await supabase.rpc('clean_group_data', { p_grupo_id: grupoId });
+      const { error } = await supabase.rpc('clean_group_data' as any, { p_grupo_id: grupoId });
 
       if (error) throw error;
 
@@ -271,7 +271,7 @@ export default function Configuracoes() {
 
     setCleaning(empresaId);
     try {
-      const { error } = await supabase.rpc('clean_empresa_data', { p_empresa_id: empresaId });
+      const { error } = await supabase.rpc('clean_empresa_data' as any, { p_empresa_id: empresaId });
 
       if (error) throw error;
 
