@@ -171,6 +171,7 @@ export default function ImportarEFD() {
     bucketName: 'efd-files',
     onComplete: async (filePath) => {
       console.log('Upload completed, starting parse-efd:', filePath);
+      toast.info(`Upload concluído. Iniciando processamento do arquivo: ${filePath}`);
       await triggerParseEfd(filePath);
     },
     onError: (error) => {
@@ -404,7 +405,28 @@ export default function ImportarEFD() {
     
     try {
       console.log('Calling parse-efd for:', filePath);
-      
+      toast.info('Verificando arquivo no storage...');
+
+      // Debug: Verify file exists in storage before calling function
+      const pathParts = filePath.split('/');
+      if (pathParts.length >= 2) {
+        const { data: fileList, error: listError } = await supabase.storage
+          .from('efd-files')
+          .list(pathParts[0], { search: pathParts[1] });
+        
+        if (listError) {
+          console.error('Storage List Error:', listError);
+          toast.warning('Erro ao verificar arquivo no storage.');
+        } else if (!fileList || fileList.length === 0) {
+          console.error('File NOT FOUND in storage before invoke:', filePath);
+          toast.error('Arquivo não encontrado no Storage após upload!');
+          // return; // Optional: stop here if we want to be strict
+        } else {
+          console.log('File verified in storage:', fileList[0]);
+          toast.success(`Arquivo verificado: ${formatFileSize(fileList[0].metadata?.size || 0)}`);
+        }
+      }
+
       const response = await supabase.functions.invoke('parse-efd', {
         body: {
           empresa_id: selectedEmpresa,
@@ -417,13 +439,26 @@ export default function ImportarEFD() {
       });
 
       if (response.error) {
-        await supabase.storage.from('efd-files').remove([filePath]);
+        console.error('Edge Function Error:', response.error);
+        try {
+          // Try to read the error body if available
+          if (response.error.context && typeof response.error.context.text === 'function') {
+             const errorBody = await response.error.context.text();
+             console.error('Edge Function Error Body:', errorBody);
+             toast.error(`Erro na função: ${errorBody.substring(0, 100)}`);
+          }
+        } catch (e) {
+          console.error('Failed to read error body:', e);
+        }
+        // DO NOT delete the file on error, so we can debug
+        // await supabase.storage.from('efd-files').remove([filePath]);
         throw new Error(response.error.message || 'Erro ao iniciar importação');
       }
 
       const data = response.data;
       if (data.error) {
-        await supabase.storage.from('efd-files').remove([filePath]);
+        // DO NOT delete the file on error, so we can debug
+        // await supabase.storage.from('efd-files').remove([filePath]);
         throw new Error(data.error);
       }
 

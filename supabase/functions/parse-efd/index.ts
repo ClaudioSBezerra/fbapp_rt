@@ -35,6 +35,8 @@ function formatCNPJ(cnpj: string): string {
 }
 
 serve(async (req) => {
+  console.log("PARSE-EFD VERSION: 2026-01-22_FIX_V3"); // Version check log
+
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -99,7 +101,7 @@ serve(async (req) => {
     if (empresaError || !empresa) {
       console.error("Empresa error:", empresaError);
       // Clean up uploaded file
-      await supabase.storage.from("efd-files").remove([filePath]);
+      // await supabase.storage.from("efd-files").remove([filePath]);
       return new Response(
         JSON.stringify({ error: "Empresa not found" }),
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -114,7 +116,7 @@ serve(async (req) => {
 
     if (!hasAccess) {
       // Clean up uploaded file
-      await supabase.storage.from("efd-files").remove([filePath]);
+      // await supabase.storage.from("efd-files").remove([filePath]);
       return new Response(
         JSON.stringify({ error: "Access denied to this empresa" }),
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -129,7 +131,7 @@ serve(async (req) => {
     });
 
     if (!limitError && limitCheck && !limitCheck.allowed) {
-      await supabase.storage.from("efd-files").remove([filePath]);
+      // await supabase.storage.from("efd-files").remove([filePath]);
       return new Response(
         JSON.stringify({ 
           error: limitCheck.reason || "Limite de importações do período de demonstração atingido",
@@ -149,7 +151,7 @@ serve(async (req) => {
 
     if (signedUrlError || !signedUrlData?.signedUrl) {
       console.error("Signed URL error:", signedUrlError);
-      await supabase.storage.from("efd-files").remove([filePath]);
+      // await supabase.storage.from("efd-files").remove([filePath]);
       return new Response(
         JSON.stringify({ error: "Failed to create signed URL for file" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -165,7 +167,7 @@ serve(async (req) => {
 
     if (!rangeResponse.ok && rangeResponse.status !== 206) {
       console.error("Range request failed:", rangeResponse.status, await rangeResponse.text());
-      await supabase.storage.from("efd-files").remove([filePath]);
+      // await supabase.storage.from("efd-files").remove([filePath]);
       return new Response(
         JSON.stringify({ error: `Failed to download file header (Status ${rangeResponse.status})` }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -173,19 +175,26 @@ serve(async (req) => {
     }
 
     // Decode as ISO-8859-1 (standard for SPED/EFD files) to avoid UTF-8 errors
-    let buffer: ArrayBuffer;
+    let dataToDecode: BufferSource;
     if (rangeResponse.status === 200 && rangeResponse.body) {
       console.log("Server ignored Range header (200 OK), reading stream manually to avoid OOM");
       const reader = rangeResponse.body.getReader();
       const { value } = await reader.read();
-      buffer = value?.buffer || new ArrayBuffer(0);
-      reader.cancel(); // Cancel the rest of the download
+      if (value) {
+        dataToDecode = value; // Use the Uint8Array view directly
+      } else {
+        dataToDecode = new ArrayBuffer(0);
+      }
+      // Important: cancel the stream to prevent downloading the rest of the file
+      await reader.cancel();
     } else {
-      buffer = await rangeResponse.arrayBuffer();
+      dataToDecode = await rangeResponse.arrayBuffer();
     }
     
     const decoder = new TextDecoder("iso-8859-1");
-    const text = decoder.decode(buffer);
+    const text = decoder.decode(dataToDecode);
+    
+    console.log(`Decoded text preview (first 100 chars): ${text.substring(0, 100)}`);
     
     const lines = text.split("\n");
     
@@ -201,7 +210,7 @@ serve(async (req) => {
     }
 
     if (!header || !header.cnpj) {
-      await supabase.storage.from("efd-files").remove([filePath]);
+      // await supabase.storage.from("efd-files").remove([filePath]);
       return new Response(
         JSON.stringify({ error: "Could not extract CNPJ from EFD file (Registro 0000)" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -238,7 +247,7 @@ serve(async (req) => {
 
       if (createError) {
         console.error("Error creating filial:", createError);
-        await supabase.storage.from("efd-files").remove([filePath]);
+        // await supabase.storage.from("efd-files").remove([filePath]);
         return new Response(
           JSON.stringify({ error: "Failed to create filial: " + createError.message }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -272,7 +281,7 @@ serve(async (req) => {
 
     if (jobError) {
       console.error("Job creation error:", jobError);
-      await supabase.storage.from("efd-files").remove([filePath]);
+      // await supabase.storage.from("efd-files").remove([filePath]);
       return new Response(
         JSON.stringify({ error: "Failed to create import job: " + jobError.message }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -312,7 +321,10 @@ serve(async (req) => {
     );
   } catch (error) {
     console.error("Error in parse-efd:", error);
-    const errorMessage = error instanceof Error ? error.message : "Internal server error";
+    const errorMessage = error instanceof Error ? 
+      `${error.message} (Stack: ${error.stack})` : 
+      `Unknown error: ${JSON.stringify(error)}`;
+      
     return new Response(
       JSON.stringify({ error: errorMessage }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
