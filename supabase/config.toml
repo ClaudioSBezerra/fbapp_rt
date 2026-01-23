@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.process-efd-icms-job]
 verify_jwt = false
+
+[functions.parse-efd-emergency]
+verify_jwt = false
