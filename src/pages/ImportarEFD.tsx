@@ -487,8 +487,8 @@ export default function ImportarEFD() {
         throw new Error('Session refresh failed');
       }
 
-      // CHAMAR VERSÃO V4 COM UPSERT FIX
-      const response = await supabase.functions.invoke('parse-efd-v4', {
+      // CHAMAR VERSÃO V5 - LIMPA E FUNCIONAL
+      const response = await supabase.functions.invoke('parse-efd-v5', {
         body: {
           empresa_id: selectedEmpresa,
           file_path: filePath,
