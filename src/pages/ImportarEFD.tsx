@@ -487,17 +487,32 @@ export default function ImportarEFD() {
         throw new Error('Session refresh failed');
       }
 
-      // CHAMAR VERSÃO V6 - ULTRA LEVE (SEM PARSE)
-      const response = await supabase.functions.invoke('parse-efd-v6', {
-        body: {
-          empresa_id: selectedEmpresa,
-          file_path: filePath,
-          file_name: selectedFile.name,
-          file_size: selectedFile.size,
-          record_limit: recordLimit,
-          import_scope: importScope,
-        },
-      });
+      // CHAMAR VERSÃO V7 - SEM AUTENTICAÇÃO
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/parse-efd-v7`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            empresa_id: selectedEmpresa,
+            file_path: filePath,
+            file_name: selectedFile.name,
+            file_size: selectedFile.size,
+            record_limit: recordLimit,
+            import_scope: importScope,
+          }),
+        }
+      );
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('V7 Function Error:', errorData);
+        throw new Error(errorData.error || 'Erro ao iniciar importação');
+      }
+      
+      const data = await response.json();
 
       if (response.error) {
         console.error('Edge Function Error:', response.error);
