@@ -35,7 +35,7 @@ function formatCNPJ(cnpj: string): string {
 }
 
 serve(async (req) => {
-  console.log("PARSE-EFD VERSION: DEBUG_V10_GLOBAL_CNPJ"); // Version check log
+  console.log("PARSE-EFD-V3 VERSION: INITIAL_DEPLOY"); // Version check log
 
   const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
@@ -58,7 +58,13 @@ serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    // Explicitly configure client to use Service Role and bypass RLS
+    const supabase = createClient(supabaseUrl, supabaseKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    });
 
     const token = authHeader.replace("Bearer ", "");
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
@@ -245,11 +251,17 @@ serve(async (req) => {
     let filialCreated = false;
 
     // Check if filial exists (GLOBALLY by CNPJ, ignoring empresa_id to prevent duplicates)
-    const { data: existingFilial } = await supabase
+    console.log(`Checking existing filial for CNPJ: ${header.cnpj} (Service Role Access)`);
+    
+    const { data: existingFilial, error: findError } = await supabase
       .from("filiais")
       .select("id, empresa_id")
       .eq("cnpj", header.cnpj)
       .maybeSingle();
+
+    if (findError) {
+       console.error("Error searching for filial:", findError);
+    }
 
     if (existingFilial) {
       filialId = existingFilial.id;
@@ -283,6 +295,9 @@ serve(async (req) => {
         console.log(`Created new filial: ${filialId}`);
 
       } catch (err: any) {
+         console.log("Error during filial creation:", err);
+         console.log("Error code:", err.code, "Message:", err.message);
+
          // Handle duplicate key error (CNPJ already exists but maybe under different empresa_id or race condition)
          const errorMessage = (err.message || '').toLowerCase();
          const errorCode = err.code || '';
@@ -303,14 +318,14 @@ serve(async (req) => {
               // If we still can't find it, it's a real error
               console.error("Filial exists but could not be retrieved:", err);
               return new Response(
-                JSON.stringify({ error: "[FATAL v7] Filial exists but could not be retrieved: " + errorMessage }),
+                JSON.stringify({ error: "[FATAL v3-init] Filial exists but could not be retrieved: " + errorMessage }),
                 { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
               );
             }
          } else {
            console.error("Error creating filial:", err);
            return new Response(
-             JSON.stringify({ error: "[FATAL v7] Failed to create filial: " + errorMessage }),
+             JSON.stringify({ error: "[FATAL v3-init] Failed to create filial: " + errorMessage }),
              { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
            );
          }
@@ -341,7 +356,7 @@ serve(async (req) => {
       console.error("Job creation error:", jobError);
       // await supabase.storage.from("efd-files").remove([filePath]);
       return new Response(
-        JSON.stringify({ error: "[FATAL v8] Failed to create import job: " + jobError.message + " | Code: " + jobError.code }),
+        JSON.stringify({ error: "[FATAL v3-init] Failed to create import job: " + jobError.message + " | Code: " + jobError.code }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -378,7 +393,7 @@ serve(async (req) => {
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {
-    console.error("Error in parse-efd:", error);
+    console.error("Error in parse-efd-v3:", error);
     const errorMessage = error instanceof Error ? 
       `${error.message} (Stack: ${error.stack})` : 
       `Unknown error: ${JSON.stringify(error)}`;

@@ -171,7 +171,7 @@ export default function ImportarEFD() {
     bucketName: 'efd-files',
     onComplete: async (filePath) => {
       console.log('Upload completed, starting parse-efd:', filePath);
-      toast.info(`Upload concluído. Iniciando processamento do arquivo: ${filePath}`);
+      toast.info(`Upload concluído. Iniciando processamento (v3): ${filePath}`);
       await triggerParseEfd(filePath);
     },
     onError: (error) => {
@@ -201,6 +201,58 @@ export default function ImportarEFD() {
     };
     checkViews();
   }, [session, jobs]);
+
+  const handleEmergencyRefresh = async () => {
+    setRefreshingViews(true);
+    
+    try {
+      toast.info('Executando atualização de emergência... Isso pode levar mais tempo.');
+      
+      // Emergency refresh with longer timeout and force flag
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes timeout
+      
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/refresh-views`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          },
+          body: JSON.stringify({ force: true, emergency: true }),
+          signal: controller.signal,
+        }
+      );
+      
+      clearTimeout(timeoutId);
+      
+      const result = await response.json();
+      
+      if (!response.ok || !result.success) {
+        console.error('Emergency refresh failed:', result);
+        toast.error(result.error || 'Falha na atualização de emergência.');
+        setViewsStatus('empty');
+        return;
+      }
+      
+      console.log('Emergency refresh completed:', result);
+      toast.success(`Painéis atualizados com sucesso (modo emergência)! (${result.duration_ms}ms)`);
+      setViewsStatus('ok');
+      
+    } catch (err: any) {
+      console.error('Failed emergency refresh:', err);
+      
+      if (err.name === 'AbortError') {
+        toast.error('A atualização de emergência está demorando muito. Tente novamente mais tarde.');
+      } else {
+        toast.error('Falha na atualização de emergência. Contate o suporte.');
+      }
+      setViewsStatus('empty');
+    } finally {
+      setRefreshingViews(false);
+    }
+  };
 
   const handleRefreshViews = async () => {
     setRefreshingViews(true);
@@ -427,7 +479,16 @@ export default function ImportarEFD() {
         }
       }
 
-      const response = await supabase.functions.invoke('parse-efd', {
+      // Refresh session before calling function to ensure valid token
+      const { data: { session }, error: refreshError } = await supabase.auth.refreshSession();
+      if (refreshError) {
+        console.error('Session refresh error:', refreshError);
+        toast.error('Sessão expirada. Faça login novamente.');
+        throw new Error('Session refresh failed');
+      }
+
+      // CHAMAR A FUNÇÃO EMERGENCY PARA TESTE
+      const response = await supabase.functions.invoke('parse-efd-emergency', {
         body: {
           empresa_id: selectedEmpresa,
           file_path: filePath,
@@ -456,6 +517,8 @@ export default function ImportarEFD() {
       }
 
       const data = response.data;
+      console.log('Function response data:', data); // Debug log
+
       if (data.error) {
         // DO NOT delete the file on error, so we can debug
         // await supabase.storage.from('efd-files').remove([filePath]);
@@ -465,7 +528,9 @@ export default function ImportarEFD() {
       setSelectedFile(null);
       setCurrentUploadPath('');
       resetUpload();
-      toast.success('Importação iniciada! Acompanhe o progresso abaixo.');
+      
+      const jobId = data.job_id || 'unknown';
+      toast.success(`Importação iniciada! ID: ${jobId}. Acompanhe o progresso abaixo.`);
     } catch (error) {
       console.error('Error starting import:', error);
       const errorMessage = error instanceof Error ? error.message : 'Erro ao iniciar importação';
@@ -816,19 +881,36 @@ export default function ImportarEFD() {
             Importar EFD Contribuições
           </CardTitle>
           <div className="flex gap-2">
-            <Button 
-              variant="outline" 
-              size="sm"
-              onClick={handleRefreshViews}
-              disabled={refreshingViews || uploading}
-            >
-              {refreshingViews ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : (
-                <RefreshCw className="h-4 w-4 mr-2" />
-              )}
-              Atualizar Painéis
-            </Button>
+            <div className="flex gap-1">
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={handleRefreshViews}
+                disabled={refreshingViews || uploading}
+              >
+                {refreshingViews ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                )}
+                Atualizar
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={handleEmergencyRefresh}
+                disabled={refreshingViews || uploading}
+                className="text-orange-600 border-orange-600 hover:bg-orange-50"
+                title="Modo de emergência - use se a atualização normal falhar"
+              >
+                {refreshingViews ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <AlertTriangle className="h-4 w-4 mr-2" />
+                )}
+                Emergência
+              </Button>
+            </div>
             <Button 
               variant="outline" 
               size="sm"
