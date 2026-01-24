@@ -35,7 +35,7 @@ entrypoint = "./functions/parse-efd-v12/index.ts"
 
 [functions.parse-efd-v13]
 enabled = true
-verify_jwt = true
+verify_jwt = false
 import_map = "./functions/parse-efd-v13/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
