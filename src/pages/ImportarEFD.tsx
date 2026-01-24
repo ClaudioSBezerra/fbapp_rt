@@ -218,7 +218,6 @@ export default function ImportarEFD() {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
           },
           body: JSON.stringify({ force: true, emergency: true }),
           signal: controller.signal,
@@ -270,7 +269,6 @@ export default function ImportarEFD() {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
           },
           signal: controller.signal,
         }
@@ -479,21 +477,14 @@ export default function ImportarEFD() {
         }
       }
 
-      // Refresh session before calling function to ensure valid token
-      const { data: { session }, error: refreshError } = await supabase.auth.refreshSession();
-      if (refreshError) {
-        console.error('Session refresh error:', refreshError);
-        toast.error('Sessão expirada. Faça login novamente.');
-        throw new Error('Session refresh failed');
-      }
-
-      // CHAMAR VERSÃO V7 - SEM AUTENTICAÇÃO
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/parse-efd-v7`,
+      // CHAMAR VERSÃO V13 - OTIMIZADA COM RANGE REQUEST
+        const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/parse-efd-v13`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
           },
           body: JSON.stringify({
             empresa_id: selectedEmpresa,
@@ -508,43 +499,24 @@ export default function ImportarEFD() {
       
       if (!response.ok) {
         const errorData = await response.json();
-        console.error('V7 Function Error:', errorData);
+        console.error('V9 Function Error:', errorData);
         throw new Error(errorData.error || 'Erro ao iniciar importação');
       }
       
-      const data = await response.json();
+      const responseData = await response.json();
+      console.log('Function response data:', responseData);
 
-      if (response.error) {
-        console.error('Edge Function Error:', response.error);
-        try {
-          // Try to read the error body if available
-          if (response.error.context && typeof response.error.context.text === 'function') {
-             const errorBody = await response.error.context.text();
-             console.error('Edge Function Error Body:', errorBody);
-             toast.error(`Erro na função: ${errorBody.substring(0, 100)}`);
-          }
-        } catch (e) {
-          console.error('Failed to read error body:', e);
-        }
-        // DO NOT delete the file on error, so we can debug
-        // await supabase.storage.from('efd-files').remove([filePath]);
-        throw new Error(response.error.message || 'Erro ao iniciar importação');
-      }
-
-      const data = response.data;
-      console.log('Function response data:', data); // Debug log
-
-      if (data.error) {
-        // DO NOT delete the file on error, so we can debug
-        // await supabase.storage.from('efd-files').remove([filePath]);
-        throw new Error(data.error);
+      if (responseData.error) {
+        console.error('Edge Function Error:', responseData.error);
+        toast.error(`Erro na função: ${responseData.error}`);
+        throw new Error(responseData.error);
       }
 
       setSelectedFile(null);
       setCurrentUploadPath('');
       resetUpload();
       
-      const jobId = data.job_id || 'unknown';
+      const jobId = responseData.job_id || 'unknown';
       toast.success(`Importação iniciada! ID: ${jobId}. Acompanhe o progresso abaixo.`);
     } catch (error) {
       console.error('Error starting import:', error);
