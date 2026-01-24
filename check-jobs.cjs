@@ -4,7 +4,12 @@ const fs = require('fs');
 const path = require('path');
 
 const envConfig = dotenv.parse(fs.readFileSync(path.resolve(__dirname, '.env')));
-const supabase = createClient(envConfig.VITE_SUPABASE_URL, envConfig.VITE_SUPABASE_SERVICE_ROLE_KEY || envConfig.VITE_SUPABASE_PUBLISHABLE_KEY);
+const serviceKey = envConfig.VITE_SUPABASE_SERVICE_ROLE_KEY;
+const realKey = (serviceKey && !serviceKey.includes('INSIRA_SUA')) 
+  ? serviceKey 
+  : envConfig.VITE_SUPABASE_PUBLISHABLE_KEY;
+
+const supabase = createClient(envConfig.VITE_SUPABASE_URL, realKey);
 
 async function checkJobs() {
   const { data, error } = await supabase

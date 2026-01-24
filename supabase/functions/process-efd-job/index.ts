@@ -1639,13 +1639,13 @@ serve(async (req) => {
             .from("import_jobs")
             .select("status")
             .eq("id", jobId)
-            .single();
+            .maybeSingle();
 
-          if (currentJob?.status === "cancelled") {
-            console.log(`Job ${jobId}: Cancelled by user, stopping processing`);
+          if (!currentJob || currentJob.status === "cancelled") {
+            console.log(`Job ${jobId}: Cancelled by user or deleted, stopping processing`);
             reader.cancel();
             return new Response(
-              JSON.stringify({ success: false, message: "Job was cancelled by user" }),
+              JSON.stringify({ success: false, message: "Job was cancelled by user or deleted" }),
               { headers: { ...corsHeaders, "Content-Type": "application/json" } }
             );
           }

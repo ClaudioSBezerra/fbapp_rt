@@ -72,32 +72,28 @@ serve(async (req) => {
       );
     }
 
-    // Update job status to cancelled
-    const { error: updateError } = await supabase
+    // Delete job record (this effectively cancels processing as the worker checks for job existence)
+    const { error: deleteError } = await supabase
       .from("import_jobs")
-      .update({ 
-        status: "cancelled", 
-        error_message: "Cancelado pelo usuário",
-        completed_at: new Date().toISOString() 
-      })
+      .delete()
       .eq("id", jobId);
 
-    if (updateError) {
-      console.error("Failed to update job:", updateError);
+    if (deleteError) {
+      console.error("Failed to delete job:", deleteError);
       return new Response(
-        JSON.stringify({ error: "Failed to cancel job" }),
+        JSON.stringify({ error: "Failed to delete job" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     // Try to delete the file from storage
     if (job.file_path) {
-      const { error: deleteError } = await supabase.storage
+      const { error: storageError } = await supabase.storage
         .from("efd-files")
         .remove([job.file_path]);
       
-      if (deleteError) {
-        console.warn(`Failed to delete file for cancelled job:`, deleteError);
+      if (storageError) {
+        console.warn(`Failed to delete file for cancelled job:`, storageError);
       } else {
         console.log(`File deleted for cancelled job ${jobId}`);
       }

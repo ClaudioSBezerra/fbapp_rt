@@ -477,8 +477,15 @@ export default function ImportarEFD() {
         }
       }
 
+      if (!selectedEmpresa) {
+        toast.error('Selecione uma empresa antes de iniciar a importação.');
+        return;
+      }
+
       // CHAMAR VERSÃO V13 - OTIMIZADA COM RANGE REQUEST
-        const response = await fetch(
+      console.log('Fetching parse-efd-v13 for:', filePath, 'Empresa:', selectedEmpresa);
+      
+      const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/parse-efd-v13`,
         {
           method: 'POST',
@@ -499,9 +506,16 @@ export default function ImportarEFD() {
       );
       
       if (!response.ok) {
-        const errorData = await response.json();
-        console.error('V9 Function Error:', errorData);
-        throw new Error(errorData.error || 'Erro ao iniciar importação');
+        const errorText = await response.text();
+        let errorData;
+        try {
+            errorData = JSON.parse(errorText);
+        } catch (e) {
+            errorData = { error: errorText || response.statusText };
+        }
+        
+        console.error('V13 Function Error Status:', response.status, errorData);
+        throw new Error(errorData.error || `Erro HTTP ${response.status}: ${response.statusText}`);
       }
       
       const responseData = await response.json();
