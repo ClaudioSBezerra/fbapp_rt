@@ -303,8 +303,8 @@ serve(async (req) => {
         user_id: userId,
         tenant_id: tenantId,
         action: 'clear_imported_data',
-        table_name: 'mercadorias,energia_agua,fretes,filiais,import_jobs',
-        record_count: totalDeleted.mercadorias + totalDeleted.energia_agua + totalDeleted.fretes + totalDeleted.filiais + totalDeleted.import_jobs,
+        table_name: 'mercadorias,energia_agua,fretes,servicos,participantes,filiais,import_jobs',
+        record_count: totalDeleted.mercadorias + totalDeleted.energia_agua + totalDeleted.fretes + totalDeleted.servicos + totalDeleted.participantes + totalDeleted.filiais + totalDeleted.import_jobs,
         details: {
           deleted: totalDeleted,
           estimated,
@@ -326,7 +326,7 @@ serve(async (req) => {
       console.error("Error refreshing materialized views:", mvError);
     }
 
-    const message = `Deletados: ${totalDeleted.mercadorias.toLocaleString('pt-BR')} mercadorias, ${totalDeleted.energia_agua.toLocaleString('pt-BR')} energia/água, ${totalDeleted.fretes.toLocaleString('pt-BR')} fretes, ${totalDeleted.filiais.toLocaleString('pt-BR')} filiais`;
+    const message = `Deletados: ${totalDeleted.mercadorias.toLocaleString('pt-BR')} mercadorias, ${totalDeleted.energia_agua.toLocaleString('pt-BR')} energia/água, ${totalDeleted.fretes.toLocaleString('pt-BR')} fretes, ${totalDeleted.servicos.toLocaleString('pt-BR')} serviços, ${totalDeleted.participantes.toLocaleString('pt-BR')} participantes, ${totalDeleted.filiais.toLocaleString('pt-BR')} filiais`;
     console.log(`Cleanup completed: ${message}`);
 
     return new Response(JSON.stringify({ 
