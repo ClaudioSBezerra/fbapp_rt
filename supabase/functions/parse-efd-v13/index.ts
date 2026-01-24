@@ -193,8 +193,8 @@ serve(async (req) => {
       if (createError) {
          console.error("Error creating filial:", createError);
          
-         // Se for erro de duplicidade (23505), tentamos buscar a filial pelo CNPJ globalmente
-         if (createError.code === '23505') {
+         // Se for erro de duplicidade (23505 ou mensagem similar), tentamos buscar a filial pelo CNPJ globalmente
+         if (createError.code === '23505' || createError.message?.includes('duplicate key') || createError.details?.includes('already exists')) {
              console.log("Duplicate CNPJ detected. Fetching existing filial ignoring empresa_id...");
              
              const { data: duplicateFilial } = await supabase
