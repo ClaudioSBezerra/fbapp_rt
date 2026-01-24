@@ -152,119 +152,170 @@ serve(async (req) => {
     console.log(`Found ${filialIds.length} branches`);
 
     if (filialIds.length === 0) {
-      return new Response(JSON.stringify({ 
-        success: true, 
-        message: "Nenhuma filial encontrada",
-        deleted: { mercadorias: 0, energia_agua: 0, fretes: 0, import_jobs: 0 }
-      }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      console.log("No branches found, skipping data deletion but checking for jobs...");
     }
 
-    // Contar registros antes de deletar (para estimativa)
-    const [mercadoriasCount, energiaCount, fretesCount] = await Promise.all([
-      supabaseAdmin.from('mercadorias').select('*', { count: 'exact', head: true }).in('filial_id', filialIds),
-      supabaseAdmin.from('energia_agua').select('*', { count: 'exact', head: true }).in('filial_id', filialIds),
-      supabaseAdmin.from('fretes').select('*', { count: 'exact', head: true }).in('filial_id', filialIds),
-    ]);
+    // Contar registros antes de deletar (para estimativa) - APENAS SE TIVER FILIAIS
+    let estimated = { mercadorias: 0, energia_agua: 0, fretes: 0 };
+    
+    if (filialIds.length > 0) {
+      const [mercadoriasCount, energiaCount, fretesCount] = await Promise.all([
+        supabaseAdmin.from('mercadorias').select('*', { count: 'exact', head: true }).in('filial_id', filialIds),
+        supabaseAdmin.from('energia_agua').select('*', { count: 'exact', head: true }).in('filial_id', filialIds),
+        supabaseAdmin.from('fretes').select('*', { count: 'exact', head: true }).in('filial_id', filialIds),
+      ]);
 
-    const estimated = {
-      mercadorias: mercadoriasCount.count || 0,
-      energia_agua: energiaCount.count || 0,
-      fretes: fretesCount.count || 0,
-    };
+      estimated = {
+        mercadorias: mercadoriasCount.count || 0,
+        energia_agua: energiaCount.count || 0,
+        fretes: fretesCount.count || 0,
+      };
+    }
 
     console.log(`Estimated records to delete: mercadorias=${estimated.mercadorias}, energia_agua=${estimated.energia_agua}, fretes=${estimated.fretes}`);
 
-    let totalDeleted = { mercadorias: 0, energia_agua: 0, fretes: 0, import_jobs: 0, filiais: 0 };
+    let totalDeleted = { mercadorias: 0, energia_agua: 0, fretes: 0, servicos: 0, participantes: 0, import_jobs: 0, filiais: 0 };
 
-    // Deletar mercadorias em lotes usando RPC
-    const batchSize = 10000;
-    let hasMore = true;
-    let iterations = 0;
-    const maxIterations = 500; // Limite de segurança
+    // Executar deleção de dados apenas se houver filiais
+    if (filialIds.length > 0) {
+      // Deletar mercadorias em lotes usando RPC
+      const batchSize = 10000;
+      let hasMore = true;
+      let iterations = 0;
+      const maxIterations = 500; // Limite de segurança
 
-    console.log("Starting mercadorias deletion using RPC batches...");
-    
-    while (hasMore && iterations < maxIterations) {
-      iterations++;
+      console.log("Starting mercadorias deletion using RPC batches...");
       
-      const { data: deletedCount, error: deleteError } = await supabaseAdmin
-        .rpc('delete_mercadorias_batch', {
-          _user_id: userId,
-          _filial_ids: filialIds,
-          _batch_size: batchSize
-        });
+      while (hasMore && iterations < maxIterations) {
+        iterations++;
+        
+        const { data: deletedCount, error: deleteError } = await supabaseAdmin
+          .rpc('delete_mercadorias_batch', {
+            _user_id: userId,
+            _filial_ids: filialIds,
+            _batch_size: batchSize
+          });
 
-      if (deleteError) {
-        console.error(`Batch ${iterations} delete error:`, deleteError);
-        break;
+        if (deleteError) {
+          console.error(`Batch ${iterations} delete error:`, deleteError);
+          break;
+        }
+
+        if (deletedCount === 0 || deletedCount === null) {
+          hasMore = false;
+          console.log(`Batch ${iterations}: No more mercadorias to delete`);
+        } else {
+          totalDeleted.mercadorias += deletedCount;
+          console.log(`Batch ${iterations}: Deleted ${deletedCount} mercadorias (total: ${totalDeleted.mercadorias})`);
+        }
       }
 
-      if (deletedCount === 0 || deletedCount === null) {
-        hasMore = false;
-        console.log(`Batch ${iterations}: No more mercadorias to delete`);
-      } else {
-        totalDeleted.mercadorias += deletedCount;
-        console.log(`Batch ${iterations}: Deleted ${deletedCount} mercadorias (total: ${totalDeleted.mercadorias})`);
-      }
-    }
-
-    // Deletar energia_agua usando RPC
-    console.log("Starting energia_agua deletion using RPC batches...");
-    hasMore = true;
-    iterations = 0;
-    
-    while (hasMore && iterations < maxIterations) {
-      iterations++;
+      // Deletar energia_agua usando RPC
+      console.log("Starting energia_agua deletion using RPC batches...");
+      hasMore = true;
+      iterations = 0;
       
-      const { data: deletedCount, error: deleteError } = await supabaseAdmin
-        .rpc('delete_energia_agua_batch', {
-          _user_id: userId,
-          _filial_ids: filialIds,
-          _batch_size: batchSize
-        });
+      while (hasMore && iterations < maxIterations) {
+        iterations++;
+        
+        const { data: deletedCount, error: deleteError } = await supabaseAdmin
+          .rpc('delete_energia_agua_batch', {
+            _user_id: userId,
+            _filial_ids: filialIds,
+            _batch_size: batchSize
+          });
 
-      if (deleteError) {
-        console.error(`Energia batch ${iterations} delete error:`, deleteError);
-        break;
+        if (deleteError) {
+          console.error(`Energia batch ${iterations} delete error:`, deleteError);
+          break;
+        }
+
+        if (deletedCount === 0 || deletedCount === null) {
+          hasMore = false;
+          console.log(`Energia batch ${iterations}: No more records to delete`);
+        } else {
+          totalDeleted.energia_agua += deletedCount;
+          console.log(`Energia batch ${iterations}: Deleted ${deletedCount} (total: ${totalDeleted.energia_agua})`);
+        }
       }
 
-      if (deletedCount === 0 || deletedCount === null) {
-        hasMore = false;
-        console.log(`Energia batch ${iterations}: No more records to delete`);
-      } else {
-        totalDeleted.energia_agua += deletedCount;
-        console.log(`Energia batch ${iterations}: Deleted ${deletedCount} (total: ${totalDeleted.energia_agua})`);
-      }
-    }
-
-    // Deletar fretes usando RPC
-    console.log("Starting fretes deletion using RPC batches...");
-    hasMore = true;
-    iterations = 0;
-    
-    while (hasMore && iterations < maxIterations) {
-      iterations++;
+      // Deletar fretes usando RPC
+      console.log("Starting fretes deletion using RPC batches...");
+      hasMore = true;
+      iterations = 0;
       
-      const { data: deletedCount, error: deleteError } = await supabaseAdmin
-        .rpc('delete_fretes_batch', {
-          _user_id: userId,
-          _filial_ids: filialIds,
-          _batch_size: batchSize
-        });
+      while (hasMore && iterations < maxIterations) {
+        iterations++;
+        
+        const { data: deletedCount, error: deleteError } = await supabaseAdmin
+          .rpc('delete_fretes_batch', {
+            _user_id: userId,
+            _filial_ids: filialIds,
+            _batch_size: batchSize
+          });
 
-      if (deleteError) {
-        console.error(`Fretes batch ${iterations} delete error:`, deleteError);
-        break;
+        if (deleteError) {
+          console.error(`Fretes batch ${iterations} delete error:`, deleteError);
+          break;
+        }
+
+        if (deletedCount === 0 || deletedCount === null) {
+          hasMore = false;
+          console.log(`Fretes batch ${iterations}: No more records to delete`);
+        } else {
+          totalDeleted.fretes += deletedCount;
+          console.log(`Fretes batch ${iterations}: Deleted ${deletedCount} (total: ${totalDeleted.fretes})`);
+        }
       }
 
-      if (deletedCount === 0 || deletedCount === null) {
-        hasMore = false;
-        console.log(`Fretes batch ${iterations}: No more records to delete`);
+      // Deletar servicos usando RPC
+      console.log("Starting servicos deletion using RPC batches...");
+      hasMore = true;
+      iterations = 0;
+      
+      while (hasMore && iterations < maxIterations) {
+        iterations++;
+        
+        const { data: deletedCount, error: deleteError } = await supabaseAdmin
+          .rpc('delete_servicos_batch', {
+            _user_id: userId,
+            _filial_ids: filialIds,
+            _batch_size: batchSize
+          });
+
+        if (deleteError) {
+           // Se a função não existir (tabela antiga), apenas logar e continuar
+           if (deleteError.message?.includes('function') && deleteError.message?.includes('does not exist')) {
+              console.warn("delete_servicos_batch RPC function not found, skipping servicos deletion.");
+              hasMore = false;
+           } else {
+              console.error(`Servicos batch ${iterations} delete error:`, deleteError);
+              break;
+           }
+        } else {
+          if (deletedCount === 0 || deletedCount === null) {
+            hasMore = false;
+            console.log(`Servicos batch ${iterations}: No more records to delete`);
+          } else {
+            totalDeleted.servicos += deletedCount;
+            console.log(`Servicos batch ${iterations}: Deleted ${deletedCount} (total: ${totalDeleted.servicos})`);
+          }
+        }
+      }
+
+      // Deletar participantes (direto via supabaseAdmin, pois não há RPC e são menos registros)
+      console.log("Deleting participantes...");
+      
+      const { error: partError, count: partCount } = await supabaseAdmin
+        .from('participantes')
+        .delete({ count: 'exact' })
+        .in('filial_id', filialIds);
+
+      if (partError) {
+        console.error("Error deleting participantes:", partError);
       } else {
-        totalDeleted.fretes += deletedCount;
-        console.log(`Fretes batch ${iterations}: Deleted ${deletedCount} (total: ${totalDeleted.fretes})`);
+        totalDeleted.participantes = partCount || 0;
+        console.log(`Deleted ${partCount || 0} participantes`);
       }
     }
 
