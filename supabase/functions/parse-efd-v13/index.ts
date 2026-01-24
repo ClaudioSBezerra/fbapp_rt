@@ -286,7 +286,7 @@ serve(async (req) => {
         message: 'Job criado com sucesso! Processamento iniciado em background.',
         job_id,
         user_id,
-        empresa_id,
+        empresa_id: empresaId,
         filial_id: filialId,
         cnpj: header.cnpj
       }),
