@@ -618,11 +618,21 @@ export default function Mercadorias() {
             <CardDescription>Visualize entradas e saídas agregadas por Filial e Mês/Ano</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="mb-4">
+            <div className="mb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <TabsList className="grid w-full grid-cols-2 sm:w-auto sm:inline-flex">
                 <TabsTrigger value="entradas">Entradas</TabsTrigger>
                 <TabsTrigger value="saidas">Saídas</TabsTrigger>
               </TabsList>
+              
+              <Button 
+                variant="default" 
+                size="sm" 
+                onClick={() => navigate('/previsao-apuracao')}
+                className="w-full sm:w-auto"
+              >
+                <ArrowUpRight className="h-4 w-4 mr-2" />
+                Previsão Apuração
+              </Button>
             </div>
             <TabsContent value="entradas" className="mt-0">
               {loading ? <div className="py-12 text-center text-muted-foreground">Carregando...</div> : <MercadoriasTable data={entradasAgregadas} aliquotas={aliquotas} tipo="entrada" anoProjecao={anoProjecao} />}
