@@ -74,6 +74,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Garantir que o estado local seja limpo
     setUser(null);
     setSession(null);
+    setSelectedCompany(null);
+    localStorage.removeItem('selectedCompany');
   };
 
   const resetPassword = async (email: string) => {
@@ -92,7 +94,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, signIn, signUp, signOut, resetPassword, updatePassword }}>
+    <AuthContext.Provider value={{ user, session, loading, signIn, signUp, signOut, resetPassword, updatePassword, selectedCompany, selectCompany }}>
       {children}
     </AuthContext.Provider>
   );

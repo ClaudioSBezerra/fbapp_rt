@@ -6,14 +6,20 @@ import { AppSidebar } from '@/components/AppSidebar';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function AppLayout() {
-  const { user, loading } = useAuth();
+  const { user, loading, selectedCompany } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!loading && !user) {
-      navigate('/auth');
+    if (!loading) {
+      if (!user) {
+        navigate('/auth');
+      } else if (!selectedCompany) {
+        // Only redirect to select-company if not already there (though Outlet handles routing, logic here prevents rendering layout)
+        // But since select-company is outside AppLayout, this works.
+        navigate('/select-company');
+      }
     }
-  }, [user, loading, navigate]);
+  }, [user, loading, selectedCompany, navigate]);
 
   if (loading) {
     return (

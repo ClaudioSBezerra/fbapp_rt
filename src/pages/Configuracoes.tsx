@@ -5,11 +5,13 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from '@/hooks/useAuth';
 import { useRole } from '@/hooks/useRole';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Settings, User, Shield, Building2, Users, Save, Loader2, Lock, Eye, EyeOff, Trash2, AlertTriangle } from 'lucide-react';
+import { Settings, User, Shield, Building2, Users, Save, Loader2, Lock, Eye, EyeOff, Trash2, AlertTriangle, Plus, UserPlus } from 'lucide-react';
 
 interface UserEmpresa {
   user_id: string;
@@ -46,6 +48,18 @@ export default function Configuracoes() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
   const [cleaning, setCleaning] = useState<string | null>(null);
+  const [currentTenantId, setCurrentTenantId] = useState<string | null>(null);
+
+  // New User state
+  const [showNewUserDialog, setShowNewUserDialog] = useState(false);
+  const [newUser, setNewUser] = useState({
+    email: '',
+    password: '',
+    fullName: '',
+    role: 'user',
+    selectedEmpresas: [] as string[]
+  });
+  const [creatingUser, setCreatingUser] = useState(false);
 
   // Password change state
   const [showPasswordForm, setShowPasswordForm] = useState(false);
@@ -101,6 +115,7 @@ export default function Configuracoes() {
         }
 
         const tenantId = userTenants[0].tenant_id;
+        setCurrentTenantId(tenantId);
 
         // Fetch all users in the same tenant (non-admins only for management)
         const { data: tenantUsers } = await supabase
@@ -241,6 +256,30 @@ export default function Configuracoes() {
     }
   };
 
+  const handleDeleteUser = async (userId: string) => {
+    if (!confirm('Tem certeza que deseja excluir este usuário? Esta ação é irreversível e apagará todos os dados vinculados.')) {
+      return;
+    }
+
+    setSaving(userId);
+    try {
+      const { error } = await supabase.functions.invoke('admin-users', {
+        method: 'DELETE',
+        body: { user_id: userId }
+      });
+
+      if (error) throw error;
+
+      toast.success('Usuário excluído com sucesso!');
+      setUsers(prev => prev.filter(u => u.id !== userId));
+    } catch (error: any) {
+      console.error('Error deleting user:', error);
+      toast.error('Erro ao excluir usuário: ' + (error.message || error));
+    } finally {
+      setSaving(null);
+    }
+  };
+
   const handleCleanGroup = async (grupoId: string) => {
     if (!confirm('ATENÇÃO: Isso apagará TODAS as empresas, filiais e dados deste grupo. Esta ação é irreversível. Deseja continuar?')) {
       return;
@@ -290,6 +329,63 @@ export default function Configuracoes() {
 
   const isUserLinked = (userId: string, empresaId: string) => {
     return userEmpresas.some(ue => ue.user_id === userId && ue.empresa_id === empresaId);
+  };
+
+  const handleToggleNewUserEmpresa = (empresaId: string, checked: boolean) => {
+    if (checked) {
+      setNewUser(prev => ({ ...prev, selectedEmpresas: [...prev.selectedEmpresas, empresaId] }));
+    } else {
+      setNewUser(prev => ({ ...prev, selectedEmpresas: prev.selectedEmpresas.filter(id => id !== empresaId) }));
+    }
+  };
+
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newUser.email || !newUser.password || !currentTenantId) {
+      toast.error('Preencha todos os campos obrigatórios');
+      return;
+    }
+
+    if (newUser.password.length < 6) {
+      toast.error('A senha deve ter pelo menos 6 caracteres');
+      return;
+    }
+
+    setCreatingUser(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('admin-users', {
+        method: 'POST',
+        body: {
+          email: newUser.email,
+          password: newUser.password,
+          full_name: newUser.fullName,
+          role: newUser.role,
+          tenant_id: currentTenantId,
+          empresa_ids: newUser.selectedEmpresas
+        }
+      });
+
+      if (error) throw error;
+
+      toast.success('Usuário criado com sucesso!');
+      setShowNewUserDialog(false);
+      setNewUser({
+        email: '',
+        password: '',
+        fullName: '',
+        role: 'user',
+        selectedEmpresas: []
+      });
+      
+      // Reload page to refresh list (simplest way to ensure all fetching logic runs again)
+      window.location.reload();
+      
+    } catch (error: any) {
+      console.error('Error creating user:', error);
+      toast.error('Erro ao criar usuário: ' + (error.message || error));
+    } finally {
+      setCreatingUser(false);
+    }
   };
 
   return (
@@ -434,14 +530,123 @@ export default function Configuracoes() {
       {isAdmin && (
         <Card className="border-border/50">
           <CardHeader>
-            <div className="flex items-center gap-2">
-              <Building2 className="h-5 w-5 text-muted-foreground" />
-              <div>
-                <CardTitle>Permissões por Empresa</CardTitle>
-                <CardDescription>
-                  Defina quais empresas cada usuário pode acessar. Administradores têm acesso a todas.
-                </CardDescription>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <Building2 className="h-5 w-5 text-muted-foreground" />
+                <div>
+                  <CardTitle>Permissões por Empresa</CardTitle>
+                  <CardDescription>
+                    Gerencie usuários e suas permissões de acesso.
+                  </CardDescription>
+                </div>
               </div>
+              
+              <Dialog open={showNewUserDialog} onOpenChange={setShowNewUserDialog}>
+                <DialogTrigger asChild>
+                  <Button>
+                    <UserPlus className="h-4 w-4 mr-2" />
+                    Novo Usuário
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-[500px]">
+                  <DialogHeader>
+                    <DialogTitle>Criar Novo Usuário</DialogTitle>
+                    <DialogDescription>
+                      Preencha os dados para adicionar um novo usuário ao ambiente.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <form onSubmit={handleCreateUser} className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="fullName">Nome Completo</Label>
+                      <Input 
+                        id="fullName" 
+                        value={newUser.fullName}
+                        onChange={(e) => setNewUser({...newUser, fullName: e.target.value})}
+                        placeholder="Nome do usuário" 
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="email">E-mail *</Label>
+                      <Input 
+                        id="email" 
+                        type="email"
+                        value={newUser.email}
+                        onChange={(e) => setNewUser({...newUser, email: e.target.value})}
+                        placeholder="email@exemplo.com"
+                        required 
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="password">Senha *</Label>
+                      <Input 
+                        id="password" 
+                        type="password"
+                        value={newUser.password}
+                        onChange={(e) => setNewUser({...newUser, password: e.target.value})}
+                        placeholder="Mínimo 6 caracteres"
+                        required 
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="role">Função</Label>
+                      <Select 
+                        value={newUser.role} 
+                        onValueChange={(val) => setNewUser({...newUser, role: val})}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione a função" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="user">Usuário (Padrão)</SelectItem>
+                          <SelectItem value="viewer">Visualizador</SelectItem>
+                          <SelectItem value="admin">Administrador</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label>Vincular a Empresas</Label>
+                      <div className="border rounded-md p-3 space-y-2 max-h-40 overflow-y-auto">
+                        {empresas.length === 0 ? (
+                          <p className="text-sm text-muted-foreground">Nenhuma empresa cadastrada.</p>
+                        ) : (
+                          empresas.map((empresa) => (
+                            <div key={empresa.id} className="flex items-center space-x-2">
+                              <Checkbox 
+                                id={`new-emp-${empresa.id}`} 
+                                checked={newUser.selectedEmpresas.includes(empresa.id)}
+                                onCheckedChange={(checked) => handleToggleNewUserEmpresa(empresa.id, checked as boolean)}
+                              />
+                              <label 
+                                htmlFor={`new-emp-${empresa.id}`}
+                                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                              >
+                                {empresa.nome}
+                              </label>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                    
+                    <DialogFooter>
+                      <Button type="button" variant="outline" onClick={() => setShowNewUserDialog(false)}>
+                        Cancelar
+                      </Button>
+                      <Button type="submit" disabled={creatingUser}>
+                        {creatingUser ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Criando...
+                          </>
+                        ) : (
+                          'Criar Usuário'
+                        )}
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
             </div>
           </CardHeader>
           <CardContent>
@@ -487,6 +692,17 @@ export default function Configuracoes() {
                           </>
                         )}
                       </Button>
+                      {u.role !== 'admin' && (
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => handleDeleteUser(u.id)}
+                          disabled={saving === u.id}
+                          className="ml-2"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
                     </div>
                     
                     {u.role === 'admin' ? (
