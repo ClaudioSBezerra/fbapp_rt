@@ -40,40 +40,39 @@ export function useSessionInfo() {
         
         tenantNome = tenant?.nome || null;
 
-        // Buscar grupo
-        const { data: grupoData } = await supabase
-          .from('grupos_empresas')
-          .select('id, nome')
-          .eq('tenant_id', tenantData.tenant_id)
-          .maybeSingle();
-        
-        grupoNome = grupoData?.nome || null;
-
-        if (grupoData?.id) {
-          if (isAdmin) {
-            // Admin vê todas as empresas do grupo
-            const { data: empresasData } = await supabase
-              .from('empresas')
-              .select('id, nome')
-              .eq('grupo_id', grupoData.id);
+        if (isAdmin) {
+          // Admin vê todas as empresas de todos os grupos do tenant
+          const { data: allEmpresas } = await supabase
+            .from('empresas')
+            .select('id, nome, grupo_id, grupos_empresas!inner(id, nome, tenant_id)')
+            .eq('grupos_empresas.tenant_id', tenantData.tenant_id);
+          
+          if (allEmpresas && allEmpresas.length > 0) {
+            empresas = allEmpresas.map(e => ({ id: e.id, nome: e.nome }));
             
-            empresas = empresasData || [];
-          } else {
-            // Usuário vê apenas empresas vinculadas
-            const { data: userEmpresas } = await supabase
-              .from('user_empresas')
-              .select('empresa_id')
-              .eq('user_id', user.id);
+            // Tenta determinar um nome de grupo representativo
+            // Se houver empresas de múltiplos grupos, pega o primeiro ou indica múltiplos?
+            // Por enquanto, pegamos o nome do grupo da primeira empresa encontrada
+            const firstGrupo = allEmpresas[0].grupos_empresas;
+            grupoNome = Array.isArray(firstGrupo) ? firstGrupo[0]?.nome : firstGrupo?.nome;
+          }
+        } else {
+          // Usuário vê apenas empresas vinculadas
+          const { data: userEmpresas } = await supabase
+            .from('user_empresas')
+            .select('empresa_id, empresas!inner(id, nome, grupo_id, grupos_empresas!inner(id, nome))')
+            .eq('user_id', user.id);
+          
+          if (userEmpresas && userEmpresas.length > 0) {
+            empresas = userEmpresas.map(ue => ({
+              id: ue.empresas.id,
+              nome: ue.empresas.nome
+            }));
             
-            if (userEmpresas && userEmpresas.length > 0) {
-              const empresaIds = userEmpresas.map(ue => ue.empresa_id);
-              const { data: empresasData } = await supabase
-                .from('empresas')
-                .select('id, nome')
-                .in('id', empresaIds);
-              
-              empresas = empresasData || [];
-            }
+            // Pega o nome do grupo da primeira empresa vinculada
+            const firstEmpresa = userEmpresas[0].empresas;
+            const firstGrupo = firstEmpresa.grupos_empresas;
+            grupoNome = Array.isArray(firstGrupo) ? firstGrupo[0]?.nome : firstGrupo?.nome;
           }
         }
       }
