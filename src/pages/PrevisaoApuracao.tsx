@@ -331,9 +331,9 @@ export default function PrevisaoApuracao() {
       {/* Evolution Chart Section */}
       <Card>
         <CardHeader>
-          <CardTitle>Evolução do Saldo da Apuração (2027-2033)</CardTitle>
+          <CardTitle>Evolução do Total Geral a Pagar (2027-2033)</CardTitle>
           <CardDescription>
-            Projeção do saldo a pagar (ou a recuperar) comparando o Sistema Atual (reduzido) e o Novo Sistema (IBS/CBS)
+            Projeção do valor total a pagar (ICMS + PIS/COFINS + IBS + CBS) ao longo da transição tributária
           </CardDescription>
         </CardHeader>
         <CardContent className="h-[400px]">
@@ -354,26 +354,8 @@ export default function PrevisaoApuracao() {
               <Legend />
               <Line 
                 type="monotone" 
-                dataKey="Sistema Atual" 
-                name="Saldo Sistema Atual" 
-                stroke="#3b82f6" 
-                strokeWidth={3} 
-                dot={{ r: 4 }}
-                activeDot={{ r: 6 }}
-              />
-              <Line 
-                type="monotone" 
-                dataKey="Novo Sistema" 
-                name="Saldo Novo Sistema" 
-                stroke="#a855f7" 
-                strokeWidth={3} 
-                dot={{ r: 4 }}
-                activeDot={{ r: 6 }}
-              />
-              <Line 
-                type="monotone" 
                 dataKey="Total" 
-                name="Saldo Total" 
+                name="Total Geral a Pagar" 
                 stroke="#ef4444" 
                 strokeWidth={3} 
                 dot={{ r: 4 }}
