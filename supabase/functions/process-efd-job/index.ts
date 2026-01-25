@@ -1184,10 +1184,10 @@ serve(async (req) => {
       // Use upsert with ignoreDuplicates to avoid inserting duplicate records
       // Using explicit columns for onConflict works better with Supabase JS client than constraint names
       const onConflictMap: Record<keyof BatchBuffers, string | undefined> = {
-        mercadorias: 'filial_id,mes_ano,tipo,descricao,valor,pis,cofins,icms,ipi',
-        fretes: 'filial_id,mes_ano,tipo,valor,pis,cofins,icms',
-        energia_agua: 'filial_id,mes_ano,tipo_operacao,tipo_servico,valor,pis,cofins,icms',
-        servicos: 'filial_id,mes_ano,tipo,descricao,valor,pis,cofins,iss',
+        mercadorias: 'filial_id,mes_ano,tipo,descricao,valor,pis,cofins,icms,ipi,cod_part',
+        fretes: 'filial_id,mes_ano,tipo,valor,pis,cofins,icms,descricao,cnpj_transportadora',
+        energia_agua: 'filial_id,mes_ano,tipo_operacao,tipo_servico,valor,pis,cofins,icms,descricao,cnpj_fornecedor',
+        servicos: 'filial_id,mes_ano,tipo,descricao,valor,pis,cofins,iss,cod_part',
         participantes: 'filial_id,cod_part',
       };
       
@@ -1222,7 +1222,7 @@ serve(async (req) => {
           }
         }
       } else {
-        // No conflict target defined (e.g. servicos), use direct insert
+        // No conflict target defined, use direct insert
         // Note: This may create duplicates if the same file is imported twice without cleanup
         const { error: insertError } = await supabase.from(table).insert(batches[table]);
         if (insertError) {

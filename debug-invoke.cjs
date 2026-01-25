@@ -11,7 +11,7 @@ const realKey = (serviceKey && !serviceKey.includes('INSIRA_SUA'))
   ? serviceKey 
   : envConfig.VITE_SUPABASE_PUBLISHABLE_KEY;
 
-const JOB_ID = "70c9cd7d-8993-4010-abeb-3cd84a869f8c"; // ID from check-jobs.cjs
+const JOB_ID = "848ea202-1e75-4346-9c25-041d0a5f9d85"; // ID from check-jobs.cjs
 const FUNCTION_URL = `${SUPABASE_URL}/functions/v1/process-efd-job`;
 
 console.log(`Testing connection to: ${FUNCTION_URL}`);
