@@ -218,6 +218,7 @@ export default function ImportarEFD() {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
           },
           body: JSON.stringify({ force: true, emergency: true }),
           signal: controller.signal,
@@ -269,6 +270,7 @@ export default function ImportarEFD() {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
           },
           signal: controller.signal,
         }
