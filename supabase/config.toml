@@ -47,7 +47,7 @@ entrypoint = "./functions/parse-efd-v12/index.ts"
 
 [functions.parse-efd-v13]
 enabled = true
-verify_jwt = true
+verify_jwt = false
 import_map = "./functions/parse-efd-v13/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
@@ -55,3 +55,6 @@ entrypoint = "./functions/parse-efd-v13/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/parse-efd-v13/*.html" ]
+
+[functions.process-efd-job]
+verify_jwt = false

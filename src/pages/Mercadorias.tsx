@@ -210,6 +210,58 @@ export default function Mercadorias() {
   const [filterMesAno, setFilterMesAno] = useState<string>('all');
   const [anoProjecao, setAnoProjecao] = useState<number>(2027);
   const ANOS_PROJECAO = [2027, 2028, 2029, 2030, 2031, 2032, 2033];
+  const [refreshingViews, setRefreshingViews] = useState(false);
+
+  const handleRefreshViews = async () => {
+    setRefreshingViews(true);
+    
+    try {
+      toast.info('Atualizando painéis... Isso pode levar alguns segundos.');
+      
+      // Call the dedicated edge function for refresh with timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 120000);
+      
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/refresh-views`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          },
+          signal: controller.signal,
+        }
+      );
+      
+      clearTimeout(timeoutId);
+      
+      const result = await response.json();
+      
+      if (!response.ok || !result.success) {
+        console.error('Refresh failed:', result);
+        toast.error(result.error || 'Falha ao atualizar views.');
+        return;
+      }
+      
+      console.log('Refresh completed:', result);
+      toast.success(`Painéis atualizados com sucesso! (${result.duration_ms}ms)`);
+      
+      // Reload local data
+      fetchAggregatedData();
+      
+    } catch (err: any) {
+      console.error('Failed to refresh views:', err);
+      
+      if (err.name === 'AbortError') {
+        toast.error('A atualização está demorando muito. Tente novamente em alguns minutos.');
+      } else {
+        toast.error('Falha ao atualizar views. Tente novamente.');
+      }
+    } finally {
+      setRefreshingViews(false);
+    }
+  };
 
   // Fetch aggregated data directly from DB
   const fetchAggregatedData = async () => {
