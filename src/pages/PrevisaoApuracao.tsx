@@ -149,9 +149,6 @@ export default function PrevisaoApuracao() {
 
     // Build Result Array
     return [
-      { name: 'ICMS', ...sums.icms, result: sums.icms.debits - sums.icms.credits, color: '#2563eb' },
-      { name: 'PIS', ...sums.pis, result: sums.pis.debits - sums.pis.credits, color: '#16a34a' },
-      { name: 'COFINS', ...sums.cofins, result: sums.cofins.debits - sums.cofins.credits, color: '#ea580c' },
       // Projeção
       { name: `ICMS (${anoProjecao})`, ...sums.icmsProj, result: sums.icmsProj.debits - sums.icmsProj.credits, color: '#60a5fa' },
       { name: `PIS (${anoProjecao})`, ...sums.pisProj, result: sums.pisProj.debits - sums.pisProj.credits, color: '#4ade80' },
