@@ -138,11 +138,9 @@ export function AppSidebar() {
             
             {/* Informações da sessão */}
             <div className="text-xs space-y-0.5">
-              {/* Ambiente e Grupo na mesma linha */}
-              {(tenantNome || grupoNome) && !isDemo && (
+              {/* Grupo apenas (Tenant removido da visualização) */}
+              {grupoNome && !isDemo && (
                 <p className="text-sidebar-foreground/80">
-                  {tenantNome}
-                  {tenantNome && grupoNome && ' | '}
                   {grupoNome}
                 </p>
               )}
