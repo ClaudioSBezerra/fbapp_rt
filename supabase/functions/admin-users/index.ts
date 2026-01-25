@@ -61,10 +61,10 @@ serve(async (req) => {
       const newUserId = authData.user.id
 
       try {
-        // 2. Create profile
+        // 2. Create or update profile (trigger might have created it)
         const { error: profileError } = await supabaseAdmin
           .from('profiles')
-          .insert({
+          .upsert({
             id: newUserId,
             email,
             full_name,
@@ -76,7 +76,7 @@ serve(async (req) => {
         // 3. Link to tenant
         const { error: tenantError } = await supabaseAdmin
           .from('user_tenants')
-          .insert({
+          .upsert({
             user_id: newUserId,
             tenant_id
           })
@@ -85,10 +85,10 @@ serve(async (req) => {
         // 4. Assign role
         const { error: roleError } = await supabaseAdmin
           .from('user_roles')
-          .insert({
+          .upsert({
             user_id: newUserId,
             role: role || 'user'
-          })
+          }, { onConflict: 'user_id' })
         if (roleError) throw roleError
 
         // 5. Link to empresas
