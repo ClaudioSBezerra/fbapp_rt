@@ -83,17 +83,29 @@ export function IbsCbsProjectionPanel({ filteredData, aliquotas, anoProjecao }: 
     return { valor, icms, pisCofins, icmsProjetado, pisCofinsProjetado, baseIbsCbs, ibsProjetado, cbsProjetado, totalImpostosAtuais, totalReforma, totalImpostosPagar, diferencaProjetado, diferencaReal };
   }, [filteredData, aliquotaSelecionada]);
 
+  const saldoNovosImpostos = useMemo(() => {
+    const icmsProjetado = totaisSaidas.icmsProjetado - totaisEntradas.icmsProjetado;
+    const ibsProjetado = totaisSaidas.ibsProjetado - totaisEntradas.ibsProjetado;
+    const cbsProjetado = totaisSaidas.cbsProjetado - totaisEntradas.cbsProjetado;
+    const pisCofinsProjetado = totaisSaidas.pisCofinsProjetado - totaisEntradas.pisCofinsProjetado;
+    
+    // Saldo a pagar considera todos os impostos projetados (ICMS + PIS/COFINS + IBS + CBS)
+    const saldoAPagar = totaisSaidas.totalImpostosPagar - totaisEntradas.totalImpostosPagar;
+    
+    return { icmsProjetado, ibsProjetado, cbsProjetado, pisCofinsProjetado, saldoAPagar };
+  }, [totaisEntradas, totaisSaidas]);
+
   return (
     <Card className="border-border/50 mt-8">
       <CardHeader>
         <CardTitle className="text-lg font-bold">Projeção Apuração IBS/CBS</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="grid gap-3 sm:gap-4 grid-cols-1 md:grid-cols-2">
+        <div className="grid gap-3 sm:gap-4 grid-cols-1 md:grid-cols-3">
           <Card className="border-border/50">
             <CardHeader className="pb-2">
               <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-2">
-                <ArrowDownRight className="h-3.5 w-3.5" /> Total Entradas (Créditos) - Projeção {anoProjecao}
+                <ArrowDownRight className="h-3.5 w-3.5" /> Entradas (Créditos)
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-1.5">
@@ -114,11 +126,11 @@ export function IbsCbsProjectionPanel({ filteredData, aliquotas, anoProjecao }: 
                 <span className="text-sm font-bold text-pis-cofins">{formatCurrency(totaisEntradas.pisCofins)}</span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-[10px] text-muted-foreground">PIS+COFINS Projetado:</span>
+                <span className="text-[10px] text-muted-foreground">PIS+COFINS Proj.:</span>
                 <span className="text-sm font-bold text-pis-cofins">{formatCurrency(totaisEntradas.pisCofinsProjetado)}</span>
               </div>
               <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
-                <span className="text-[10px] font-medium">Tot. Impostos Atuais:</span>
+                <span className="text-[10px] font-medium">Tot. Imp. Atuais:</span>
                 <span className="text-sm font-bold">{formatCurrency(totaisEntradas.totalImpostosAtuais)}</span>
               </div>
               <div className="flex justify-between items-center">
@@ -141,18 +153,13 @@ export function IbsCbsProjectionPanel({ filteredData, aliquotas, anoProjecao }: 
                 <span className="text-[10px] font-medium">Tot. Créditos:</span>
                 <span className="text-sm font-bold">{formatCurrency(totaisEntradas.totalImpostosPagar)}</span>
               </div>
-              <div className="flex justify-between items-center pt-1 border-t">
-                <span className="text-[10px] text-muted-foreground">Dif. deb/cred.:</span>
-                <Badge variant={totaisEntradas.diferencaReal < 0 ? 'destructive' : 'default'} className={totaisEntradas.diferencaReal >= 0 ? 'bg-positive text-positive-foreground' : ''}>
-                  {totaisEntradas.diferencaReal >= 0 ? '+' : ''}{formatCurrency(totaisEntradas.diferencaReal)}
-                </Badge>
-              </div>
             </CardContent>
           </Card>
+
           <Card className="border-border/50">
             <CardHeader className="pb-2">
               <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-2">
-                <ArrowUpRight className="h-3.5 w-3.5" /> Total Saídas (Débitos) - Projeção {anoProjecao}
+                <ArrowUpRight className="h-3.5 w-3.5" /> Saídas (Débitos)
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-1.5">
@@ -173,11 +180,11 @@ export function IbsCbsProjectionPanel({ filteredData, aliquotas, anoProjecao }: 
                 <span className="text-sm font-bold text-pis-cofins">{formatCurrency(totaisSaidas.pisCofins)}</span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-[10px] text-muted-foreground">PIS+COFINS Projetado:</span>
+                <span className="text-[10px] text-muted-foreground">PIS+COFINS Proj.:</span>
                 <span className="text-sm font-bold text-pis-cofins">{formatCurrency(totaisSaidas.pisCofinsProjetado)}</span>
               </div>
               <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
-                <span className="text-[10px] font-medium">Tot. Impostos Atuais:</span>
+                <span className="text-[10px] font-medium">Tot. Imp. Atuais:</span>
                 <span className="text-sm font-bold">{formatCurrency(totaisSaidas.totalImpostosAtuais)}</span>
               </div>
               <div className="flex justify-between items-center">
@@ -200,11 +207,43 @@ export function IbsCbsProjectionPanel({ filteredData, aliquotas, anoProjecao }: 
                 <span className="text-[10px] font-medium">Tot. Débitos:</span>
                 <span className="text-sm font-bold">{formatCurrency(totaisSaidas.totalImpostosPagar)}</span>
               </div>
-              <div className="flex justify-between items-center pt-1 border-t">
-                <span className="text-[10px] text-muted-foreground">Dif. deb/cred.:</span>
-                <Badge variant={totaisSaidas.diferencaReal < 0 ? 'destructive' : 'default'} className={totaisSaidas.diferencaReal >= 0 ? 'bg-positive text-positive-foreground' : ''}>
-                  {totaisSaidas.diferencaReal >= 0 ? '+' : ''}{formatCurrency(totaisSaidas.diferencaReal)}
-                </Badge>
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/50 bg-muted/10">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-xs font-medium text-primary flex items-center gap-2">
+                <ArrowUpRight className="h-3.5 w-3.5" /> Projeção de Pagamento
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] text-muted-foreground">ICMS Projetado (Net):</span>
+                  <span className="text-sm font-bold">{formatCurrency(saldoNovosImpostos.icmsProjetado)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] text-muted-foreground">IBS Projetado (Net):</span>
+                  <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(saldoNovosImpostos.ibsProjetado)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] text-muted-foreground">CBS Projetado (Net):</span>
+                  <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(saldoNovosImpostos.cbsProjetado)}</span>
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-border/50">
+                <div className="flex flex-col gap-1">
+                  <span className="text-xs font-medium text-muted-foreground">SALDO A PAGAR (Novos Impostos)</span>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-2xl font-bold text-primary">
+                      {formatCurrency(saldoNovosImpostos.saldoAPagar)}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-1">
+                    Total Débitos - Total Créditos (Considerando transição + novos tributos)
+                  </p>
+                </div>
               </div>
             </CardContent>
           </Card>
