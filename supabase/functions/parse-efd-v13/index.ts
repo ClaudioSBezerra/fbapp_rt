@@ -29,22 +29,40 @@ serve(async (req) => {
     // Criar cliente Supabase com service role (bypass RLS)
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Obter user_id do token JWT (se disponível) ou usar um default
+    // Obter user_id do token JWT (se disponível)
     const authHeader = req.headers.get('Authorization');
     let user_id = null;
     if (authHeader && authHeader.startsWith('Bearer ')) {
       try {
         const token = authHeader.replace('Bearer ', '');
-        const { data: { user } } = await supabase.auth.getUser(token);
+        const { data: { user }, error: userError } = await supabase.auth.getUser(token);
+        
+        if (userError) {
+          console.error('Erro ao validar token:', userError);
+        }
+        
         user_id = user?.id;
       } catch (e) {
-        console.log('Não foi possível extrair user_id do token');
+        console.error('Não foi possível extrair user_id do token:', e);
       }
     }
     
-    // Se não tiver user_id, usar o empresa_id como fallback
+    // Se não tiver user_id, retornar erro (não usar fallback para não quebrar RLS)
     if (!user_id) {
-      user_id = empresa_id; // Fallback temporário
+      console.error('ERRO: user_id não identificado no token. Abortando para evitar job órfão.');
+      return new Response(
+        JSON.stringify({ 
+          success: false,
+          error: 'Usuário não autenticado. Token inválido ou expirado.'
+        }),
+        { 
+          status: 401, 
+          headers: { 
+            ...corsHeaders, 
+            "Content-Type": "application/json" 
+          } 
+        }
+      );
     }
 
     // 1. Criar job de importação
@@ -83,6 +101,23 @@ serve(async (req) => {
     if (jobError) {
       throw new Error(`Erro ao criar job: ${jobError.message}`);
     }
+
+    // 2. Iniciar processamento em background (fire and forget)
+    // Invocar a função process-efd-job sem aguardar a resposta
+    console.log(`Iniciando processamento background para job ${job_id}`);
+    const processUrl = `${supabaseUrl}/functions/v1/process-efd-job`;
+    
+    // Não usamos await aqui para não bloquear o retorno para o cliente
+    fetch(processUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${supabaseServiceKey}`,
+      },
+      body: JSON.stringify({ job_id }),
+    }).catch(err => {
+      console.error(`Falha ao invocar process-efd-job:`, err);
+    });
 
     return new Response(
       JSON.stringify({ 
