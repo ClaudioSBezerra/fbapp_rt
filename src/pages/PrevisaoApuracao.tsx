@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, ComposedChart, Line } from 'recharts';
 
 interface Aliquota {
   ano: number;
@@ -161,6 +161,54 @@ export default function PrevisaoApuracao() {
     ];
   }, [data, selectedYear, anoProjecao, aliquotas]);
 
+  const evolutionData = useMemo(() => {
+    const filteredData = data.filter(d => d.mes_ano.startsWith(selectedYear));
+    
+    // Calculate Base Values (Debits - Credits)
+    let baseIcms = 0;
+    let basePisCofins = 0;
+    let baseIbsCbs = 0;
+
+    filteredData.forEach(row => {
+      const isDebit = row.tipo === 'saida';
+      const multiplier = isDebit ? 1 : -1;
+      
+      baseIcms += row.icms * multiplier;
+      basePisCofins += (row.pis + row.cofins) * multiplier;
+      
+      // Base IBS/CBS calculation
+      const rowBase = row.valor - row.icms - (row.pis + row.cofins);
+      baseIbsCbs += rowBase * multiplier;
+    });
+
+    return ANOS_PROJECAO.map(ano => {
+      const aliq = aliquotas.find(a => a.ano === ano);
+      if (!aliq) return { name: String(ano), sistemaAtual: 0, novoSistema: 0, total: 0 };
+
+      // Sistema Atual (Residual)
+      // ICMS reduced by reduc_icms
+      const icmsRes = baseIcms * (1 - (aliq.reduc_icms / 100));
+      // PIS/COFINS reduced by reduc_piscofins
+      const pisCofinsRes = basePisCofins * (1 - (aliq.reduc_piscofins / 100));
+      const sistemaAtual = icmsRes + pisCofinsRes;
+
+      // Novo Sistema (IBS + CBS)
+      const ibsRate = (aliq.ibs_estadual + aliq.ibs_municipal) / 100;
+      const cbsRate = aliq.cbs / 100;
+      
+      const ibs = baseIbsCbs * ibsRate;
+      const cbs = baseIbsCbs * cbsRate;
+      const novoSistema = ibs + cbs;
+
+      return {
+        name: String(ano),
+        "Sistema Atual": sistemaAtual,
+        "Novo Sistema": novoSistema,
+        "Total": sistemaAtual + novoSistema
+      };
+    });
+  }, [data, selectedYear, aliquotas]);
+
   const totalResult = summary.reduce((acc, item) => acc + item.result, 0);
 
   return (
@@ -282,6 +330,33 @@ export default function PrevisaoApuracao() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Evolution Chart Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Evolução da Carga Tributária (Transição 2027-2033)</CardTitle>
+          <CardDescription>
+            Projeção comparativa entre o Sistema Atual (reduzido) e o Novo Sistema (IBS/CBS) ao longo dos anos
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="h-[400px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart data={evolutionData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="name" />
+              <YAxis tickFormatter={(value) => new Intl.NumberFormat('pt-BR', { notation: "compact", compactDisplay: "short" }).format(value)} />
+              <Tooltip 
+                formatter={(value: number) => formatCurrency(value)}
+                labelStyle={{ color: 'black' }}
+              />
+              <Legend />
+              <Bar dataKey="Sistema Atual" stackId="a" fill="#3b82f6" name="Sistema Atual (ICMS/PIS/COFINS)" />
+              <Bar dataKey="Novo Sistema" stackId="a" fill="#a855f7" name="Novo Sistema (IBS/CBS)" />
+              <Line type="monotone" dataKey="Total" stroke="#ef4444" strokeWidth={2} dot={{ r: 4 }} name="Total Projetado" />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
     </div>
   );
 }
