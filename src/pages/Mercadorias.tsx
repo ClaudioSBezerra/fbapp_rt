@@ -213,6 +213,7 @@ export default function Mercadorias() {
   const [refreshingViews, setRefreshingViews] = useState(false);
 
   const handleRefreshViews = async () => {
+    console.log('Initiating refresh views...');
     setRefreshingViews(true);
     
     try {
@@ -454,18 +455,20 @@ export default function Mercadorias() {
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-lg sm:text-xl font-bold text-foreground">Painel de Mercadorias</h1>
+          </div>
+          <p className="text-xs sm:text-sm text-muted-foreground">Comparativo PIS+COFINS vs IBS+CBS agregado por Filial e Mês</p>
+          <div className="mt-2">
             <Button 
               variant="default" 
               size="sm"
               onClick={handleRefreshViews}
               disabled={refreshingViews}
-              className="bg-blue-600 hover:bg-blue-700 text-white h-7 px-3"
+              className="bg-blue-600 hover:bg-blue-700 text-white px-3"
             >
               <RefreshCw className={`h-3.5 w-3.5 mr-2 ${refreshingViews ? 'animate-spin' : ''}`} />
-              Apurar
+              Projeção de apuração novos impostos
             </Button>
           </div>
-          <p className="text-xs sm:text-sm text-muted-foreground">Comparativo PIS+COFINS vs IBS+CBS agregado por Filial e Mês</p>
         </div>
         <div className="flex items-center gap-2">
           <Button 
