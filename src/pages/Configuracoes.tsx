@@ -119,32 +119,7 @@ export default function Configuracoes() {
         const tenantId = userTenants[0].tenant_id;
         setCurrentTenantId(tenantId);
 
-        // Fetch all users in the same tenant (non-admins only for management)
-        const { data: tenantUsers } = await supabase
-          .from('user_tenants')
-          .select('user_id')
-          .eq('tenant_id', tenantId);
-
-        if (!tenantUsers) {
-          setLoading(false);
-          return;
-        }
-
-        const userIds = tenantUsers.map(u => u.user_id);
-
-        // Fetch profiles for these users
-        const { data: profiles } = await supabase
-          .from('profiles')
-          .select('id, email, full_name')
-          .in('id', userIds);
-
-        // Fetch roles for these users
-        const { data: roles } = await supabase
-          .from('user_roles')
-          .select('user_id, role')
-          .in('user_id', userIds);
-
-        // Fetch empresas in this tenant
+        // Fetch empresas/grupos structure first (needed for UI)
         const { data: gruposData } = await supabase
           .from('grupos_empresas')
           .select('id, nome')
@@ -161,37 +136,35 @@ export default function Configuracoes() {
 
           if (empresasData) {
             setEmpresas(empresasData);
-
-            // Fetch user_empresas links
-            const empresaIds = empresasData.map(e => e.id);
-            const { data: linksData } = await supabase
-              .from('user_empresas')
-              .select('user_id, empresa_id')
-              .in('user_id', userIds)
-              .in('empresa_id', empresaIds);
-
-            if (linksData) {
-              setUserEmpresas(linksData);
-            }
           }
         }
 
-        // Combine profiles with roles
-        const usersWithRoles: UserProfile[] = (profiles || [])
-          .filter(p => p.id !== user.id) // Exclude current admin
-          .map(p => {
-            const userRole = roles?.find(r => r.user_id === p.id);
-            const userLinks = userEmpresas.filter(ue => ue.user_id === p.id);
-            return {
-              id: p.id,
-              email: p.email,
-              full_name: p.full_name,
-              role: userRole?.role || 'user',
-              empresas: userLinks.map(ue => ue.empresa_id)
-            };
-          });
+        // Fetch users using Edge Function to bypass RLS
+        const { data: usersResponse, error: usersError } = await supabase.functions.invoke(`admin-users?tenant_id=${tenantId}`, {
+          method: 'GET'
+        });
 
-        setUsers(usersWithRoles);
+        if (usersError) throw usersError;
+
+        if (usersResponse && usersResponse.users) {
+          const fetchedUsers = usersResponse.users as UserProfile[];
+          
+          // Filter out current admin if desired (though admin might want to edit self?)
+          const otherUsers = fetchedUsers.filter(u => u.id !== user.id);
+          
+          setUsers(otherUsers);
+
+          // Populate userEmpresas for checkbox state
+          const allLinks: UserEmpresa[] = [];
+          otherUsers.forEach(u => {
+            if (u.empresas) {
+              u.empresas.forEach(empId => {
+                allLinks.push({ user_id: u.id, empresa_id: empId });
+              });
+            }
+          });
+          setUserEmpresas(allLinks);
+        }
       } catch (error) {
         console.error('Error fetching data:', error);
         toast.error('Erro ao carregar dados');

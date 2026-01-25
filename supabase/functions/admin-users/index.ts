@@ -187,11 +187,68 @@ serve(async (req) => {
 
     // Optional: List users with pagination if needed beyond what RLS allows
     if (req.method === 'GET') {
-      const { data: { users }, error } = await supabaseAdmin.auth.admin.listUsers()
-      if (error) throw error
+      const url = new URL(req.url)
+      const tenant_id = url.searchParams.get('tenant_id')
+      
+      if (!tenant_id) {
+        // Fallback to listing all users if no tenant_id provided (or error?)
+        // For admin panel, we usually want tenant specific.
+        // But let's keep original behavior if param missing, or throw?
+        // Original behavior was listUsers() which returns everything.
+        // Let's keep it restricted.
+        throw new Error('tenant_id is required')
+      }
+
+      // 1. Fetch users in tenant
+      const { data: userTenants, error: utError } = await supabaseAdmin
+        .from('user_tenants')
+        .select('user_id')
+        .eq('tenant_id', tenant_id)
+      
+      if (utError) throw utError
+      
+      const userIds = userTenants.map((ut: any) => ut.user_id)
+      
+      if (userIds.length === 0) {
+         return new Response(JSON.stringify({ users: [] }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+
+      // 2. Fetch profiles
+      const { data: profiles, error: pError } = await supabaseAdmin
+        .from('profiles')
+        .select('id, email, full_name')
+        .in('id', userIds)
+      if (pError) throw pError
+
+      // 3. Fetch roles
+      const { data: roles, error: rError } = await supabaseAdmin
+        .from('user_roles')
+        .select('user_id, role')
+        .in('user_id', userIds)
+      if (rError) throw rError
+
+      // 4. Fetch user_empresas
+      const { data: userEmpresas, error: ueError } = await supabaseAdmin
+        .from('user_empresas')
+        .select('user_id, empresa_id')
+        .in('user_id', userIds)
+      if (ueError) throw ueError
+
+      // 5. Combine data
+      const combinedUsers = profiles.map((p: any) => {
+          const r = roles.find((r: any) => r.user_id === p.id)
+          const ue = userEmpresas.filter((ue: any) => ue.user_id === p.id)
+          return {
+              id: p.id,
+              email: p.email,
+              full_name: p.full_name,
+              role: r?.role || 'user',
+              empresas: ue.map((ue: any) => ue.empresa_id)
+          }
+      })
 
       return new Response(
-        JSON.stringify({ users }),
+        JSON.stringify({ users: combinedUsers }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
