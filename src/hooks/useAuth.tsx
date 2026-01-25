@@ -11,6 +11,8 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error: Error | null }>;
   updatePassword: (newPassword: string) => Promise<{ error: Error | null }>;
+  selectedCompany: string | null;
+  selectCompany: (empresaId: string) => void;
 }
 
 const globalForAuth = globalThis as unknown as {
@@ -25,6 +27,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [selectedCompany, setSelectedCompany] = useState<string | null>(() => {
+    return localStorage.getItem('selectedCompany');
+  });
 
   useEffect(() => {
     // Set up auth state listener FIRST
@@ -91,6 +96,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       password: newPassword,
     });
     return { error: error as Error | null };
+  };
+
+  const selectCompany = (empresaId: string) => {
+    setSelectedCompany(empresaId);
+    localStorage.setItem('selectedCompany', empresaId);
   };
 
   return (
