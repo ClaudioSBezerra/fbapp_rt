@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, ComposedChart, Line } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, LineChart, Line } from 'recharts';
 
 interface Aliquota {
   ano: number;
@@ -341,19 +341,48 @@ export default function PrevisaoApuracao() {
         </CardHeader>
         <CardContent className="h-[400px]">
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={evolutionData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+            <LineChart data={evolutionData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} />
               <XAxis dataKey="name" />
               <YAxis tickFormatter={(value) => new Intl.NumberFormat('pt-BR', { notation: "compact", compactDisplay: "short" }).format(value)} />
               <Tooltip 
                 formatter={(value: number) => formatCurrency(value)}
                 labelStyle={{ color: 'black' }}
+                contentStyle={{
+                  backgroundColor: "hsl(var(--card))",
+                  border: "1px solid hsl(var(--border))",
+                  borderRadius: "8px",
+                }}
               />
               <Legend />
-              <Bar dataKey="Sistema Atual" stackId="a" fill="#3b82f6" name="Saldo Sistema Atual (ICMS/PIS/COFINS)" />
-              <Bar dataKey="Novo Sistema" stackId="a" fill="#a855f7" name="Saldo Novo Sistema (IBS/CBS)" />
-              <Line type="monotone" dataKey="Total" stroke="#ef4444" strokeWidth={2} dot={{ r: 4 }} name="Saldo Total Projetado" />
-            </ComposedChart>
+              <Line 
+                type="monotone" 
+                dataKey="Sistema Atual" 
+                name="Saldo Sistema Atual" 
+                stroke="#3b82f6" 
+                strokeWidth={3} 
+                dot={{ r: 4 }}
+                activeDot={{ r: 6 }}
+              />
+              <Line 
+                type="monotone" 
+                dataKey="Novo Sistema" 
+                name="Saldo Novo Sistema" 
+                stroke="#a855f7" 
+                strokeWidth={3} 
+                dot={{ r: 4 }}
+                activeDot={{ r: 6 }}
+              />
+              <Line 
+                type="monotone" 
+                dataKey="Total" 
+                name="Saldo Total" 
+                stroke="#ef4444" 
+                strokeWidth={3} 
+                dot={{ r: 4 }}
+                activeDot={{ r: 6 }}
+              />
+            </LineChart>
           </ResponsiveContainer>
         </CardContent>
       </Card>
