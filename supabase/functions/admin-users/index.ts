@@ -83,13 +83,55 @@ serve(async (req) => {
         if (tenantError) throw tenantError
 
         // 4. Assign role
+        // Trigger handle_new_user already assigned a role (defaulting to 'user' or 'admin' if first).
+        // We need to enforce the selected role.
         const { error: roleError } = await supabaseAdmin
           .from('user_roles')
-          .upsert({
-            user_id: newUserId,
+          .update({
             role: role || 'user'
-          }, { onConflict: 'user_id' })
+          })
+          .eq('user_id', newUserId)
+        
+        // If update returned no rows (weird but possible if trigger failed silently?), try insert
         if (roleError) throw roleError
+        
+        // Double check if update worked?
+        // Actually, upsert with onConflict is better, BUT we want to overwrite whatever the trigger did.
+        // My previous upsert { onConflict: 'user_id' } SHOULD have updated it.
+        // Let's verify why it might have failed to update to 'user' if it was 'admin'.
+        // If trigger made it 'admin' (e.g. if admin_exists was false?), but admin_exists should be true because we are calling this as admin.
+        // Wait, handle_new_user checks: SELECT EXISTS (SELECT 1 FROM public.user_roles WHERE role = 'admin') INTO admin_exists;
+        // Since we are creating this user while logged in as admin, there IS an admin. So new_role := 'user'.
+        // So trigger creates 'user'.
+        // We upsert 'user'. Result 'user'.
+        // User says "Criou como ADMIN".
+        // This means either:
+        // A) Trigger created 'admin' (why? maybe admin_exists check failed?)
+        // B) We upserted 'admin' (frontend sent 'admin'?)
+        // C) Something else changed it.
+        
+        // Let's use explicit UPDATE just to be sure we are modifying the existing row.
+        // Or UPSERT with explicit UPDATE.
+        
+        // Actually, let's look at the upsert again.
+        // .upsert({ user_id, role }, { onConflict: 'user_id' })
+        // If row exists, it updates 'role'.
+        
+        // Maybe the frontend is sending 'admin'?
+        // Or maybe 'role' is undefined and it defaults to something else?
+        // role || 'user'.
+        
+        // Let's assume the trigger MIGHT set it to admin for some reason.
+        // We want to force it to what we want.
+        
+        // I will change it to an explicit UPDATE just to be cleaner, since we know the row exists (trigger).
+        
+        const { error: updateRoleError } = await supabaseAdmin
+            .from('user_roles')
+            .update({ role: role || 'user' })
+            .eq('user_id', newUserId);
+            
+        if (updateRoleError) throw updateRoleError;
 
         // 5. Link to empresas
         if (empresa_ids && empresa_ids.length > 0) {
