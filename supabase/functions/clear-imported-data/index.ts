@@ -174,7 +174,7 @@ serve(async (req) => {
 
     console.log(`Estimated records to delete: mercadorias=${estimated.mercadorias}, energia_agua=${estimated.energia_agua}, fretes=${estimated.fretes}`);
 
-    let totalDeleted = { mercadorias: 0, energia_agua: 0, fretes: 0, servicos: 0, participantes: 0, import_jobs: 0, filiais: 0 };
+    let totalDeleted = { mercadorias: 0, energia_agua: 0, fretes: 0, servicos: 0, participantes: 0, import_jobs: 0, filiais: 0, uso_consumo: 0 };
 
     // Executar deleção de dados apenas se houver filiais
     if (filialIds.length > 0) {
@@ -303,33 +303,127 @@ serve(async (req) => {
         }
       }
 
-      // Deletar participantes (direto via supabaseAdmin, pois não há RPC e são menos registros)
-      console.log("Deleting participantes...");
+      // Deletar uso_consumo_imobilizado usando RPC
+      console.log("Starting uso_consumo_imobilizado deletion using RPC batches...");
+      hasMore = true;
+      iterations = 0;
       
-      const { error: partError, count: partCount } = await supabaseAdmin
-        .from('participantes')
-        .delete({ count: 'exact' })
-        .in('filial_id', filialIds);
+      while (hasMore && iterations < maxIterations) {
+        iterations++;
+        
+        const { data: deletedCount, error: deleteError } = await supabaseAdmin
+          .rpc('delete_uso_consumo_imobilizado_batch', {
+            _user_id: userId,
+            _filial_ids: filialIds,
+            _batch_size: batchSize
+          });
 
-      if (partError) {
-        console.error("Error deleting participantes:", partError);
-      } else {
-        totalDeleted.participantes = partCount || 0;
-        console.log(`Deleted ${partCount || 0} participantes`);
+        if (deleteError) {
+           if (deleteError.message?.includes('function') && deleteError.message?.includes('does not exist')) {
+              console.warn("delete_uso_consumo_imobilizado_batch RPC function not found, skipping.");
+              hasMore = false;
+           } else {
+              console.error(`UsoConsumo batch ${iterations} delete error:`, deleteError);
+              break;
+           }
+        } else {
+          if (deletedCount === 0 || deletedCount === null) {
+            hasMore = false;
+            console.log(`UsoConsumo batch ${iterations}: No more records to delete`);
+          } else {
+            totalDeleted.uso_consumo += deletedCount;
+            console.log(`UsoConsumo batch ${iterations}: Deleted ${deletedCount} (total: ${totalDeleted.uso_consumo})`);
+          }
+        }
+      }
+
+      // Deletar participantes usando RPC
+      console.log("Starting participantes deletion using RPC batches...");
+      hasMore = true;
+      iterations = 0;
+      
+      while (hasMore && iterations < maxIterations) {
+        iterations++;
+        
+        const { data: deletedCount, error: deleteError } = await supabaseAdmin
+          .rpc('delete_participantes_batch', {
+            _user_id: userId,
+            _filial_ids: filialIds,
+            _batch_size: batchSize
+          });
+
+        if (deleteError) {
+           // Se a função não existir, fallback para delete direto (mas com risco de timeout)
+           if (deleteError.message?.includes('function') && deleteError.message?.includes('does not exist')) {
+              console.warn("delete_participantes_batch RPC function not found, trying direct delete...");
+              const { error: partError, count: partCount } = await supabaseAdmin
+                .from('participantes')
+                .delete({ count: 'exact' })
+                .in('filial_id', filialIds);
+
+              if (partError) console.error("Error deleting participantes (direct):", partError);
+              else {
+                totalDeleted.participantes += partCount || 0;
+                console.log(`Deleted ${partCount || 0} participantes (direct)`);
+              }
+              hasMore = false;
+           } else {
+              console.error(`Participantes batch ${iterations} delete error:`, deleteError);
+              break;
+           }
+        } else {
+          if (deletedCount === 0 || deletedCount === null) {
+            hasMore = false;
+            console.log(`Participantes batch ${iterations}: No more records to delete`);
+          } else {
+            totalDeleted.participantes += deletedCount;
+            console.log(`Participantes batch ${iterations}: Deleted ${deletedCount} (total: ${totalDeleted.participantes})`);
+          }
+        }
       }
     }
 
-    // Deletar import_jobs do usuário
-    console.log("Deleting import_jobs...");
-    const { error: jobsError, count: jobsCount } = await supabaseAdmin
-      .from('import_jobs')
-      .delete({ count: 'exact' })
-      .eq('user_id', userId);
+    // Deletar import_jobs do usuário usando RPC
+    console.log("Starting import_jobs deletion using RPC batches...");
+    let hasMoreJobs = true;
+    let jobIterations = 0;
+    
+    while (hasMoreJobs && jobIterations < 100) { // Limit iterations for jobs
+      jobIterations++;
+      
+      const { data: deletedCount, error: deleteError } = await supabaseAdmin
+        .rpc('delete_import_jobs_batch', {
+          _user_id: userId,
+          _batch_size: 1000
+        });
 
-    if (jobsError) {
-      console.error("Error deleting import_jobs:", jobsError);
-    } else {
-      totalDeleted.import_jobs = jobsCount || 0;
+      if (deleteError) {
+         if (deleteError.message?.includes('function') && deleteError.message?.includes('does not exist')) {
+            console.warn("delete_import_jobs_batch RPC function not found, trying direct delete...");
+            const { error: jobsError, count: jobsCount } = await supabaseAdmin
+              .from('import_jobs')
+              .delete({ count: 'exact' })
+              .eq('user_id', userId);
+
+            if (jobsError) console.error("Error deleting import_jobs (direct):", jobsError);
+            else {
+              totalDeleted.import_jobs += jobsCount || 0;
+              console.log(`Deleted ${jobsCount || 0} import_jobs (direct)`);
+            }
+            hasMoreJobs = false;
+         } else {
+            console.error(`Import jobs batch ${jobIterations} delete error:`, deleteError);
+            break;
+         }
+      } else {
+        if (deletedCount === 0 || deletedCount === null) {
+          hasMoreJobs = false;
+          console.log(`Import jobs batch ${jobIterations}: No more records to delete`);
+        } else {
+          totalDeleted.import_jobs += deletedCount;
+          console.log(`Import jobs batch ${jobIterations}: Deleted ${deletedCount} (total: ${totalDeleted.import_jobs})`);
+        }
+      }
     }
 
     // Deletar filiais
@@ -354,8 +448,8 @@ serve(async (req) => {
         user_id: userId,
         tenant_id: tenantId,
         action: 'clear_imported_data',
-        table_name: 'mercadorias,energia_agua,fretes,servicos,participantes,filiais,import_jobs',
-        record_count: totalDeleted.mercadorias + totalDeleted.energia_agua + totalDeleted.fretes + totalDeleted.servicos + totalDeleted.participantes + totalDeleted.filiais + totalDeleted.import_jobs,
+        table_name: 'mercadorias,energia_agua,fretes,servicos,uso_consumo_imobilizado,participantes,filiais,import_jobs',
+        record_count: totalDeleted.mercadorias + totalDeleted.energia_agua + totalDeleted.fretes + totalDeleted.servicos + totalDeleted.uso_consumo + totalDeleted.participantes + totalDeleted.filiais + totalDeleted.import_jobs,
         details: {
           deleted: totalDeleted,
           estimated,
@@ -377,7 +471,7 @@ serve(async (req) => {
       console.error("Error refreshing materialized views:", mvError);
     }
 
-    const message = `Deletados: ${totalDeleted.mercadorias.toLocaleString('pt-BR')} mercadorias, ${totalDeleted.energia_agua.toLocaleString('pt-BR')} energia/água, ${totalDeleted.fretes.toLocaleString('pt-BR')} fretes, ${totalDeleted.servicos.toLocaleString('pt-BR')} serviços, ${totalDeleted.participantes.toLocaleString('pt-BR')} participantes, ${totalDeleted.filiais.toLocaleString('pt-BR')} filiais`;
+    const message = `Deletados: ${totalDeleted.mercadorias.toLocaleString('pt-BR')} mercadorias, ${totalDeleted.energia_agua.toLocaleString('pt-BR')} energia/água, ${totalDeleted.fretes.toLocaleString('pt-BR')} fretes, ${totalDeleted.servicos.toLocaleString('pt-BR')} serviços, ${totalDeleted.uso_consumo.toLocaleString('pt-BR')} uso/consumo, ${totalDeleted.participantes.toLocaleString('pt-BR')} participantes, ${totalDeleted.filiais.toLocaleString('pt-BR')} filiais`;
     console.log(`Cleanup completed: ${message}`);
 
     return new Response(JSON.stringify({ 
