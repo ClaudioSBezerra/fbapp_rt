@@ -7,7 +7,7 @@ const corsHeaders = {
 };
 
 const BATCH_SIZE = 1000;
-const PROGRESS_UPDATE_INTERVAL = 5000; // Update progress every 5k lines
+const PROGRESS_UPDATE_INTERVAL = 500; // Update progress every 500 lines for better feedback
 
 // Chunk processing limits
 const MAX_LINES_PER_CHUNK = 100000; // Process max 100k lines per execution

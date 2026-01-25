@@ -424,7 +424,7 @@ export default function ImportarEFD() {
     const pollInterval = setInterval(() => {
       console.log('Polling jobs (fallback)...');
       loadJobs();
-    }, 15000); // Every 15 seconds
+    }, 3000); // Every 3 seconds for better responsiveness
     
     return () => {
       clearInterval(pollInterval);
