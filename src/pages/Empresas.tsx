@@ -12,7 +12,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { Building2, Plus, Users, Store, Copy, Check } from 'lucide-react';
-import { formatCNPJMasked, formatCNPJ } from '@/lib/formatFilial';
+import { formatCNPJMasked } from '@/lib/formatFilial';
 
 interface Tenant {
   id: string;
@@ -510,7 +510,6 @@ export default function Empresas() {
                                     <TableHead>Empresa</TableHead>
                                     <TableHead>CNPJ</TableHead>
                                     <TableHead>Razão Social</TableHead>
-                                    <TableHead>Nome Fantasia</TableHead>
                                   </TableRow>
                                 </TableHeader>
                                 <TableBody>
@@ -520,10 +519,9 @@ export default function Empresas() {
                                         {empresa.nome}
                                       </TableCell>
                                       <TableCell className="font-mono text-sm">
-                                        {formatCNPJ(filial.cnpj)}
+                                        {formatCNPJMasked(filial.cnpj)}
                                       </TableCell>
                                       <TableCell>{filial.razao_social}</TableCell>
-                                      <TableCell>{filial.nome_fantasia || '-'}</TableCell>
                                     </TableRow>
                                   ))}
                                 </TableBody>
