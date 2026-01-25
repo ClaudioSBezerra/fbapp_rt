@@ -47,7 +47,15 @@ serve(async (req) => {
   }
 
   try {
-    // SKIP AUTH CHECK - Using SERVICE_ROLE for testing
+    // Auth check - FAST PATH
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      return new Response(
+        JSON.stringify({ error: "Authorization header required" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     
@@ -58,6 +66,17 @@ serve(async (req) => {
         persistSession: false
       }
     });
+
+    const token = authHeader.replace("Bearer ", "");
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+
+    if (authError || !user) {
+      console.error("Auth error:", authError);
+      return new Response(
+        JSON.stringify({ error: "Invalid token" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     // Get metadata from JSON body
     const body = await req.json();
@@ -239,14 +258,37 @@ serve(async (req) => {
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+              .from("filiais")
+              .select("id")
+              .eq("cnpj", header.cnpj)
+              .maybeSingle();
+              
+            if (duplicateFilial) {
+              filialId = duplicateFilial.id;
+              console.log(`Recovered existing filial: ${filialId}`);
+            } else {
+              console.error("Filial exists but could not be retrieved:", err);
+              return new Response(
+                JSON.stringify({ error: "Filial exists but could not be retrieved: " + errorMessage }),
+                { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+              );
+            }
+         } else {
+           console.error("Error creating filial:", err);
+           return new Response(
+             JSON.stringify({ error: "Failed to create filial: " + errorMessage }),
+             { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+           );
+         }
+      }
+    }
 
     // Create import job (FAST)
     console.log("Creating import job...");
     const { data: job, error: jobError } = await supabase
       .from("import_jobs")
       .insert({
-        // user_id: removido - sem autenticação
-        // user_id: user.id,
+        user_id: user.id,
         empresa_id: empresaId,
         filial_id: filialId,
         file_path: filePath,

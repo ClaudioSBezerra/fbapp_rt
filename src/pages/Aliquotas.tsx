@@ -49,7 +49,7 @@ export default function Aliquotas() {
       <div>
         <h1 className="text-2xl font-bold text-foreground">Alíquotas de Transição</h1>
         <p className="text-muted-foreground">
-          Configuração das alíquotas IBS e CBS por ano (2027-2033)
+          Configuração das alíquotas IBS e CBS por ano (2026-2033)
         </p>
       </div>
 
@@ -85,9 +85,7 @@ export default function Aliquotas() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {aliquotas
-                  .filter(a => a.ano >= 2027 && a.ano <= 2033)
-                  .map((aliquota) => {
+                {aliquotas.map((aliquota) => {
                   const total = aliquota.ibs_estadual + aliquota.ibs_municipal + aliquota.cbs;
                   const isCurrent = aliquota.ano === currentYear;
                   const isPast = aliquota.ano < currentYear;

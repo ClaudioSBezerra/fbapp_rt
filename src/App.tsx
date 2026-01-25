@@ -25,7 +25,6 @@ import ImportarEFDIcms from "./pages/ImportarEFDIcms";
 import UsoConsumoImobilizado from "./pages/UsoConsumoImobilizado";
 import DashboardUsoConsumo from "./pages/DashboardUsoConsumo";
 import NotFound from "./pages/NotFound";
-import PrevisaoApuracao from "./pages/PrevisaoApuracao";
 import AppLayout from "./components/AppLayout";
 
 const queryClient = new QueryClient();
@@ -50,7 +49,6 @@ const App = () => (
               <Route path="/onboarding" element={<AdminRoute><Onboarding /></AdminRoute>} />
               <Route path="/aliquotas" element={<Aliquotas />} />
               <Route path="/mercadorias" element={<Mercadorias />} />
-              <Route path="/previsao-apuracao" element={<PrevisaoApuracao />} />
               <Route path="/mercadorias-participante" element={<MercadoriasParticipante />} />
               <Route path="/servicos" element={<Servicos />} />
               <Route path="/energia-agua" element={<EnergiaAgua />} />

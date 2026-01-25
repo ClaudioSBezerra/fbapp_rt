@@ -1,145 +1,32 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+// Follow this setup guide to integrate the Deno language server with your editor:
+// https://deno.land/manual/getting_started/setup_your_environment
+// This enables autocomplete, go to definition, etc.
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-};
+// Setup type definitions for built-in Supabase Runtime APIs
+import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 
-const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+console.log("Hello from Functions!")
 
-serve(async (req) => {
-  console.log("PARSE-EFD-V12: IMPLEMENTAÇÃO COMPLETA");
-
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+Deno.serve(async (req) => {
+  const { name } = await req.json()
+  const data = {
+    message: `Hello ${name}!`,
   }
 
-  try {
-    const { empresa_id, file_path, file_name, file_size, record_limit = 1000, import_scope = 'full' } = await req.json();
-    console.log("Parâmetros recebidos:", { empresa_id, file_path, file_name, file_size, record_limit, import_scope });
+  return new Response(
+    JSON.stringify(data),
+    { headers: { "Content-Type": "application/json" } },
+  )
+})
 
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-    const user_id = empresa_id; // Fallback simples
+/* To invoke locally:
 
-    const job_id = crypto.randomUUID();
-    const { data: jobData, error: jobError } = await supabase
-      .from('import_jobs')
-      .insert({
-        id: job_id,
-        user_id,
-        empresa_id,
-        file_name,
-        file_path,
-        file_size,
-        status: 'uploaded',
-        record_limit,
-        import_scope,
-        created_at: new Date().toISOString()
-      })
-      .select();
+  1. Run `supabase start` (see: https://supabase.com/docs/reference/cli/supabase-start)
+  2. Make an HTTP request:
 
-    if (jobError) {
-      throw new Error(`Erro ao criar job: ${jobError.message}`);
-    }
+  curl -i --location --request POST 'http://127.0.0.1:54321/functions/v1/parse-efd-v12' \
+    --header 'Authorization: Bearer eyJhbGciOiJFUzI1NiIsImtpZCI6ImI4MTI2OWYxLTIxZDgtNGYyZS1iNzE5LWMyMjQwYTg0MGQ5MCIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjIwODQ1Mjk3OTJ9.xdqSYSZ_hi4QSfujCoy2yqnrJlBUsTldrshNLXG3vfjpp0_j_2IHM2YoqjKaSskNluvxMiLrQnGI5MZgV-BwJA' \
+    --header 'Content-Type: application/json' \
+    --data '{"name":"Functions"}'
 
-    console.log("Job criado com ID:", job_id);
-
-    const { data: fileData, error: downloadError } = await supabase.storage
-      .from('EFD-4')
-      .download(file_path);
-
-    if (downloadError) {
-      await supabase.from('import_jobs').update({ 
-        status: 'error', 
-        error_message: `Erro ao baixar arquivo: ${downloadError.message}` 
-      }).eq('id', job_id);
-      throw new Error(`Erro ao baixar arquivo: ${downloadError.message}`);
-    }
-
-    const text = await fileData.text();
-    const lines = text.split('\n').slice(0, record_limit);
-    console.log(`Processando ${lines.length} linhas`);
-
-    const cnpjs = new Set();
-    const cnpjPattern = /\d{14}/g;
-    
-    lines.forEach(line => {
-      const matches = line.match(cnpjPattern);
-      if (matches) {
-        matches.forEach(cnpj => {
-          if (cnpj.length === 14) {
-            const formattedCnpj = `${cnpj.slice(0,2)}.${cnpj.slice(2,5)}.${cnpj.slice(5,8)}/${cnpj.slice(8,12)}-${cnpj.slice(12,14)}`;
-            cnpjs.add(formattedCnpj);
-          }
-        });
-      }
-    });
-
-    console.log(`CNPJs encontrados: ${cnpjs.size}`);
-
-    if (cnpjs.size > 0) {
-      const filiaisToInsert = Array.from(cnpjs).map(cnpj => ({
-        empresa_id,
-        cnpj,
-        nome_fantasia: `Filial ${cnpj}`,
-        created_at: new Date().toISOString()
-      }));
-
-      const { error: insertError } = await supabase
-        .from('filiais')
-        .upsert(filiaisToInsert, { onConflict: 'empresa_id,cnpj' });
-
-      if (insertError) {
-        console.error("Erro ao inserir filiais:", insertError);
-      } else {
-        console.log(`Filiais inseridas: ${cnpjs.size}`);
-      }
-    }
-
-    await supabase.from('import_jobs').update({ 
-      status: 'completed',
-      processed_lines: lines.length,
-      filiais_found: cnpjs.size,
-      completed_at: new Date().toISOString()
-    }).eq('id', job_id);
-
-    return new Response(
-      JSON.stringify({
-        success: true,
-        job_id,
-        status: 'completed',
-        message: `EFD processado! ${cnpjs.size} CNPJs, ${lines.length} linhas`,
-        stats: {
-          processed_lines: lines.length,
-          cnpjs_found: cnpjs.size,
-          file_size
-        }
-      }),
-      { 
-        headers: { 
-          ...corsHeaders, 
-          "Content-Type": "application/json" 
-        } 
-      }
-    );
-
-  } catch (error) {
-    console.error("Error in parse-efd-v12:", error);
-    return new Response(
-      JSON.stringify({ 
-        success: false,
-        error: `Server error: ${error.message}`
-      }),
-      { 
-        status: 500, 
-        headers: { 
-          ...corsHeaders, 
-          "Content-Type": "application/json" 
-        } 
-      }
-    );
-  }
-});
+*/

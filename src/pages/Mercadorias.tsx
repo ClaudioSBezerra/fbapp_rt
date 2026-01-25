@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -200,7 +199,6 @@ function MercadoriasTable({ data, aliquotas, tipo, anoProjecao }: MercadoriasTab
 }
 
 export default function Mercadorias() {
-  const navigate = useNavigate();
   const [aggregatedData, setAggregatedData] = useState<AggregatedRow[]>([]);
   const [aliquotas, setAliquotas] = useState<Aliquota[]>([]);
   const [filiais, setFiliais] = useState<Filial[]>([]);
@@ -401,20 +399,9 @@ export default function Mercadorias() {
   return (
     <div className="space-y-4 sm:space-y-6 animate-fade-in">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
-        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-          <div>
-            <h1 className="text-lg sm:text-xl font-bold text-foreground">Painel de Mercadorias</h1>
-            <p className="text-xs sm:text-sm text-muted-foreground">Comparativo PIS+COFINS vs IBS+CBS agregado por Filial e Mês</p>
-          </div>
-          <Button 
-            variant="default" 
-            size="sm" 
-            onClick={() => navigate('/previsao-apuracao')}
-            className="w-full sm:w-auto"
-          >
-            <ArrowUpRight className="h-4 w-4 mr-2" />
-            Previsão Apuração
-          </Button>
+        <div>
+          <h1 className="text-lg sm:text-xl font-bold text-foreground">Painel de Mercadorias</h1>
+          <p className="text-xs sm:text-sm text-muted-foreground">Comparativo PIS+COFINS vs IBS+CBS agregado por Filial e Mês</p>
         </div>
         <div className="flex items-center gap-2">
           <Button 
@@ -631,21 +618,11 @@ export default function Mercadorias() {
             <CardDescription>Visualize entradas e saídas agregadas por Filial e Mês/Ano</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="mb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div className="mb-4">
               <TabsList className="grid w-full grid-cols-2 sm:w-auto sm:inline-flex">
                 <TabsTrigger value="entradas">Entradas</TabsTrigger>
                 <TabsTrigger value="saidas">Saídas</TabsTrigger>
               </TabsList>
-              
-              <Button 
-                variant="default" 
-                size="sm" 
-                onClick={() => navigate('/previsao-apuracao')}
-                className="w-full sm:w-auto"
-              >
-                <ArrowUpRight className="h-4 w-4 mr-2" />
-                Previsão Apuração
-              </Button>
             </div>
             <TabsContent value="entradas" className="mt-0">
               {loading ? <div className="py-12 text-center text-muted-foreground">Carregando...</div> : <MercadoriasTable data={entradasAgregadas} aliquotas={aliquotas} tipo="entrada" anoProjecao={anoProjecao} />}

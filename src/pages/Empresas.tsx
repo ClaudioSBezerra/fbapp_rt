@@ -507,21 +507,19 @@ export default function Empresas() {
                               <Table>
                                 <TableHeader>
                                   <TableRow>
-                                    <TableHead>Empresa</TableHead>
                                     <TableHead>CNPJ</TableHead>
                                     <TableHead>Razão Social</TableHead>
+                                    <TableHead>Nome Fantasia</TableHead>
                                   </TableRow>
                                 </TableHeader>
                                 <TableBody>
                                   {empresa.filiais.map((filial) => (
                                     <TableRow key={filial.id}>
-                                      <TableCell className="font-medium text-sm">
-                                        {empresa.nome}
-                                      </TableCell>
                                       <TableCell className="font-mono text-sm">
                                         {formatCNPJMasked(filial.cnpj)}
                                       </TableCell>
                                       <TableCell>{filial.razao_social}</TableCell>
+                                      <TableCell>{filial.nome_fantasia || '-'}</TableCell>
                                     </TableRow>
                                   ))}
                                 </TableBody>

@@ -257,20 +257,6 @@ export default function ImportarEFD() {
   const handleRefreshViews = async () => {
     setRefreshingViews(true);
     
-    // Function to try RPC directly
-    const tryRpcFallback = async () => {
-      console.warn('Trying direct RPC call as fallback...');
-      const { error: rpcError } = await supabase.rpc('refresh_materialized_views_async');
-      
-      if (rpcError) {
-        throw new Error(rpcError.message || 'Falha no RPC de atualização');
-      }
-      
-      console.log('Refresh completed via RPC');
-      toast.success('Painéis atualizados com sucesso! (via RPC)');
-      setViewsStatus('ok');
-    };
-
     try {
       toast.info('Atualizando painéis... Isso pode levar alguns segundos.');
       
@@ -278,50 +264,32 @@ export default function ImportarEFD() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 120000);
       
-      try {
-        const response = await fetch(
-          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/refresh-views`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-            },
-            signal: controller.signal,
-          }
-        );
-        
-        clearTimeout(timeoutId);
-
-        // Check if response is ok
-        if (!response.ok) {
-          await tryRpcFallback();
-          return;
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/refresh-views`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          },
+          signal: controller.signal,
         }
-        
-        const result = await response.json();
-        
-        if (!result.success) {
-          console.error('Refresh failed:', result);
-          // If logical failure, try RPC just in case it was a specific edge function issue
-          await tryRpcFallback();
-          return;
-        }
-        
-        console.log('Refresh completed:', result);
-        toast.success(`Painéis atualizados com sucesso! (${result.duration_ms}ms)`);
-        setViewsStatus('ok');
-        
-      } catch (fetchError: any) {
-        clearTimeout(timeoutId);
-        console.warn('Edge function fetch failed:', fetchError);
-        // If fetch throws (CORS, Network, etc), try RPC
-        if (fetchError.name !== 'AbortError') {
-          await tryRpcFallback();
-        } else {
-          throw fetchError; // Re-throw abort error
-        }
+      );
+      
+      clearTimeout(timeoutId);
+      
+      const result = await response.json();
+      
+      if (!response.ok || !result.success) {
+        console.error('Refresh failed:', result);
+        toast.error(result.error || 'Falha ao atualizar views.');
+        setViewsStatus('empty');
+        return;
       }
+      
+      console.log('Refresh completed:', result);
+      toast.success(`Painéis atualizados com sucesso! (${result.duration_ms}ms)`);
+      setViewsStatus('ok');
       
     } catch (err: any) {
       console.error('Failed to refresh views:', err);
@@ -329,7 +297,7 @@ export default function ImportarEFD() {
       if (err.name === 'AbortError') {
         toast.error('A atualização está demorando muito. Tente novamente em alguns minutos.');
       } else {
-        toast.error(`Falha ao atualizar views: ${err.message || 'Erro desconhecido'}`);
+        toast.error('Falha ao atualizar views. Tente novamente.');
       }
       setViewsStatus('empty');
     } finally {
@@ -458,7 +426,7 @@ export default function ImportarEFD() {
     const pollInterval = setInterval(() => {
       console.log('Polling jobs (fallback)...');
       loadJobs();
-    }, 3000); // Every 3 seconds for better responsiveness
+    }, 15000); // Every 15 seconds
     
     return () => {
       clearInterval(pollInterval);
@@ -511,61 +479,57 @@ export default function ImportarEFD() {
         }
       }
 
-      if (!selectedEmpresa) {
-        toast.error('Selecione uma empresa antes de iniciar a importação.');
-        return;
+      // Refresh session before calling function to ensure valid token
+      const { data: { session }, error: refreshError } = await supabase.auth.refreshSession();
+      if (refreshError) {
+        console.error('Session refresh error:', refreshError);
+        toast.error('Sessão expirada. Faça login novamente.');
+        throw new Error('Session refresh failed');
       }
 
-      // CHAMAR VERSÃO V13 - OTIMIZADA COM RANGE REQUEST
-      console.log('Fetching parse-efd-v13 for:', filePath, 'Empresa:', selectedEmpresa);
-      
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/parse-efd-v13`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-            'Authorization': `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            empresa_id: selectedEmpresa,
-            file_path: filePath,
-            file_name: selectedFile.name,
-            file_size: selectedFile.size,
-            record_limit: recordLimit,
-            import_scope: importScope,
-          }),
-        }
-      );
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        let errorData;
+      // CHAMAR A FUNÇÃO EMERGENCY PARA TESTE
+      const response = await supabase.functions.invoke('parse-efd-emergency', {
+        body: {
+          empresa_id: selectedEmpresa,
+          file_path: filePath,
+          file_name: selectedFile.name,
+          file_size: selectedFile.size,
+          record_limit: recordLimit,
+          import_scope: importScope,
+        },
+      });
+
+      if (response.error) {
+        console.error('Edge Function Error:', response.error);
         try {
-            errorData = JSON.parse(errorText);
+          // Try to read the error body if available
+          if (response.error.context && typeof response.error.context.text === 'function') {
+             const errorBody = await response.error.context.text();
+             console.error('Edge Function Error Body:', errorBody);
+             toast.error(`Erro na função: ${errorBody.substring(0, 100)}`);
+          }
         } catch (e) {
-            errorData = { error: errorText || response.statusText };
+          console.error('Failed to read error body:', e);
         }
-        
-        console.error('V13 Function Error Status:', response.status, errorData);
-        throw new Error(errorData.error || `Erro HTTP ${response.status}: ${response.statusText}`);
+        // DO NOT delete the file on error, so we can debug
+        // await supabase.storage.from('efd-files').remove([filePath]);
+        throw new Error(response.error.message || 'Erro ao iniciar importação');
       }
-      
-      const responseData = await response.json();
-      console.log('Function response data:', responseData);
 
-      if (responseData.error) {
-        console.error('Edge Function Error:', responseData.error);
-        toast.error(`Erro na função: ${responseData.error}`);
-        throw new Error(responseData.error);
+      const data = response.data;
+      console.log('Function response data:', data); // Debug log
+
+      if (data.error) {
+        // DO NOT delete the file on error, so we can debug
+        // await supabase.storage.from('efd-files').remove([filePath]);
+        throw new Error(data.error);
       }
 
       setSelectedFile(null);
       setCurrentUploadPath('');
       resetUpload();
       
-      const jobId = responseData.job_id || 'unknown';
+      const jobId = data.job_id || 'unknown';
       toast.success(`Importação iniciada! ID: ${jobId}. Acompanhe o progresso abaixo.`);
     } catch (error) {
       console.error('Error starting import:', error);

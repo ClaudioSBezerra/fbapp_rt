@@ -7,7 +7,7 @@ const corsHeaders = {
 };
 
 const BATCH_SIZE = 1000;
-const PROGRESS_UPDATE_INTERVAL = 500; // Update progress every 500 lines for better feedback
+const PROGRESS_UPDATE_INTERVAL = 5000; // Update progress every 5k lines
 
 // Chunk processing limits
 const MAX_LINES_PER_CHUNK = 100000; // Process max 100k lines per execution
@@ -1182,13 +1182,14 @@ serve(async (req) => {
       if (batches[table].length === 0) return null;
 
       // Use upsert with ignoreDuplicates to avoid inserting duplicate records
-      // Using explicit columns for onConflict works better with Supabase JS client than constraint names
+      // This requires unique constraints on the tables (will be added via migration after data cleanup)
       const onConflictMap: Record<keyof BatchBuffers, string | undefined> = {
-        mercadorias: 'filial_id,mes_ano,tipo,descricao,valor,pis,cofins,icms,ipi,cod_part',
-        fretes: 'filial_id,mes_ano,tipo,valor,pis,cofins,icms,descricao,cnpj_transportadora',
-        energia_agua: 'filial_id,mes_ano,tipo_operacao,tipo_servico,valor,pis,cofins,icms,descricao,cnpj_fornecedor',
-        servicos: 'filial_id,mes_ano,tipo,descricao,valor,pis,cofins,iss,cod_part',
-        participantes: 'filial_id,cod_part',
+        // Using explicit constraint names is safer than column lists for Upsert detection
+        mercadorias: 'mercadorias_unique_record',
+        fretes: 'fretes_unique_record',
+        energia_agua: 'energia_agua_unique_record',
+        servicos: 'servicos_unique_record', // Updated to standard naming (migration 20260120230000)
+        participantes: 'participantes_filial_id_cod_part_key',
       };
       
       const conflictTarget = onConflictMap[table];
@@ -1201,20 +1202,19 @@ serve(async (req) => {
         });
         
         if (error) {
-          // If the error is a unique constraint violation despite ignoreDuplicates=true,
-          // it means the ON CONFLICT clause didn't match the constraint definition.
-          // However, retrying with INSERT will definitely fail with the same error.
-          // So we should log it and treat it as a "skip" for duplicates, or error if it's structural.
-          
-          if (error.message.includes('duplicate key value') || error.code === '23505') {
-            console.warn(`Job ${jobId}: Upsert failed with duplicate key for ${table} (handled as ignored): ${error.message}`);
-            // We treat this as success (duplicates ignored), although strictly speaking 
-            // the upsert command should have handled it silently.
-            // This prevents the job from crashing.
-          } else if (error.message.includes('constraint') || error.message.includes('unique')) {
-             console.error(`Job ${jobId}: Constraint error in upsert for ${table}: ${error.message}`);
-             // Do NOT fallback to insert, as it will likely fail too.
-             return error.message;
+          // If unique constraint doesn't exist yet, fall back to insert
+          if (error.message.includes('constraint') || error.message.includes('unique') || error.message.includes('does not exist')) {
+            // Simplified fallback: Just try insert
+            // Since we removed FK constraints, we don't need to create placeholders anymore
+            const msg = `Constraint issue for ${table} (${error.message}), using insert fallback`;
+            console.log(`Job ${jobId}: ${msg}`);
+            
+            const { error: insertError } = await supabase.from(table).insert(batches[table]);
+            if (insertError) {
+              console.error(`Insert fallback error for ${table}:`, insertError);
+              logJobEvent(supabase, jobId!, 'error', `Insert fallback failed for ${table}: ${insertError.message}`);
+              return insertError.message;
+            }
           } else {
             console.error(`Upsert error for ${table}:`, error);
             logJobEvent(supabase, jobId!, 'error', `Upsert failed for ${table}: ${error.message}`);
@@ -1222,7 +1222,7 @@ serve(async (req) => {
           }
         }
       } else {
-        // No conflict target defined, use direct insert
+        // No conflict target defined (e.g. servicos), use direct insert
         // Note: This may create duplicates if the same file is imported twice without cleanup
         const { error: insertError } = await supabase.from(table).insert(batches[table]);
         if (insertError) {
@@ -1639,13 +1639,13 @@ serve(async (req) => {
             .from("import_jobs")
             .select("status")
             .eq("id", jobId)
-            .maybeSingle();
+            .single();
 
-          if (!currentJob || currentJob.status === "cancelled") {
-            console.log(`Job ${jobId}: Cancelled by user or deleted, stopping processing`);
+          if (currentJob?.status === "cancelled") {
+            console.log(`Job ${jobId}: Cancelled by user, stopping processing`);
             reader.cancel();
             return new Response(
-              JSON.stringify({ success: false, message: "Job was cancelled by user or deleted" }),
+              JSON.stringify({ success: false, message: "Job was cancelled by user" }),
               { headers: { ...corsHeaders, "Content-Type": "application/json" } }
             );
           }
