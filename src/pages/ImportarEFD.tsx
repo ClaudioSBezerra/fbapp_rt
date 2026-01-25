@@ -257,6 +257,20 @@ export default function ImportarEFD() {
   const handleRefreshViews = async () => {
     setRefreshingViews(true);
     
+    // Function to try RPC directly
+    const tryRpcFallback = async () => {
+      console.warn('Trying direct RPC call as fallback...');
+      const { error: rpcError } = await supabase.rpc('refresh_materialized_views_async');
+      
+      if (rpcError) {
+        throw new Error(rpcError.message || 'Falha no RPC de atualização');
+      }
+      
+      console.log('Refresh completed via RPC');
+      toast.success('Painéis atualizados com sucesso! (via RPC)');
+      setViewsStatus('ok');
+    };
+
     try {
       toast.info('Atualizando painéis... Isso pode levar alguns segundos.');
       
@@ -264,48 +278,50 @@ export default function ImportarEFD() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 120000);
       
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/refresh-views`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-          },
-          signal: controller.signal,
-        }
-      );
-      
-      clearTimeout(timeoutId);
+      try {
+        const response = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/refresh-views`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+            },
+            signal: controller.signal,
+          }
+        );
+        
+        clearTimeout(timeoutId);
 
-      // Check if response is ok
-      if (!response.ok) {
-        console.warn('Edge function failed, trying direct RPC call...');
-        // Fallback to direct RPC call
-        const { error: rpcError } = await supabase.rpc('refresh_materialized_views_async');
-        
-        if (rpcError) {
-          throw new Error(rpcError.message || 'Falha no RPC de atualização');
+        // Check if response is ok
+        if (!response.ok) {
+          await tryRpcFallback();
+          return;
         }
         
-        console.log('Refresh completed via RPC');
-        toast.success('Painéis atualizados com sucesso! (via RPC)');
+        const result = await response.json();
+        
+        if (!result.success) {
+          console.error('Refresh failed:', result);
+          // If logical failure, try RPC just in case it was a specific edge function issue
+          await tryRpcFallback();
+          return;
+        }
+        
+        console.log('Refresh completed:', result);
+        toast.success(`Painéis atualizados com sucesso! (${result.duration_ms}ms)`);
         setViewsStatus('ok');
-        return;
+        
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId);
+        console.warn('Edge function fetch failed:', fetchError);
+        // If fetch throws (CORS, Network, etc), try RPC
+        if (fetchError.name !== 'AbortError') {
+          await tryRpcFallback();
+        } else {
+          throw fetchError; // Re-throw abort error
+        }
       }
-      
-      const result = await response.json();
-      
-      if (!result.success) {
-        console.error('Refresh failed:', result);
-        toast.error(result.error || 'Falha ao atualizar views.');
-        setViewsStatus('empty');
-        return;
-      }
-      
-      console.log('Refresh completed:', result);
-      toast.success(`Painéis atualizados com sucesso! (${result.duration_ms}ms)`);
-      setViewsStatus('ok');
       
     } catch (err: any) {
       console.error('Failed to refresh views:', err);
@@ -313,7 +329,7 @@ export default function ImportarEFD() {
       if (err.name === 'AbortError') {
         toast.error('A atualização está demorando muito. Tente novamente em alguns minutos.');
       } else {
-        toast.error('Falha ao atualizar views. Tente novamente.');
+        toast.error(`Falha ao atualizar views: ${err.message || 'Erro desconhecido'}`);
       }
       setViewsStatus('empty');
     } finally {
