@@ -277,10 +277,26 @@ export default function ImportarEFD() {
       );
       
       clearTimeout(timeoutId);
+
+      // Check if response is ok
+      if (!response.ok) {
+        console.warn('Edge function failed, trying direct RPC call...');
+        // Fallback to direct RPC call
+        const { error: rpcError } = await supabase.rpc('refresh_materialized_views_async');
+        
+        if (rpcError) {
+          throw new Error(rpcError.message || 'Falha no RPC de atualização');
+        }
+        
+        console.log('Refresh completed via RPC');
+        toast.success('Painéis atualizados com sucesso! (via RPC)');
+        setViewsStatus('ok');
+        return;
+      }
       
       const result = await response.json();
       
-      if (!response.ok || !result.success) {
+      if (!result.success) {
         console.error('Refresh failed:', result);
         toast.error(result.error || 'Falha ao atualizar views.');
         setViewsStatus('empty');
