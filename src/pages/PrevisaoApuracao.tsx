@@ -334,9 +334,9 @@ export default function PrevisaoApuracao() {
       {/* Evolution Chart Section */}
       <Card>
         <CardHeader>
-          <CardTitle>Evolução da Carga Tributária (Transição 2027-2033)</CardTitle>
+          <CardTitle>Evolução do Saldo da Apuração (2027-2033)</CardTitle>
           <CardDescription>
-            Projeção comparativa entre o Sistema Atual (reduzido) e o Novo Sistema (IBS/CBS) ao longo dos anos
+            Projeção do saldo a pagar (ou a recuperar) comparando o Sistema Atual (reduzido) e o Novo Sistema (IBS/CBS)
           </CardDescription>
         </CardHeader>
         <CardContent className="h-[400px]">
@@ -350,9 +350,9 @@ export default function PrevisaoApuracao() {
                 labelStyle={{ color: 'black' }}
               />
               <Legend />
-              <Bar dataKey="Sistema Atual" stackId="a" fill="#3b82f6" name="Sistema Atual (ICMS/PIS/COFINS)" />
-              <Bar dataKey="Novo Sistema" stackId="a" fill="#a855f7" name="Novo Sistema (IBS/CBS)" />
-              <Line type="monotone" dataKey="Total" stroke="#ef4444" strokeWidth={2} dot={{ r: 4 }} name="Total Projetado" />
+              <Bar dataKey="Sistema Atual" stackId="a" fill="#3b82f6" name="Saldo Sistema Atual (ICMS/PIS/COFINS)" />
+              <Bar dataKey="Novo Sistema" stackId="a" fill="#a855f7" name="Saldo Novo Sistema (IBS/CBS)" />
+              <Line type="monotone" dataKey="Total" stroke="#ef4444" strokeWidth={2} dot={{ r: 4 }} name="Saldo Total Projetado" />
             </ComposedChart>
           </ResponsiveContainer>
         </CardContent>
