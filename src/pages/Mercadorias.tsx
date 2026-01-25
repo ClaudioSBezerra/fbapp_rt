@@ -11,6 +11,7 @@ import { ArrowUpRight, ArrowDownRight, Building2, Filter, Calendar, HelpCircle, 
 import { exportToExcel } from '@/lib/exportToExcel';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { formatFilialDisplayFormatted, formatFilialFromRow } from '@/lib/formatFilial';
+import { IbsCbsProjectionPanel } from '@/components/IbsCbsProjectionPanel';
 
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -249,7 +250,7 @@ export default function Mercadorias() {
       toast.success(`Painéis atualizados com sucesso! (${result.duration_ms}ms)`);
       
       // Reload local data
-      fetchAggregatedData();
+      await fetchAggregatedData();
       
     } catch (err: any) {
       console.error('Failed to refresh views:', err);
@@ -293,6 +294,8 @@ export default function Mercadorias() {
         return;
       }
 
+      console.log('Aggregated Data Loaded:', aggregatedResult?.length || 0, 'records');
+
       if (aggregatedResult) {
         setAggregatedData(aggregatedResult.map((item: any) => ({
           filial_id: item.filial_id,
@@ -306,6 +309,12 @@ export default function Mercadorias() {
           icms: Number(item.icms) || 0,
           tipo: item.tipo,
         })));
+
+        if (aggregatedResult.length === 0) {
+           console.warn('No aggregated data found for user.');
+        }
+      } else {
+        setAggregatedData([]);
       }
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -354,12 +363,12 @@ export default function Mercadorias() {
   }, [enrichedAggregatedData, filterFilial, filterMesAno]);
 
   const entradasAgregadas = useMemo(() => 
-    filteredData.filter(m => m.tipo === 'entrada').sort((a, b) => b.mes_ano.localeCompare(a.mes_ano)), 
+    filteredData.filter(m => m.tipo?.toLowerCase() === 'entrada').sort((a, b) => b.mes_ano.localeCompare(a.mes_ano)), 
     [filteredData]
   );
 
   const saidasAgregadas = useMemo(() => 
-    filteredData.filter(m => m.tipo === 'saida').sort((a, b) => b.mes_ano.localeCompare(a.mes_ano)), 
+    filteredData.filter(m => m.tipo?.toLowerCase() === 'saida').sort((a, b) => b.mes_ano.localeCompare(a.mes_ano)), 
     [filteredData]
   );
 
@@ -367,48 +376,6 @@ export default function Mercadorias() {
     return aliquotas.find((a) => a.ano === anoProjecao) || null;
   }, [aliquotas, anoProjecao]);
 
-  const totaisEntradas = useMemo(() => {
-    const entradas = filteredData.filter((m) => m.tipo === 'entrada');
-    const valor = entradas.reduce((acc, m) => acc + m.valor, 0);
-    const icms = entradas.reduce((acc, m) => acc + (m.icms || 0), 0);
-    const pisCofins = entradas.reduce((acc, m) => acc + m.pis + m.cofins, 0);
-    
-    const aliquota = aliquotaSelecionada;
-    const icmsProjetado = aliquota ? icms * (1 - (aliquota.reduc_icms / 100)) : icms;
-    const pisCofinsProjetado = aliquota ? pisCofins * (1 - (aliquota.reduc_piscofins / 100)) : pisCofins;
-    const baseIbsCbs = valor - icms - pisCofins;
-    const ibsProjetado = aliquota ? baseIbsCbs * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
-    const cbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
-    
-    const totalImpostosAtuais = icms + pisCofins;
-    const totalReforma = ibsProjetado + cbsProjetado;
-    const totalImpostosPagar = icmsProjetado + pisCofinsProjetado + ibsProjetado + cbsProjetado;
-    const diferencaProjetado = totalImpostosAtuais - totalReforma;
-    const diferencaReal = totalImpostosPagar - (icms + pisCofins);
-    
-    return { valor, icms, pisCofins, icmsProjetado, pisCofinsProjetado, baseIbsCbs, ibsProjetado, cbsProjetado, totalImpostosAtuais, totalReforma, totalImpostosPagar, diferencaProjetado, diferencaReal };
-  }, [filteredData, aliquotaSelecionada]);
-
-  const totaisSaidas = useMemo(() => {
-    const saidas = filteredData.filter((m) => m.tipo === 'saida');
-    const valor = saidas.reduce((acc, m) => acc + m.valor, 0);
-    const icms = saidas.reduce((acc, m) => acc + (m.icms || 0), 0);
-    const pisCofins = saidas.reduce((acc, m) => acc + m.pis + m.cofins, 0);
-    
-    const aliquota = aliquotaSelecionada;
-    const icmsProjetado = aliquota ? icms * (1 - (aliquota.reduc_icms / 100)) : icms;
-    const pisCofinsProjetado = aliquota ? pisCofins * (1 - (aliquota.reduc_piscofins / 100)) : pisCofins;
-    const baseIbsCbs = valor - icms - pisCofins;
-    const ibsProjetado = aliquota ? baseIbsCbs * ((aliquota.ibs_estadual + aliquota.ibs_municipal) / 100) : 0;
-    const cbsProjetado = aliquota ? baseIbsCbs * (aliquota.cbs / 100) : 0;
-    const totalImpostosAtuais = icms + pisCofins;
-    const totalReforma = ibsProjetado + cbsProjetado;
-    const totalImpostosPagar = icmsProjetado + pisCofinsProjetado + ibsProjetado + cbsProjetado;
-    const diferencaProjetado = totalImpostosAtuais - totalReforma;
-    const diferencaReal = totalImpostosPagar - (icms + pisCofins);
-    
-    return { valor, icms, pisCofins, icmsProjetado, pisCofinsProjetado, baseIbsCbs, ibsProjetado, cbsProjetado, totalImpostosAtuais, totalReforma, totalImpostosPagar, diferencaProjetado, diferencaReal };
-  }, [filteredData, aliquotaSelecionada]);
   const hasFiliais = filiais.length > 0;
 
   const handleExportExcel = () => {
@@ -449,14 +416,24 @@ export default function Mercadorias() {
   };
 
 
+  const debugInfo = useMemo(() => ({
+    user: user?.id?.slice(-4),
+    rows: aggregatedData.length,
+    filiais: filiais.length,
+    entradas: entradasAgregadas.length,
+    saidas: saidasAgregadas.length,
+    sampleTipo: aggregatedData[0]?.tipo
+  }), [user, aggregatedData, filiais, entradasAgregadas, saidasAgregadas]);
+
   return (
-    <div className="space-y-4 sm:space-y-6 animate-fade-in">
+    <div className="space-y-4 p-2 sm:p-4 pb-24">
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-lg sm:text-xl font-bold text-foreground">Painel de Mercadorias</h1>
-          </div>
-          <p className="text-xs sm:text-sm text-muted-foreground">Comparativo PIS+COFINS vs IBS+CBS agregado por Filial e Mês</p>
+          <h1 className="text-2xl font-bold tracking-tight">Operações Principais</h1>
+          <p className="text-muted-foreground">
+            Gerencie e visualize as operações de mercadorias por filial
+          </p>
           <div className="mt-2">
             <Button 
               variant="default" 
@@ -557,127 +534,6 @@ export default function Mercadorias() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-3 sm:gap-4 grid-cols-1 md:grid-cols-2">
-        <Card className="border-border/50">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-2">
-              <ArrowDownRight className="h-3.5 w-3.5" /> Total Entradas (Créditos) - Projeção {anoProjecao}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-1.5">
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground">Valor (VL_DOC):</span>
-              <span className="text-sm font-bold">{formatCurrency(totaisEntradas.valor)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground">ICMS:</span>
-              <span className="text-sm font-bold">{formatCurrency(totaisEntradas.icms)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground">ICMS Projetado:</span>
-              <span className="text-sm font-bold">{formatCurrency(totaisEntradas.icmsProjetado)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground">PIS+COFINS:</span>
-              <span className="text-sm font-bold text-pis-cofins">{formatCurrency(totaisEntradas.pisCofins)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground">PIS+COFINS Projetado:</span>
-              <span className="text-sm font-bold text-pis-cofins">{formatCurrency(totaisEntradas.pisCofinsProjetado)}</span>
-            </div>
-            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
-              <span className="text-[10px] font-medium">Tot. Impostos Atuais:</span>
-              <span className="text-sm font-bold">{formatCurrency(totaisEntradas.totalImpostosAtuais)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground">Base IBS/CBS:</span>
-              <span className="text-sm font-bold">{formatCurrency(totaisEntradas.baseIbsCbs)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground">IBS Projetado:</span>
-              <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totaisEntradas.ibsProjetado)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground">CBS Projetado:</span>
-              <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totaisEntradas.cbsProjetado)}</span>
-            </div>
-            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
-              <span className="text-[10px] font-medium text-ibs-cbs">Total Reforma:</span>
-              <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totaisEntradas.totalReforma)}</span>
-            </div>
-            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
-              <span className="text-[10px] font-medium">Tot. Créditos:</span>
-              <span className="text-sm font-bold">{formatCurrency(totaisEntradas.totalImpostosPagar)}</span>
-            </div>
-            <div className="flex justify-between items-center pt-1 border-t">
-              <span className="text-[10px] text-muted-foreground">Dif. deb/cred.:</span>
-              <Badge variant={totaisEntradas.diferencaReal < 0 ? 'destructive' : 'default'} className={totaisEntradas.diferencaReal >= 0 ? 'bg-positive text-positive-foreground' : ''}>
-                {totaisEntradas.diferencaReal >= 0 ? '+' : ''}{formatCurrency(totaisEntradas.diferencaReal)}
-              </Badge>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-border/50">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-2">
-              <ArrowUpRight className="h-3.5 w-3.5" /> Total Saídas (Débitos) - Projeção {anoProjecao}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-1.5">
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground">Valor (VL_DOC):</span>
-              <span className="text-sm font-bold">{formatCurrency(totaisSaidas.valor)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground">ICMS:</span>
-              <span className="text-sm font-bold">{formatCurrency(totaisSaidas.icms)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground">ICMS Projetado:</span>
-              <span className="text-sm font-bold">{formatCurrency(totaisSaidas.icmsProjetado)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground">PIS+COFINS:</span>
-              <span className="text-sm font-bold text-pis-cofins">{formatCurrency(totaisSaidas.pisCofins)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground">PIS+COFINS Projetado:</span>
-              <span className="text-sm font-bold text-pis-cofins">{formatCurrency(totaisSaidas.pisCofinsProjetado)}</span>
-            </div>
-            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
-              <span className="text-[10px] font-medium">Tot. Impostos Atuais:</span>
-              <span className="text-sm font-bold">{formatCurrency(totaisSaidas.totalImpostosAtuais)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground">Base IBS/CBS:</span>
-              <span className="text-sm font-bold">{formatCurrency(totaisSaidas.baseIbsCbs)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground">IBS Projetado:</span>
-              <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totaisSaidas.ibsProjetado)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground">CBS Projetado:</span>
-              <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totaisSaidas.cbsProjetado)}</span>
-            </div>
-            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
-              <span className="text-[10px] font-medium text-ibs-cbs">Total Reforma:</span>
-              <span className="text-sm font-bold text-ibs-cbs">{formatCurrency(totaisSaidas.totalReforma)}</span>
-            </div>
-            <div className="flex justify-between items-center bg-muted/30 -mx-2 px-2 py-0.5 rounded">
-              <span className="text-[10px] font-medium">Tot. Débitos:</span>
-              <span className="text-sm font-bold">{formatCurrency(totaisSaidas.totalImpostosPagar)}</span>
-            </div>
-            <div className="flex justify-between items-center pt-1 border-t">
-              <span className="text-[10px] text-muted-foreground">Dif. deb/cred.:</span>
-              <Badge variant={totaisSaidas.diferencaReal < 0 ? 'destructive' : 'default'} className={totaisSaidas.diferencaReal >= 0 ? 'bg-positive text-positive-foreground' : ''}>
-                {totaisSaidas.diferencaReal >= 0 ? '+' : ''}{formatCurrency(totaisSaidas.diferencaReal)}
-              </Badge>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
       <Card className="border-border/50">
         <Tabs defaultValue="entradas" className="w-full">
           <CardHeader>
@@ -700,6 +556,21 @@ export default function Mercadorias() {
           </CardContent>
         </Tabs>
       </Card>
+
+      <IbsCbsProjectionPanel 
+        filteredData={filteredData} 
+        aliquotas={aliquotas} 
+        anoProjecao={anoProjecao} 
+      />
+
+      <div className="mt-8 text-xs text-muted-foreground/50 flex gap-4 flex-wrap border-t pt-4">
+        <span>User: {debugInfo.user}</span>
+        <span>Rows: {debugInfo.rows}</span>
+        <span>Filiais: {debugInfo.filiais}</span>
+        <span>Entradas: {debugInfo.entradas}</span>
+        <span>Saidas: {debugInfo.saidas}</span>
+        <span>Sample: {debugInfo.sampleTipo || 'N/A'}</span>
+      </div>
 
     </div>
   );

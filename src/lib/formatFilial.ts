@@ -106,7 +106,7 @@ export function formatFilialDisplayFormatted(codEst: string | null | undefined, 
     return formattedCnpj ? `${codEst} - ${formattedCnpj}` : codEst;
   }
   
-  return formattedCnpj || '';
+  return formattedCnpj || 'Filial sem identificação';
 }
 
 /**
