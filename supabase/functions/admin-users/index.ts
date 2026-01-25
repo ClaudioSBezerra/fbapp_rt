@@ -39,12 +39,12 @@ serve(async (req) => {
 
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SERVICE_ROLE_KEY') ?? ''
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
     if (req.method === 'POST') {
-      const { email, password, full_name, role, tenant_id, empresa_ids } = await req.json()
-      
+      const { email, password, full_name, role, tenant_id, empresa_ids, recovery_city, recovery_dob } = await req.json()
+
       if (!email || !password || !tenant_id) {
         throw new Error('Email, password and tenant_id are required')
       }
@@ -67,7 +67,9 @@ serve(async (req) => {
           .insert({
             id: newUserId,
             email,
-            full_name
+            full_name,
+            recovery_city,
+            recovery_dob
           })
         if (profileError) throw profileError
 

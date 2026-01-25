@@ -56,30 +56,21 @@ Deno.serve(async (req) => {
     // Use service role client for all database operations (bypasses RLS)
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
 
-    // Verify user has admin role
-    const { data: roleData, error: roleError } = await supabaseAdmin
+    // Ensure user has admin role (since they are creating a new tenant)
+    console.log('Promoting user to admin:', user.id)
+    const { error: roleError } = await supabaseAdmin
       .from('user_roles')
-      .select('role')
-      .eq('user_id', user.id)
-      .maybeSingle()
+      .upsert({ user_id: user.id, role: 'admin' }, { onConflict: 'user_id' })
 
     if (roleError) {
-      console.error('Error checking user role:', roleError)
+      console.error('Error promoting user to admin:', roleError)
       return new Response(
-        JSON.stringify({ error: 'Erro ao verificar permissões' }),
+        JSON.stringify({ error: 'Erro ao atribuir permissões de administrador' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    if (roleData?.role !== 'admin') {
-      console.error('User is not admin:', user.id)
-      return new Response(
-        JSON.stringify({ error: 'Apenas administradores podem criar ambientes' }),
-        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-
-    console.log('User is admin, proceeding with onboarding')
+    console.log('User promoted to admin, proceeding with onboarding')
 
     // Parse request body
     const body: OnboardingRequest = await req.json()

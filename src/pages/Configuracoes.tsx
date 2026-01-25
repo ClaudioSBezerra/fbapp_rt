@@ -57,7 +57,9 @@ export default function Configuracoes() {
     password: '',
     fullName: '',
     role: 'user',
-    selectedEmpresas: [] as string[]
+    selectedEmpresas: [] as string[],
+    recoveryCity: '',
+    recoveryDob: ''
   });
   const [creatingUser, setCreatingUser] = useState(false);
 
@@ -361,7 +363,9 @@ export default function Configuracoes() {
           full_name: newUser.fullName,
           role: newUser.role,
           tenant_id: currentTenantId,
-          empresa_ids: newUser.selectedEmpresas
+          empresa_ids: newUser.selectedEmpresas,
+          recovery_city: newUser.recoveryCity,
+          recovery_dob: newUser.recoveryDob
         }
       });
 
@@ -374,7 +378,9 @@ export default function Configuracoes() {
         password: '',
         fullName: '',
         role: 'user',
-        selectedEmpresas: []
+        selectedEmpresas: [],
+        recoveryCity: '',
+        recoveryDob: ''
       });
       
       // Reload page to refresh list (simplest way to ensure all fetching logic runs again)
@@ -587,6 +593,28 @@ export default function Configuracoes() {
                         required 
                       />
                     </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="recoveryCity">Cidade Natal</Label>
+                        <Input 
+                          id="recoveryCity" 
+                          value={newUser.recoveryCity}
+                          onChange={(e) => setNewUser({...newUser, recoveryCity: e.target.value})}
+                          placeholder="Para recuperação de senha" 
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="recoveryDob">Data de Nascimento</Label>
+                        <Input 
+                          id="recoveryDob" 
+                          type="date"
+                          value={newUser.recoveryDob}
+                          onChange={(e) => setNewUser({...newUser, recoveryDob: e.target.value})}
+                        />
+                      </div>
+                    </div>
+
                     <div className="space-y-2">
                       <Label htmlFor="role">Função</Label>
                       <Select 

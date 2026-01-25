@@ -1,6 +1,18 @@
 project_id = "lfrkfthmlxrotqfrdmwq"
 
+[functions.admin-users]
+verify_jwt = false
+
 [functions.demo-signup]
+verify_jwt = false
+
+[functions.onboarding-complete]
+verify_jwt = false
+
+[functions.join-tenant]
+verify_jwt = false
+
+[functions.get-tenant-structure]
 verify_jwt = false
 
 [functions.parse-efd-icms]
