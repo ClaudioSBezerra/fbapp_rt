@@ -58,3 +58,6 @@ entrypoint = "./functions/parse-efd-v13/index.ts"
 
 [functions.process-efd-job]
 verify_jwt = false
+
+[functions.refresh-views]
+verify_jwt = false
