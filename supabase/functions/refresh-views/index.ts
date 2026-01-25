@@ -31,7 +31,7 @@ Deno.serve(async (req) => {
       auth: { persistSession: false }
     });
 
-    console.log("[refresh-views] Starting materialized views refresh...");
+    console.log("[refresh-views] Function invoked. Starting materialized views refresh...");
 
     // Try to acquire advisory lock to prevent concurrent refreshes
     // Lock ID 999888777 is arbitrary but should be unique for this operation
