@@ -104,6 +104,8 @@ export default function ImportarEFDIcms() {
   const [loadingPeriodos, setLoadingPeriodos] = useState(true);
   const [hasEfdContribuicoes, setHasEfdContribuicoes] = useState(false);
   const [currentUploadPath, setCurrentUploadPath] = useState<string>('');
+  const [activeBatchIds, setActiveBatchIds] = useState<string[]>([]);
+  const [waitingForBatchCompletion, setWaitingForBatchCompletion] = useState(false);
   
   // States for clearing database
   const [isClearing, setIsClearing] = useState(false);
@@ -173,7 +175,7 @@ export default function ImportarEFDIcms() {
       .eq('user_id', session.user.id)
       .eq('import_scope', 'icms_uso_consumo')
       .order('created_at', { ascending: false })
-      .limit(10);
+      .limit(50);
     
     if (data) {
       setJobs(data.map(job => ({
@@ -215,7 +217,7 @@ export default function ImportarEFDIcms() {
               ...newJob,
               counts: (newJob.counts || {}) as ImportCounts,
               status: newJob.status as ImportJob['status'],
-            }, ...prev].slice(0, 10));
+            }, ...prev].slice(0, 50));
           } else if (payload.eventType === 'UPDATE') {
             const updatedJob = payload.new as any;
             setJobs(prev => prev.map(job => 
@@ -326,9 +328,9 @@ export default function ImportarEFDIcms() {
 
   // Trigger parse-efd-icms after upload
   const triggerParseEfdIcms = useCallback(async (file: File, filePath: string) => {
-    if (!selectedEmpresa || !session) return;
+    if (!selectedEmpresa || !session) return null;
     
-    setProcessingImport(true);
+    // setProcessingImport(true); // Managed by handleStartImport now
     
     try {
       console.log('Calling parse-efd-icms for:', filePath);
@@ -377,21 +379,24 @@ export default function ImportarEFDIcms() {
         throw new Error(data.error);
       }
 
-      // setSelectedFile(null); // Removed as we handle multiple
-      // setCurrentUploadPath(''); // Removed
-      // resetUpload(); // Handled in loop
-      toast.success(`Importação iniciada para ${file.name}!`);
+      // toast.success(`Importação iniciada para ${file.name}!`); // Reduced noise
+      return data.job_id; // Return job ID for tracking
+
     } catch (error) {
       console.error('Error starting import:', error);
       const errorMessage = error instanceof Error ? error.message : 'Erro ao iniciar importação';
       toast.error(errorMessage);
+      return null;
     } finally {
-      setProcessingImport(false);
+      // setProcessingImport(false);
     }
   }, [selectedEmpresa, session]);
 
   const handleStartImport = async () => {
     if (selectedFiles.length === 0 || !selectedEmpresa || !session) return;
+
+    setProcessingImport(true);
+    const newBatchIds: string[] = [];
 
     try {
       for (let i = 0; i < selectedFiles.length; i++) {
@@ -402,19 +407,24 @@ export default function ImportarEFDIcms() {
         const filePath = `${session.user.id}/${timestamp}_icms_${file.name}`;
         setCurrentUploadPath(filePath);
         
-        toast.info(`Iniciando upload ${i + 1}/${selectedFiles.length}: ${file.name}`);
+        toast.info(`Enviando arquivo ${i + 1}/${selectedFiles.length}: ${file.name}`);
         
         await startUpload(file, filePath);
-        await triggerParseEfdIcms(file, filePath);
+        const jobId = await triggerParseEfdIcms(file, filePath);
+        
+        if (jobId) {
+          newBatchIds.push(jobId);
+        }
         
         resetUpload();
       }
       
-      toast.success('Todos os arquivos foram processados!');
-      
-      // Auto-refresh views
-      if (handleRefreshViews) {
-        await handleRefreshViews();
+      if (newBatchIds.length > 0) {
+        setActiveBatchIds(newBatchIds);
+        setWaitingForBatchCompletion(true);
+        toast.success(`Todos os arquivos enviados! Aguardando processamento para atualizar painéis...`);
+      } else {
+        toast.error('Nenhum arquivo foi enviado com sucesso.');
       }
 
       setSelectedFiles([]);
@@ -427,6 +437,8 @@ export default function ImportarEFDIcms() {
     } catch (error) {
       console.error('Error in batch import:', error);
       toast.error('Erro durante a importação em lote. Processo interrompido.');
+    } finally {
+      setProcessingImport(false);
     }
   };
 

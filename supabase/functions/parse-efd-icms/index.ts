@@ -55,63 +55,57 @@ serve(async (req) => {
   }
 
   try {
-    // Auth check
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(
-        JSON.stringify({ error: "Authorization header required" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    // Auth check - Standard pattern for Edge Functions
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
+    )
+
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser()
+    
+    let userId: string | undefined;
+    let isAdmin = false;
+
+    if (authError || !user) {
+        // Fallback: Check if it's a service role call (for admin tasks or internal calls)
+        const token = req.headers.get('Authorization')?.replace('Bearer ', '');
+        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+        
+        if (token === supabaseKey) {
+            isAdmin = true;
+            console.log("Authenticated as Service Role (Exact Match)");
+        } else {
+             // Check JWT role claim directly if getUser failed but token might be valid service role
+             try {
+                if (token) {
+                    const parts = token.split('.');
+                    if (parts.length === 3) {
+                        const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+                        if (payload.role === 'service_role') {
+                            isAdmin = true;
+                            console.log("Authenticated as Service Role (Claim Match)");
+                        }
+                    }
+                }
+             } catch (e) { /* ignore */ }
+        }
+
+        if (!isAdmin) {
+             console.error("Auth error:", authError);
+             return new Response(
+                JSON.stringify({ error: "Unauthorized", details: authError?.message }),
+                { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+             );
+        }
+    } else {
+        userId = user.id;
     }
 
+    // Initialize Admin Client for database operations (RLS bypass)
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
-
-    const token = authHeader.replace("Bearer ", "");
-    
-    // Check if it's the service role key
-    let userId: string | undefined;
-
-    if (token === supabaseKey) {
-      // Proceed as admin
-      console.log("Authenticated as Service Role (Exact Match)");
-    } else {
-      // Fallback: Check if it's a valid Service Role JWT (Bypassing exact match for dev/mismatch scenarios)
-      try {
-        const parts = token.split('.');
-        if (parts.length === 3) {
-           const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
-           if (payload.role === 'service_role') {
-             console.log("Authenticated as Service Role (Claim Match)");
-             // It is a service role token, so we proceed.
-           } else {
-             throw new Error("Not a service role");
-           }
-        } else {
-          throw new Error("Invalid JWT format");
-        }
-      } catch (e) {
-        // Not a service role JWT, try getUser
-        const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-
-        if (authError || !user) {
-          console.error("Auth error:", authError);
-          return new Response(
-            JSON.stringify({ 
-              error: "Invalid token", 
-              details: {
-                msg: "Auth failed and not a service role",
-                tokenLen: token.length,
-                expectedLen: supabaseKey.length
-              }
-            }),
-            { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-          );
-        }
-        userId = user.id;
-      }
-    }
 
     // Get metadata from JSON body (file already uploaded by frontend)
     const body = await req.json();

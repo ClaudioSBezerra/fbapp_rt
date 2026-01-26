@@ -363,8 +363,8 @@ export default function UsoConsumoImobilizado() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+      {/* Header e Filtros */}
+      <div className="space-y-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Uso e Consumo / Imobilizado</h1>
           <p className="text-sm text-muted-foreground">
@@ -372,9 +372,9 @@ export default function UsoConsumoImobilizado() {
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-wrap gap-3 p-4 bg-muted/30 rounded-lg border">
           <Select value={mesAnoSelecionado} onValueChange={setMesAnoSelecionado}>
-            <SelectTrigger className="w-[140px]">
+            <SelectTrigger className="w-[140px] bg-background">
               <SelectValue placeholder="Período" />
             </SelectTrigger>
             <SelectContent>
@@ -388,7 +388,7 @@ export default function UsoConsumoImobilizado() {
           </Select>
 
           <Select value={filialSelecionada} onValueChange={setFilialSelecionada}>
-            <SelectTrigger className="w-[220px]">
+            <SelectTrigger className="w-[220px] bg-background">
               <SelectValue placeholder="Filial" />
             </SelectTrigger>
             <SelectContent>
@@ -402,7 +402,7 @@ export default function UsoConsumoImobilizado() {
           </Select>
 
           <Select value={participanteSelecionado} onValueChange={setParticipanteSelecionado}>
-            <SelectTrigger className="w-[200px]">
+            <SelectTrigger className="w-[200px] bg-background">
               <SelectValue placeholder="Participante" />
             </SelectTrigger>
             <SelectContent>
@@ -416,7 +416,7 @@ export default function UsoConsumoImobilizado() {
           </Select>
 
           <Select value={cfopSelecionado} onValueChange={setCfopSelecionado}>
-            <SelectTrigger className="w-[120px]">
+            <SelectTrigger className="w-[120px] bg-background">
               <SelectValue placeholder="CFOP" />
             </SelectTrigger>
             <SelectContent>
@@ -429,7 +429,7 @@ export default function UsoConsumoImobilizado() {
           </Select>
 
           <Select value={String(anoProjecao)} onValueChange={v => setAnoProjecao(Number(v))}>
-            <SelectTrigger className="w-[100px]">
+            <SelectTrigger className="w-[100px] bg-background">
               <SelectValue placeholder="Ano" />
             </SelectTrigger>
             <SelectContent>
@@ -439,7 +439,7 @@ export default function UsoConsumoImobilizado() {
             </SelectContent>
           </Select>
 
-          <Button variant="outline" onClick={handleExport} disabled={dadosFiltrados.length === 0}>
+          <Button variant="outline" onClick={handleExport} disabled={dadosFiltrados.length === 0} className="bg-background">
             <Download className="h-4 w-4 mr-2" />
             Exportar
           </Button>
