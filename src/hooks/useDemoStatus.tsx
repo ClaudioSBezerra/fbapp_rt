@@ -51,7 +51,10 @@ export function useDemoStatus() {
       });
 
       if (error) {
-        console.error('Error fetching demo status:', error);
+        // Ignore "function not found" error (PGRST202) which happens before migration is applied
+        if (error.code !== 'PGRST202') {
+          console.error('Error fetching demo status:', error);
+        }
         return {
           isDemo: false,
           daysRemaining: 0,

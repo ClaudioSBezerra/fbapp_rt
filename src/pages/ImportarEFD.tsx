@@ -501,19 +501,34 @@ export default function ImportarEFD() {
 
       if (response.error) {
         console.error('Edge Function Error:', response.error);
+        let detailedError = response.error.message || 'Erro ao iniciar importação';
+        
         try {
           // Try to read the error body if available
-          if (response.error.context && typeof response.error.context.text === 'function') {
-             const errorBody = await response.error.context.text();
-             console.error('Edge Function Error Body:', errorBody);
-             toast.error(`Erro na função: ${errorBody.substring(0, 100)}`);
+          if (response.error.context && typeof response.error.context.json === 'function') {
+             const errorBody = await response.error.context.json();
+             console.error('Edge Function Error Body (JSON):', errorBody);
+             if (errorBody && errorBody.error) {
+               detailedError = errorBody.error;
+             }
+          } else if (response.error.context && typeof response.error.context.text === 'function') {
+             const errorText = await response.error.context.text();
+             console.error('Edge Function Error Body (Text):', errorText);
+             // Try to parse if it looks like JSON
+             try {
+               const jsonBody = JSON.parse(errorText);
+               if (jsonBody.error) detailedError = jsonBody.error;
+             } catch {
+               if (errorText.length < 200) detailedError = errorText;
+             }
           }
         } catch (e) {
           console.error('Failed to read error body:', e);
         }
+        
         // DO NOT delete the file on error, so we can debug
         // await supabase.storage.from('efd-files').remove([filePath]);
-        throw new Error(response.error.message || 'Erro ao iniciar importação');
+        throw new Error(detailedError);
       }
 
       const data = response.data;

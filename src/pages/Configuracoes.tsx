@@ -611,50 +611,24 @@ export default function Configuracoes() {
                     
                     <div className="space-y-2">
                       <Label>Vincular a Empresas</Label>
-                      <Popover open={openCombobox} onOpenChange={setOpenCombobox}>
-                        <PopoverTrigger asChild>
-                          <Button
-                            variant="outline"
-                            role="combobox"
-                            aria-expanded={openCombobox}
-                            className="w-full justify-between"
-                          >
-                            {newUser.selectedEmpresas.length > 0
-                              ? `${newUser.selectedEmpresas.length} empresa(s) selecionada(s)`
-                              : "Selecione as empresas"}
-                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-[460px] p-0" align="start">
-                          <Command>
-                            <CommandInput placeholder="Buscar empresa..." />
-                            <CommandList>
-                              <CommandEmpty>Nenhuma empresa encontrada.</CommandEmpty>
-                              <CommandGroup>
-                                {empresas.map((empresa) => (
-                                  <CommandItem
-                                    key={empresa.id}
-                                    value={empresa.nome}
-                                    onSelect={() => {
-                                      handleToggleNewUserEmpresa(empresa.id, !newUser.selectedEmpresas.includes(empresa.id));
-                                    }}
-                                  >
-                                    <Check
-                                      className={cn(
-                                        "mr-2 h-4 w-4",
-                                        newUser.selectedEmpresas.includes(empresa.id)
-                                          ? "opacity-100"
-                                          : "opacity-0"
-                                      )}
-                                    />
-                                    {empresa.nome}
-                                  </CommandItem>
-                                ))}
-                              </CommandGroup>
-                            </CommandList>
-                          </Command>
-                        </PopoverContent>
-                      </Popover>
+                      <div className="border rounded-md p-4 max-h-[200px] overflow-y-auto space-y-2">
+                        {empresas.map((empresa) => (
+                          <div key={empresa.id} className="flex items-center space-x-2">
+                            <Checkbox 
+                              id={`new-emp-${empresa.id}`} 
+                              checked={newUser.selectedEmpresas.includes(empresa.id)}
+                              onCheckedChange={(checked) => handleToggleNewUserEmpresa(empresa.id, checked as boolean)}
+                              className="rounded data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
+                            />
+                            <label 
+                              htmlFor={`new-emp-${empresa.id}`}
+                              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer w-full py-1"
+                            >
+                              {empresa.nome}
+                            </label>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                     
                     <DialogFooter>
