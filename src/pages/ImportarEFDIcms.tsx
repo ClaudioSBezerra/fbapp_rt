@@ -217,7 +217,7 @@ export default function ImportarEFDIcms() {
               ...newJob,
               counts: (newJob.counts || {}) as ImportCounts,
               status: newJob.status as ImportJob['status'],
-            }, ...prev].slice(0, 50));
+            }, ...prev].slice(0, 200));
           } else if (payload.eventType === 'UPDATE') {
             const updatedJob = payload.new as any;
             setJobs(prev => prev.map(job => 
@@ -275,7 +275,135 @@ export default function ImportarEFDIcms() {
     loadPeriodos();
   }, [selectedEmpresa]);
 
-  const handleRefreshViews = async () => {
+  // Batch finalization sequence
+  const handleCleanupBatch = async (batchIds: string[]) => {
+    if (batchIds.length === 0) return;
+
+    try {
+      toast.info('Limpando arquivos temporários...');
+
+      // 1. Get file paths for these jobs to delete from storage
+      const { data: jobsToClean, error: fetchError } = await supabase
+        .from('import_jobs')
+        .select('id, file_path')
+        .in('id', batchIds);
+
+      if (fetchError) {
+        console.error('Error fetching jobs for cleanup:', fetchError);
+        return;
+      }
+
+      if (jobsToClean && jobsToClean.length > 0) {
+        // 2. Delete files from storage
+        const filePaths = jobsToClean.map(j => j.file_path);
+        const { error: storageError } = await supabase.storage
+          .from('efd-files')
+          .remove(filePaths);
+
+        if (storageError) {
+          console.error('Error deleting files from storage:', storageError);
+          toast.error('Erro ao excluir arquivos temporários do storage.');
+        }
+
+        // 3. Delete jobs from database
+        const { error: dbError } = await supabase
+          .from('import_jobs')
+          .delete()
+          .in('id', batchIds);
+
+        if (dbError) {
+          console.error('Error deleting jobs from db:', dbError);
+          toast.error('Erro ao limpar histórico de jobs.');
+        } else {
+          toast.success('Limpeza concluída! Arquivos temporários removidos.');
+        }
+      }
+    } catch (err) {
+      console.error('Error during batch cleanup:', err);
+      toast.error('Erro inesperado durante a limpeza.');
+    }
+  };
+
+  const finalizeBatch = async (batchIds: string[]) => {
+    // 1. Refresh Views
+    const refreshSuccess = await handleRefreshViews();
+    
+    // 2. If refresh successful, cleanup
+    if (refreshSuccess) {
+      await handleCleanupBatch(batchIds);
+    } else {
+      toast.warning('Limpeza abortada devido a erro na atualização das views.');
+    }
+
+    // 3. Reset batch state
+    setActiveBatchIds([]);
+  };
+
+  // Watchdog / Polling para garantir atualização mesmo sem realtime
+  useEffect(() => {
+    if (activeBatchIds.length === 0) return;
+
+    const interval = setInterval(async () => {
+       const { data, error } = await supabase
+         .from('import_jobs')
+         .select('*')
+         .in('id', activeBatchIds);
+       
+       if (data) {
+          setJobs(prev => {
+            const newJobs = [...prev];
+            data.forEach(updatedJob => {
+              const index = newJobs.findIndex(j => j.id === updatedJob.id);
+              if (index !== -1) {
+                newJobs[index] = {
+                  ...updatedJob,
+                  counts: (updatedJob.counts || {}) as ImportCounts,
+                  status: updatedJob.status as ImportJob['status'],
+                };
+              }
+            });
+            return newJobs;
+          });
+       }
+    }, 5000); // 5 segundos
+
+    return () => clearInterval(interval);
+  }, [activeBatchIds]);
+
+  // Monitor batch completion
+  useEffect(() => {
+    if (!waitingForBatchCompletion || activeBatchIds.length === 0) return;
+
+    const allCompleted = activeBatchIds.every(id => {
+      const job = jobs.find(j => j.id === id);
+      // If job is not in the list (maybe older than limit), we assume it's done or we can't track it.
+      // But with 50 limit it should be fine. If not found, better not to hang.
+      // However, if it's not found, we don't know status.
+      // Let's assume if not found it might be 'completed' or 'lost'.
+      // Safer: fetch status from DB if not found? 
+      // For now, let's rely on the list.
+      return job && (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled');
+    });
+
+    if (allCompleted) {
+      console.log('All batch jobs finished. Starting finalization sequence...');
+      setWaitingForBatchCompletion(false);
+      
+      const hasSuccess = activeBatchIds.some(id => {
+        const job = jobs.find(j => j.id === id);
+        return job && job.status === 'completed';
+      });
+
+      if (hasSuccess) {
+        finalizeBatch(activeBatchIds);
+      } else {
+        setActiveBatchIds([]);
+        toast.error('Nenhum arquivo foi importado com sucesso. Views não atualizadas.');
+      }
+    }
+  }, [jobs, activeBatchIds, waitingForBatchCompletion]);
+
+  const handleRefreshViews = async (): Promise<boolean> => {
     setRefreshingViews(true);
     
     try {
@@ -305,12 +433,13 @@ export default function ImportarEFDIcms() {
         console.error('Refresh failed:', result);
         toast.error(result.error || 'Falha ao atualizar views.');
         setViewsStatus('empty');
-        return;
+        return false;
       }
       
       console.log('Refresh completed:', result);
       toast.success(`Painéis atualizados com sucesso! (${result.duration_ms}ms)`);
       setViewsStatus('ok');
+      return true;
       
     } catch (err: any) {
       console.error('Failed to refresh views:', err);
@@ -321,6 +450,7 @@ export default function ImportarEFDIcms() {
         toast.error('Falha ao atualizar views. Tente novamente.');
       }
       setViewsStatus('empty');
+      return false;
     } finally {
       setRefreshingViews(false);
     }
