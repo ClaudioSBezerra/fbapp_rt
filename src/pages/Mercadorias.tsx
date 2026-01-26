@@ -293,6 +293,7 @@ export default function Mercadorias() {
       const rpcParams = { p_user_id: user?.id || null };
       console.log('Fetching aggregated data with params:', rpcParams);
       
+      // @ts-ignore: Types not yet generated for this RPC function
       const { data: aggregatedResult, error } = await supabase.rpc('get_mv_mercadorias_aggregated', rpcParams);
       
       if (error) {
