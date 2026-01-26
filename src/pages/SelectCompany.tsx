@@ -5,6 +5,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { Building2, LogOut, Loader2 } from 'lucide-react';
 import { useRole } from '@/hooks/useRole';
 
@@ -120,19 +121,21 @@ export default function SelectCompany() {
                 <p className="text-sm mt-2">Entre em contato com o administrador.</p>
              </div>
           ) : (
-             <div className="space-y-2">
-                {empresas.map((empresa) => (
-                  <Button
-                    key={empresa.id}
-                    variant="outline"
-                    className="w-full justify-start h-auto py-4 text-left hover:bg-muted/50 transition-colors"
-                    onClick={() => handleSelect(empresa.id)}
-                  >
-                    <Building2 className="h-5 w-5 mr-3 text-muted-foreground" />
-                    <span className="font-medium">{empresa.nome}</span>
-                  </Button>
-                ))}
-             </div>
+             <ScrollArea className="h-[300px] w-full pr-4 rounded-md border p-2">
+               <div className="space-y-2">
+                  {empresas.map((empresa) => (
+                    <Button
+                      key={empresa.id}
+                      variant="outline"
+                      className="w-full justify-start h-auto py-4 text-left hover:bg-muted/50 transition-colors"
+                      onClick={() => handleSelect(empresa.id)}
+                    >
+                      <Building2 className="h-5 w-5 mr-3 text-muted-foreground" />
+                      <span className="font-medium">{empresa.nome}</span>
+                    </Button>
+                  ))}
+               </div>
+             </ScrollArea>
           )}
           
           <div className="pt-4 border-t mt-4">

@@ -607,7 +607,7 @@ export default function Configuracoes() {
                     
                     <div className="space-y-2">
                       <Label>Vincular a Empresas</Label>
-                      <div className="border rounded-md p-3 space-y-2 max-h-40 overflow-y-auto">
+                      <div className="border rounded-md p-3 space-y-2 max-h-60 overflow-y-auto">
                         {empresas.length === 0 ? (
                           <p className="text-sm text-muted-foreground">Nenhuma empresa cadastrada.</p>
                         ) : (
