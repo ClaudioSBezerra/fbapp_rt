@@ -128,9 +128,16 @@ export default function UsoConsumoImobilizado() {
       if (filialSelecionada !== 'todas' && row.filial_id !== filialSelecionada) return false;
       if (mesAnoSelecionado !== 'todos' && !row.mes_ano.startsWith(mesAnoSelecionado)) return false;
       if (cfopSelecionado !== 'todos' && row.cfop !== cfopSelecionado) return false;
+      if (participanteSelecionado !== 'todos' && row.participante_nome !== participanteSelecionado) return false;
       return true;
     });
-  }, [data, filialSelecionada, mesAnoSelecionado, cfopSelecionado]);
+  }, [data, filialSelecionada, mesAnoSelecionado, cfopSelecionado, participanteSelecionado]);
+
+  // Extrair lista de participantes únicos
+  const participantesUnicos = useMemo(() => {
+    const parts = new Set(data.map(r => r.participante_nome).filter(Boolean));
+    return Array.from(parts).sort();
+  }, [data]);
 
   // Separar por tipo
   const dadosImobilizado = useMemo(() => 
@@ -388,6 +395,20 @@ export default function UsoConsumoImobilizado() {
               {filiais.map(f => (
                 <SelectItem key={f.id} value={f.id}>
                   {formatFilialDisplayFormatted(f.cod_est, f.cnpj)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={participanteSelecionado} onValueChange={setParticipanteSelecionado}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="Participante" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todos os participantes</SelectItem>
+              {participantesUnicos.map(p => (
+                <SelectItem key={p} value={p}>
+                  {p as string}
                 </SelectItem>
               ))}
             </SelectContent>

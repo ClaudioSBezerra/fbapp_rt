@@ -33,8 +33,8 @@ interface AggregatedRow {
   mes_ano: string;
   valor: number;
   icms: number;
-  pis: number;
-  cofins: number;
+  participante_nome: string;
+  participante_cnpj: string;
 }
 
 const ANOS_PROJECAO = [2027, 2028, 2029, 2030, 2031, 2032, 2033];
@@ -53,6 +53,7 @@ export default function DashboardUsoConsumo() {
   const [periodosDisponiveis, setPeriodosDisponiveis] = useState<string[]>([]);
   const [periodoSelecionado, setPeriodoSelecionado] = useState<string>('');
   const [filialSelecionada, setFilialSelecionada] = useState<string>('todas');
+  const [participanteSelecionado, setParticipanteSelecionado] = useState<string>('todos');
   const [anoProjecao, setAnoProjecao] = useState<number>(2027);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -108,14 +109,21 @@ export default function DashboardUsoConsumo() {
     fetchData();
   }, []);
 
-  // Filtrar dados pelo período e filial
+  // Filtrar dados pelo período, filial e participante
   const dadosFiltrados = useMemo(() => {
     return data.filter(row => {
       if (periodoSelecionado && !row.mes_ano.startsWith(periodoSelecionado)) return false;
       if (filialSelecionada !== 'todas' && row.filial_id !== filialSelecionada) return false;
+      if (participanteSelecionado !== 'todos' && row.participante_nome !== participanteSelecionado) return false;
       return true;
     });
-  }, [data, periodoSelecionado, filialSelecionada]);
+  }, [data, periodoSelecionado, filialSelecionada, participanteSelecionado]);
+
+  // Extrair lista de participantes únicos
+  const participantesUnicos = useMemo(() => {
+    const parts = new Set(data.map(r => r.participante_nome).filter(Boolean));
+    return Array.from(parts).sort();
+  }, [data]);
 
   // Calcular totais
   const totais = useMemo(() => {
@@ -251,6 +259,20 @@ export default function DashboardUsoConsumo() {
               {filiais.map(f => (
                 <SelectItem key={f.id} value={f.id}>
                   {formatFilialDisplayFormatted(f.cod_est, f.cnpj)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={participanteSelecionado} onValueChange={setParticipanteSelecionado}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="Participante" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todos os participantes</SelectItem>
+              {participantesUnicos.map(p => (
+                <SelectItem key={p} value={p}>
+                  {p}
                 </SelectItem>
               ))}
             </SelectContent>
