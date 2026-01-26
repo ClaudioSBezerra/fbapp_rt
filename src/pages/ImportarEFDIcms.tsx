@@ -224,7 +224,7 @@ export default function ImportarEFDIcms() {
               job.id === updatedJob.id 
                 ? {
                     ...updatedJob,
-                    counts: (updatedJob.counts || {}) as ImportCounts,
+                    counts: (updatedJob.counts || {}) as unknown as ImportCounts,
                     status: updatedJob.status as ImportJob['status'],
                   }
                 : job
@@ -357,7 +357,7 @@ export default function ImportarEFDIcms() {
               if (index !== -1) {
                 newJobs[index] = {
                   ...updatedJob,
-                  counts: (updatedJob.counts || {}) as ImportCounts,
+                  counts: (updatedJob.counts || {}) as unknown as ImportCounts,
                   status: updatedJob.status as ImportJob['status'],
                 };
               }
