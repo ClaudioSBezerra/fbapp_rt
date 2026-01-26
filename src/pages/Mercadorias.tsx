@@ -286,11 +286,18 @@ export default function Mercadorias() {
       }
 
       // Use Materialized View for aggregated data (instant load)
-      const { data: aggregatedResult, error } = await supabase.rpc('get_mv_mercadorias_aggregated');
+      // Pass user.id explicitly to ensure RLS context is correct
+      // Handle potential undefined user.id by passing null explicitly if needed, 
+      // but Supabase handles undefined params by ignoring them or sending null usually.
+      // We force null to be safe if user is not fully loaded yet.
+      const rpcParams = { p_user_id: user?.id || null };
+      console.log('Fetching aggregated data with params:', rpcParams);
+      
+      const { data: aggregatedResult, error } = await supabase.rpc('get_mv_mercadorias_aggregated', rpcParams);
       
       if (error) {
         console.error('Error fetching aggregated mercadorias:', error);
-        toast.error('Erro ao carregar mercadorias');
+        toast.error(`Erro ao carregar dados: ${error.message}`);
         return;
       }
 
@@ -416,14 +423,7 @@ export default function Mercadorias() {
   };
 
 
-  const debugInfo = useMemo(() => ({
-    user: user?.id?.slice(-4),
-    rows: aggregatedData.length,
-    filiais: filiais.length,
-    entradas: entradasAgregadas.length,
-    saidas: saidasAgregadas.length,
-    sampleTipo: aggregatedData[0]?.tipo
-  }), [user, aggregatedData, filiais, entradasAgregadas, saidasAgregadas]);
+
 
   return (
     <div className="space-y-4 p-2 sm:p-4 pb-24">
@@ -562,15 +562,6 @@ export default function Mercadorias() {
         aliquotas={aliquotas} 
         anoProjecao={anoProjecao} 
       />
-
-      <div className="mt-8 text-xs text-muted-foreground/50 flex gap-4 flex-wrap border-t pt-4">
-        <span>User: {debugInfo.user}</span>
-        <span>Rows: {debugInfo.rows}</span>
-        <span>Filiais: {debugInfo.filiais}</span>
-        <span>Entradas: {debugInfo.entradas}</span>
-        <span>Saidas: {debugInfo.saidas}</span>
-        <span>Sample: {debugInfo.sampleTipo || 'N/A'}</span>
-      </div>
 
     </div>
   );
