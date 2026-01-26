@@ -96,7 +96,7 @@ export function IbsCbsProjectionPanel({ filteredData, aliquotas, anoProjecao }: 
   }, [totaisEntradas, totaisSaidas]);
 
   return (
-    <Card className="border-border/50 mt-8">
+    <Card className="border-border/50">
       <CardHeader>
         <CardTitle className="text-lg font-bold">Projeção Apuração IBS/CBS</CardTitle>
       </CardHeader>

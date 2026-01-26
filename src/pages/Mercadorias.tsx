@@ -443,7 +443,7 @@ export default function Mercadorias() {
               className="bg-blue-600 hover:bg-blue-700 text-white px-3"
             >
               <RefreshCw className={`h-3.5 w-3.5 mr-2 ${refreshingViews ? 'animate-spin' : ''}`} />
-              Projeção de apuração novos impostos
+              Atualizar a VIEW de resultados
             </Button>
           </div>
         </div>
@@ -467,6 +467,9 @@ export default function Mercadorias() {
               <Building2 className="h-5 w-5 text-primary mt-0.5" />
               <div>
                 <p className="text-sm font-medium">Nenhuma filial cadastrada</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Para começar, importe um arquivo EFD Contribuições. As filiais serão cadastradas automaticamente.
+                </p>
                 <p className="text-xs text-muted-foreground mt-1">
                   Use o botão "Importar EFD" no cabeçalho para criar automaticamente a filial.
                 </p>
@@ -534,6 +537,12 @@ export default function Mercadorias() {
         </CardContent>
       </Card>
 
+      <IbsCbsProjectionPanel 
+        filteredData={filteredData} 
+        aliquotas={aliquotas} 
+        anoProjecao={anoProjecao} 
+      />
+
       <Card className="border-border/50">
         <Tabs defaultValue="entradas" className="w-full">
           <CardHeader>
@@ -556,12 +565,6 @@ export default function Mercadorias() {
           </CardContent>
         </Tabs>
       </Card>
-
-      <IbsCbsProjectionPanel 
-        filteredData={filteredData} 
-        aliquotas={aliquotas} 
-        anoProjecao={anoProjecao} 
-      />
 
     </div>
   );
