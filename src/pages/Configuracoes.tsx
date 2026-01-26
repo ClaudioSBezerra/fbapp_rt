@@ -7,11 +7,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { useAuth } from '@/hooks/useAuth';
 import { useRole } from '@/hooks/useRole';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Settings, User, Shield, Building2, Users, Save, Loader2, Lock, Eye, EyeOff, Trash2, AlertTriangle, Plus, UserPlus } from 'lucide-react';
+import { cn } from "@/lib/utils";
+import { Settings, User, Shield, Building2, Users, Save, Loader2, Lock, Eye, EyeOff, Trash2, AlertTriangle, Plus, UserPlus, Check, ChevronsUpDown } from 'lucide-react';
 
 interface UserEmpresa {
   user_id: string;
@@ -62,6 +65,7 @@ export default function Configuracoes() {
     recoveryDob: ''
   });
   const [creatingUser, setCreatingUser] = useState(false);
+  const [openCombobox, setOpenCombobox] = useState(false);
 
   // Password change state
   const [showPasswordForm, setShowPasswordForm] = useState(false);
@@ -607,27 +611,50 @@ export default function Configuracoes() {
                     
                     <div className="space-y-2">
                       <Label>Vincular a Empresas</Label>
-                      <div className="border rounded-md p-3 space-y-2 max-h-60 overflow-y-auto">
-                        {empresas.length === 0 ? (
-                          <p className="text-sm text-muted-foreground">Nenhuma empresa cadastrada.</p>
-                        ) : (
-                          empresas.map((empresa) => (
-                            <div key={empresa.id} className="flex items-center space-x-2">
-                              <Checkbox 
-                                id={`new-emp-${empresa.id}`} 
-                                checked={newUser.selectedEmpresas.includes(empresa.id)}
-                                onCheckedChange={(checked) => handleToggleNewUserEmpresa(empresa.id, checked as boolean)}
-                              />
-                              <label 
-                                htmlFor={`new-emp-${empresa.id}`}
-                                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-                              >
-                                {empresa.nome}
-                              </label>
-                            </div>
-                          ))
-                        )}
-                      </div>
+                      <Popover open={openCombobox} onOpenChange={setOpenCombobox}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            role="combobox"
+                            aria-expanded={openCombobox}
+                            className="w-full justify-between"
+                          >
+                            {newUser.selectedEmpresas.length > 0
+                              ? `${newUser.selectedEmpresas.length} empresa(s) selecionada(s)`
+                              : "Selecione as empresas"}
+                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[460px] p-0" align="start">
+                          <Command>
+                            <CommandInput placeholder="Buscar empresa..." />
+                            <CommandList>
+                              <CommandEmpty>Nenhuma empresa encontrada.</CommandEmpty>
+                              <CommandGroup>
+                                {empresas.map((empresa) => (
+                                  <CommandItem
+                                    key={empresa.id}
+                                    value={empresa.nome}
+                                    onSelect={() => {
+                                      handleToggleNewUserEmpresa(empresa.id, !newUser.selectedEmpresas.includes(empresa.id));
+                                    }}
+                                  >
+                                    <Check
+                                      className={cn(
+                                        "mr-2 h-4 w-4",
+                                        newUser.selectedEmpresas.includes(empresa.id)
+                                          ? "opacity-100"
+                                          : "opacity-0"
+                                      )}
+                                    />
+                                    {empresa.nome}
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
                     </div>
                     
                     <DialogFooter>
