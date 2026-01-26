@@ -33,6 +33,8 @@ interface AggregatedRow {
   mes_ano: string;
   valor: number;
   icms: number;
+  pis: number;
+  cofins: number;
   participante_nome: string;
   participante_cnpj: string;
 }

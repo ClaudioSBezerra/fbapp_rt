@@ -476,8 +476,48 @@ export default function ImportarEFDIcms() {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
-    const file = e.dataTransfer.files[0];
-    if (file) handleFileSelect(file);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleFileSelect(e.dataTransfer.files);
+    }
+  };
+
+  const handleClearDatabase = async () => {
+    if (!session?.user?.id) return;
+    
+    setIsClearing(true);
+    setStatusMessage('Iniciando limpeza...');
+    setClearProgress({ status: 'counting', currentTable: 'Import Jobs', estimated: 0, deleted: 0 });
+    
+    try {
+      // 1. Delete import jobs (this is the main tracking mechanism)
+      const { error: jobsError } = await supabase
+        .from('import_jobs')
+        .delete()
+        .eq('import_scope', 'icms_uso_consumo')
+        .eq('user_id', session.user.id); // Safer to limit by user for now
+
+      if (jobsError) throw jobsError;
+      
+      setStatusMessage('Limpando registros...');
+      
+      // 2. We should ideally clear uso_consumo_imobilizado too, but without a specific RPC 
+      // or clear relation to user/empresa (it uses filial_id), it's risky to do it client-side 
+      // without more context. For now we clear the jobs which hides them from the list.
+      // If we had the list of filial_ids for this user, we could do:
+      // await supabase.from('uso_consumo_imobilizado').delete().in('filial_id', userFilialIds)
+      
+      setClearProgress({ status: 'done', currentTable: 'Concluído', estimated: 100, deleted: 100 });
+      toast.success('Histórico de importação limpo com sucesso!');
+      
+      // Refresh list
+      loadJobs();
+      
+    } catch (error: any) {
+      console.error('Error clearing database:', error);
+      toast.error(`Erro ao limpar: ${error.message}`);
+    } finally {
+      setIsClearing(false);
+    }
   };
 
   return (

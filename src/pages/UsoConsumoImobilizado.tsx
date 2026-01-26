@@ -69,6 +69,7 @@ export default function UsoConsumoImobilizado() {
   const [filialSelecionada, setFilialSelecionada] = useState<string>('todas');
   const [mesAnoSelecionado, setMesAnoSelecionado] = useState<string>('todos');
   const [cfopSelecionado, setCfopSelecionado] = useState<string>('todos');
+  const [participanteSelecionado, setParticipanteSelecionado] = useState<string>('todos');
   const [anoProjecao, setAnoProjecao] = useState<number>(2027);
   const [periodosDisponiveis, setPeriodosDisponiveis] = useState<string[]>([]);
 
