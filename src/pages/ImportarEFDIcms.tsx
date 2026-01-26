@@ -21,6 +21,7 @@ import { formatCNPJMasked } from '@/lib/formatFilial';
 interface ImportCounts {
   uso_consumo_imobilizado: number;
   participantes?: number;
+  estabelecimentos?: number;
   refresh_success?: boolean;
 }
 
@@ -899,29 +900,33 @@ export default function ImportarEFDIcms() {
                 const isActive = ['pending', 'processing', 'generating', 'refreshing_views'].includes(job.status);
                 
                 return (
-                  <div key={job.id} className="flex items-center justify-between p-3 border rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <StatusIcon className={`h-5 w-5 ${isActive ? 'animate-spin' : ''}`} />
-                      <div>
-                        <p className="font-medium text-sm">{job.file_name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {formatDate(job.created_at)} • {formatFileSize(job.file_size)}
-                        </p>
+                  <div key={job.id} className="border rounded-lg p-4 mb-3">
+                    <div className="flex justify-between items-center mb-2">
+                      <div className="flex items-center gap-2">
+                        <StatusIcon className={`h-5 w-5 ${isActive ? 'animate-spin' : ''}`} />
+                        <h4 className="font-medium">{job.file_name}</h4>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-3">
                       <Badge className={statusInfo.color}>{statusInfo.label}</Badge>
-                      {job.status === 'completed' && job.counts && (
-                        <span className="text-xs text-muted-foreground">
-                          {job.counts.uso_consumo_imobilizado || 0} registros
-                        </span>
-                      )}
-                      {job.status === 'processing' && (
-                        <span className="text-xs text-muted-foreground">
-                          {job.progress}%
-                        </span>
-                      )}
                     </div>
+                    <div className="text-xs text-muted-foreground mb-2">
+                      {formatDate(job.created_at)} • {formatFileSize(job.file_size)} • Progresso: {job.progress}%
+                    </div>
+                    {job.status === 'completed' && job.counts && (
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-2">
+                        <div className="bg-muted p-2 rounded">
+                          <p className="text-xs text-muted-foreground">Uso/Consumo/Imob.</p>
+                          <p className="font-medium">{job.counts.uso_consumo_imobilizado || 0}</p>
+                        </div>
+                        <div className="bg-muted p-2 rounded">
+                          <p className="text-xs text-muted-foreground">Participantes</p>
+                          <p className="font-medium">{job.counts.participantes || 0}</p>
+                        </div>
+                        <div className="bg-muted p-2 rounded">
+                          <p className="text-xs text-muted-foreground">Estabelecimentos</p>
+                          <p className="font-medium">{job.counts.estabelecimentos || 0}</p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
