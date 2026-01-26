@@ -31,9 +31,23 @@ interface Participante {
 
 interface C100Context {
   indOper: string;
-  codPart: string | null;
+  codPart: string;
   numDoc: string;
   dtES: string; // Data de entrada/saída
+}
+
+interface AggregatedItem {
+  tenant_id: string;
+  filial_id: string;
+  mes_ano: string;
+  tipo_operacao: string;
+  cfop: string;
+  cod_part: string;
+  num_doc: string;
+  valor: number;
+  valor_icms: number;
+  valor_pis: number;
+  valor_cofins: number;
 }
 
 interface ProcessingContext {
@@ -44,6 +58,7 @@ interface ProcessingContext {
   filialMap: Map<string, string>;
   participantesMap: Map<string, Participante>;
   estabelecimentosMap: Map<string, string>;
+  aggregatedItems: Map<string, AggregatedItem>;
 }
 
 interface BatchBuffers {
@@ -295,6 +310,7 @@ serve(async (req) => {
       filialMap,
       participantesMap: new Map(),
       estabelecimentosMap: new Map(),
+      aggregatedItems: new Map(existingContext?.aggregatedItemsEntries || []),
     };
 
     let bytesProcessedInChunk = 0;
@@ -307,10 +323,14 @@ serve(async (req) => {
         participantes: 'filial_id,cod_part',
       };
       
-      const { error } = await supabase.from(table).upsert(batches[table], { 
+      const upsertOptions: any = {
         onConflict: onConflictMap[table],
-        ignoreDuplicates: true 
-      });
+      };
+      if (table === 'participantes') {
+        upsertOptions.ignoreDuplicates = true;
+      }
+
+      const { error } = await supabase.from(table).upsert(batches[table], upsertOptions);
       
       if (error) {
         if (error.message.includes('constraint') || error.message.includes('unique')) {
@@ -439,6 +459,14 @@ serve(async (req) => {
       if (reachedChunkLimit) break;
     }
 
+    // Flush any remaining aggregated items
+    if (context.aggregatedItems.size > 0) {
+      for (const item of context.aggregatedItems.values()) {
+        batches.uso_consumo_imobilizado.push(item);
+      }
+      context.aggregatedItems.clear();
+    }
+
     // Final flush
     const flushErr = await flushAllBatches();
     if (flushErr) {
@@ -471,6 +499,7 @@ serve(async (req) => {
               currentCNPJ: context.currentCNPJ,
               currentFilialId: context.currentFilialId,
               filialMapEntries: Array.from(context.filialMap.entries()),
+              aggregatedItemsEntries: Array.from(context.aggregatedItems.entries()),
             }
           }
         })
@@ -669,10 +698,19 @@ async function processLine(
       // Documento Fiscal (NF-e)
       // EFD ICMS/IPI: |C100|IND_OPER|IND_EMIT|COD_PART|COD_MOD|COD_SIT|SER|NUM_DOC|CHV_NFE|DT_DOC|DT_E_S|...
       // Índices: 2=IND_OPER, 4=COD_PART, 8=NUM_DOC, 9=CHV_NFE, 10=DT_DOC, 11=DT_E_S
+      
+      // Flush aggregated items from previous document
+      if (context.aggregatedItems.size > 0) {
+        for (const item of context.aggregatedItems.values()) {
+          batches.uso_consumo_imobilizado.push(item);
+        }
+        context.aggregatedItems.clear();
+      }
+
       if (fields.length > 11) {
         context.currentC100 = {
           indOper: fields[2] || "0",
-          codPart: fields[4] || null,
+          codPart: fields[4] || "",
           numDoc: fields[8] || fields[9] || "",
           dtES: fields[11] || fields[10] || "",
         };
@@ -707,13 +745,6 @@ async function processLine(
           tipoOperacao = "uso_consumo";
         }
         
-        // Get participante nome for description
-        let descricao = `Doc ${context.currentC100.numDoc}`;
-        if (context.currentC100.codPart && context.participantesMap.has(context.currentC100.codPart)) {
-          const part = context.participantesMap.get(context.currentC100.codPart)!;
-          descricao = `${part.nome} - Doc ${context.currentC100.numDoc}`.substring(0, 200);
-        }
-        
         // Use DT_E_S for mes_ano if available, otherwise use period from 0000
         let mesAno = context.currentPeriod;
         const dtES = context.currentC100.dtES;
@@ -727,20 +758,29 @@ async function processLine(
           console.warn("Skipping C170 with empty mes_ano");
           return;
         }
-        
-        batches.uso_consumo_imobilizado.push({
-          tenant_id: tenantId,
-          filial_id: context.currentFilialId,
-          mes_ano: mesAno,
-          tipo_operacao: tipoOperacao,
-          cfop,
-          cod_part: context.currentC100.codPart,
-          num_doc: context.currentC100.numDoc,
-          valor,
-          valor_icms: icms,
-          valor_pis: pis,
-          valor_cofins: cofins,
-        });
+
+        // Aggregate by CFOP
+        if (context.aggregatedItems.has(cfop)) {
+          const existing = context.aggregatedItems.get(cfop)!;
+          existing.valor += valor;
+          existing.valor_icms += icms;
+          existing.valor_pis += pis;
+          existing.valor_cofins += cofins;
+        } else {
+          context.aggregatedItems.set(cfop, {
+            tenant_id: tenantId,
+            filial_id: context.currentFilialId,
+            mes_ano: mesAno,
+            tipo_operacao: tipoOperacao,
+            cfop,
+            cod_part: context.currentC100.codPart,
+            num_doc: context.currentC100.numDoc,
+            valor,
+            valor_icms: icms,
+            valor_pis: pis,
+            valor_cofins: cofins,
+          });
+        }
       }
       break;
   }

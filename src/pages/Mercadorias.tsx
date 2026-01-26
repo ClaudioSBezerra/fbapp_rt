@@ -290,11 +290,9 @@ export default function Mercadorias() {
       // Handle potential undefined user.id by passing null explicitly if needed, 
       // but Supabase handles undefined params by ignoring them or sending null usually.
       // We force null to be safe if user is not fully loaded yet.
-      const rpcParams = { p_user_id: user?.id || null };
-      console.log('Fetching aggregated data with params:', rpcParams);
       
       // @ts-ignore: Types not yet generated for this RPC function
-      const { data: aggregatedResult, error } = await supabase.rpc('get_mv_mercadorias_aggregated', rpcParams);
+      const { data: aggregatedResult, error } = await supabase.rpc('get_mv_mercadorias_aggregated');
       
       if (error) {
         console.error('Error fetching aggregated mercadorias:', error);
