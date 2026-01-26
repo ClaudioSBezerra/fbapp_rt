@@ -485,22 +485,50 @@ export default function ImportarEFDIcms() {
     try {
       console.log('Calling parse-efd-icms for:', filePath);
       
-      const response = await supabase.functions.invoke('parse-efd-icms', {
-        body: {
+      // CHAMAR A FUNÇÃO V13 (CORRETA) via fetch direto para melhor tratamento de erro
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      if (!currentSession) throw new Error('Sessão inválida');
+
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/parse-efd-icms`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${currentSession.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
           empresa_id: selectedEmpresa,
           file_path: filePath,
           file_name: selectedFile.name,
           file_size: selectedFile.size,
           import_scope: 'icms_uso_consumo',
-        },
+        }),
       });
 
-      if (response.error) {
-        await supabase.storage.from('efd-files').remove([filePath]);
-        throw new Error(response.error.message || 'Erro ao iniciar importação');
+      if (!response.ok) {
+        let errorMessage = `Erro ${response.status}: ${response.statusText}`;
+        try {
+          const errorData = await response.json();
+          if (errorData && errorData.error) {
+            errorMessage = errorData.error;
+          }
+        } catch (e) {
+          console.error('Erro ao fazer parse do JSON de erro:', e);
+          // Tenta ler como texto se falhar o JSON
+          try {
+            const textError = await response.text();
+            if (textError) errorMessage = textError;
+          } catch (e2) { /* ignore */ }
+        }
+
+        console.error('Erro na Edge Function:', errorMessage);
+        
+        // Remover arquivo em caso de erro (comentado para debug, descomente se quiser limpar)
+        // await supabase.storage.from('efd-files').remove([filePath]);
+        
+        throw new Error(errorMessage);
       }
 
-      const data = response.data;
+      const data = await response.json();
       if (data.error) {
         await supabase.storage.from('efd-files').remove([filePath]);
         throw new Error(data.error);
