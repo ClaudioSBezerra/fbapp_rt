@@ -427,7 +427,7 @@ export default function ImportarEFDIcms() {
                   );
                   setViewsStatus('empty');
                 } else {
-                  toast.success(`Importação concluída! ${counts.uso_consumo_imobilizado || 0} registros importados. Redirecionando...`);
+                  toast.success(`Importação concluída e visualizações atualizadas! ${counts.uso_consumo_imobilizado || 0} registros importados. Redirecionando...`);
                   setViewsStatus('ok');
                 }
                 setTimeout(() => navigate('/uso-consumo'), 3000);
