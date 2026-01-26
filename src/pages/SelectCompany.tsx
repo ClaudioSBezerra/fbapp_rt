@@ -102,8 +102,8 @@ export default function SelectCompany() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-      <Card className="w-full max-w-md">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-4 overflow-y-auto">
+      <Card className="w-full max-w-md my-auto">
         <CardHeader className="text-center">
           <div className="mx-auto bg-primary/10 p-3 rounded-full w-fit mb-2">
             <Building2 className="h-6 w-6 text-primary" />

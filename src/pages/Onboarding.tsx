@@ -224,8 +224,8 @@ export default function Onboarding() {
   // Non-admin flow: Enter tenant code and select empresa
   if (!isAdmin) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <div className="w-full max-w-lg animate-fade-in">
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4 overflow-y-auto">
+        <div className="w-full max-w-lg animate-fade-in my-auto">
           <Card className="border-border/50 shadow-lg">
             <CardHeader className="space-y-1">
               <div className="flex items-center gap-2 mb-2">
@@ -370,8 +370,8 @@ export default function Onboarding() {
 
   // Admin flow: Create tenant, group, company
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <div className="w-full max-w-lg animate-fade-in">
+    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4 overflow-y-auto">
+      <div className="w-full max-w-lg animate-fade-in my-auto">
         <Card className="border-border/50 shadow-lg">
           {step === 1 && (
             <>

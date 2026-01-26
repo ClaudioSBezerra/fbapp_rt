@@ -140,8 +140,8 @@ const DemoSignup = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-background to-secondary/30 flex items-center justify-center p-4 py-8">
-      <div className="w-full max-w-lg">
+    <div className="min-h-screen bg-gradient-to-b from-background to-secondary/30 flex flex-col items-center justify-center p-4 py-8 overflow-y-auto">
+      <div className="w-full max-w-lg my-auto">
         {/* Back button */}
         <Button 
           variant="ghost" 
