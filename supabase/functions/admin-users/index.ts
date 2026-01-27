@@ -13,27 +13,40 @@ serve(async (req) => {
   }
 
   try {
+    // Verify user is authenticated
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader) {
+      throw new Error('Missing Authorization header')
+    }
+
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
+      { global: { headers: { Authorization: authHeader } } }
     )
 
     // Verify user is authenticated
     const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
 
     if (userError || !user) {
-      throw new Error('Unauthorized')
+      console.error('Auth error:', userError)
+      throw new Error('Unauthorized: ' + (userError?.message || 'Invalid token'))
     }
 
     // Check if user is admin
-    const { data: userRole } = await supabaseClient
+    const { data: userRole, error: roleCheckError } = await supabaseClient
       .from('user_roles')
       .select('role')
       .eq('user_id', user.id)
       .single()
 
+    if (roleCheckError && roleCheckError.code !== 'PGRST116') {
+        console.error('Role check error:', roleCheckError)
+        throw new Error('Error checking admin privileges')
+    }
+
     if (userRole?.role !== 'admin') {
+      console.error('User is not admin:', user.id, userRole)
       throw new Error('Forbidden: Admin access required')
     }
 
@@ -43,11 +56,20 @@ serve(async (req) => {
     )
 
     if (req.method === 'POST') {
-      const { email, password, full_name, role, tenant_id, empresa_ids, recovery_city, recovery_dob } = await req.json()
+      let body;
+      try {
+        body = await req.json()
+      } catch (e) {
+        throw new Error('Invalid JSON body')
+      }
+
+      const { email, password, full_name, role, tenant_id, empresa_ids, recovery_city, recovery_dob } = body
 
       if (!email || !password || !tenant_id) {
         throw new Error('Email, password and tenant_id are required')
       }
+
+      console.log(`Creating user ${email} with role ${role} for tenant ${tenant_id}`)
 
       // 1. Create user in Auth
       const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
@@ -57,8 +79,12 @@ serve(async (req) => {
         user_metadata: { full_name }
       })
 
-      if (authError) throw authError
+      if (authError) {
+        console.error('Auth create error:', authError)
+        throw authError
+      }
       const newUserId = authData.user.id
+      console.log(`User created in Auth: ${newUserId}`)
 
       try {
         // 2. Create or update profile (trigger might have created it)
@@ -71,7 +97,10 @@ serve(async (req) => {
             recovery_city,
             recovery_dob
           })
-        if (profileError) throw profileError
+        if (profileError) {
+            console.error('Profile upsert error:', profileError)
+            throw profileError
+        }
 
         // 3. Link to tenant
         const { error: tenantError } = await supabaseAdmin
@@ -80,61 +109,26 @@ serve(async (req) => {
             user_id: newUserId,
             tenant_id
           })
-        if (tenantError) throw tenantError
+        if (tenantError) {
+            console.error('Tenant link error:', tenantError)
+            throw tenantError
+        }
 
         // 4. Assign role
-        // Trigger handle_new_user already assigned a role (defaulting to 'user' or 'admin' if first).
-        // We need to enforce the selected role.
         const { error: roleError } = await supabaseAdmin
           .from('user_roles')
-          .update({
-            role: role || 'user'
-          })
-          .eq('user_id', newUserId)
+          .upsert({
+             user_id: newUserId,
+             role: role || 'user'
+          }, { onConflict: 'user_id' })
         
-        // If update returned no rows (weird but possible if trigger failed silently?), try insert
-        if (roleError) throw roleError
-        
-        // Double check if update worked?
-        // Actually, upsert with onConflict is better, BUT we want to overwrite whatever the trigger did.
-        // My previous upsert { onConflict: 'user_id' } SHOULD have updated it.
-        // Let's verify why it might have failed to update to 'user' if it was 'admin'.
-        // If trigger made it 'admin' (e.g. if admin_exists was false?), but admin_exists should be true because we are calling this as admin.
-        // Wait, handle_new_user checks: SELECT EXISTS (SELECT 1 FROM public.user_roles WHERE role = 'admin') INTO admin_exists;
-        // Since we are creating this user while logged in as admin, there IS an admin. So new_role := 'user'.
-        // So trigger creates 'user'.
-        // We upsert 'user'. Result 'user'.
-        // User says "Criou como ADMIN".
-        // This means either:
-        // A) Trigger created 'admin' (why? maybe admin_exists check failed?)
-        // B) We upserted 'admin' (frontend sent 'admin'?)
-        // C) Something else changed it.
-        
-        // Let's use explicit UPDATE just to be sure we are modifying the existing row.
-        // Or UPSERT with explicit UPDATE.
-        
-        // Actually, let's look at the upsert again.
-        // .upsert({ user_id, role }, { onConflict: 'user_id' })
-        // If row exists, it updates 'role'.
-        
-        // Maybe the frontend is sending 'admin'?
-        // Or maybe 'role' is undefined and it defaults to something else?
-        // role || 'user'.
-        
-        // Let's assume the trigger MIGHT set it to admin for some reason.
-        // We want to force it to what we want.
-        
-        // I will change it to an explicit UPDATE just to be cleaner, since we know the row exists (trigger).
-        
-        const { error: updateRoleError } = await supabaseAdmin
-            .from('user_roles')
-            .update({ role: role || 'user' })
-            .eq('user_id', newUserId);
-            
-        if (updateRoleError) throw updateRoleError;
+        if (roleError) {
+            console.error('Role assign error:', roleError)
+            throw roleError
+        }
 
         // 5. Link to empresas
-        if (empresa_ids && empresa_ids.length > 0) {
+        if (empresa_ids && Array.isArray(empresa_ids) && empresa_ids.length > 0) {
           const links = empresa_ids.map((empresa_id: string) => ({
             user_id: newUserId,
             empresa_id
@@ -142,7 +136,10 @@ serve(async (req) => {
           const { error: empresasError } = await supabaseAdmin
             .from('user_empresas')
             .insert(links)
-          if (empresasError) throw empresasError
+          if (empresasError) {
+             console.error('Empresas link error:', empresasError)
+             throw empresasError
+          }
         }
 
         return new Response(
@@ -151,6 +148,7 @@ serve(async (req) => {
         )
 
       } catch (error) {
+        console.error('Rollback triggered due to:', error)
         // Rollback: delete user if auxiliary data creation fails
         await supabaseAdmin.auth.admin.deleteUser(newUserId)
         throw error
