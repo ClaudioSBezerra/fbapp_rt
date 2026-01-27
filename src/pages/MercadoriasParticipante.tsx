@@ -520,17 +520,6 @@ export default function MercadoriasParticipante() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button 
-            variant="outline" 
-            onClick={() => {
-              queryClient.invalidateQueries({ queryKey: ['mercadorias-participante-totals'] });
-              queryClient.invalidateQueries({ queryKey: ['mercadorias-participante-page'] });
-              queryClient.invalidateQueries({ queryKey: ['mercadorias-participante-meses'] });
-            }}
-          >
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Atualizar
-          </Button>
           <Dialog>
             <DialogTrigger asChild>
               <Button variant="outline">
