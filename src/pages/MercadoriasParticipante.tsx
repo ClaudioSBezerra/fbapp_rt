@@ -305,7 +305,7 @@ export default function MercadoriasParticipante() {
         p_mes_ano: mesAnoParam,
         p_participante: participanteParam,
         p_only_simples: simplesParam,
-        p_empresa_id: selectedCompany
+        p_empresa_id: selectedCompany || null
       });
       if (error) throw error;
       return (data && data.length > 0 ? data[0] : null) as TotalsFromBackend | null;
@@ -322,7 +322,7 @@ export default function MercadoriasParticipante() {
         p_mes_ano: mesAnoParam,
         p_participante: participanteParam,
         p_only_simples: simplesParam,
-        p_empresa_id: selectedCompany
+        p_empresa_id: selectedCompany || null
       });
       if (error) throw error;
       // Mapear resultado para interface esperada (ordem diferente no backend)
@@ -361,7 +361,7 @@ export default function MercadoriasParticipante() {
     queryKey: ['participante-meses', selectedCompany],
     queryFn: async () => {
       const { data, error } = await supabase.rpc('get_mercadorias_participante_meses', {
-        p_empresa_id: selectedCompany
+        p_empresa_id: selectedCompany || null
       });
       if (error) throw error;
       return (data || []).map((r: { mes_ano: string }) => r.mes_ano);
@@ -373,7 +373,7 @@ export default function MercadoriasParticipante() {
     queryKey: ['participante-lista', selectedCompany],
     queryFn: async () => {
       const { data, error } = await supabase.rpc('get_mercadorias_participante_lista', {
-        p_empresa_id: selectedCompany
+        p_empresa_id: selectedCompany || null
       });
       if (error) throw error;
       return (data || []) as { cod_part: string; nome: string; cnpj: string | null }[];
@@ -465,7 +465,9 @@ export default function MercadoriasParticipante() {
       p_limit: 100000,
       p_offset: 0,
       p_mes_ano: mesAnoParam,
-      p_participante: participanteParam
+      p_participante: participanteParam,
+      p_only_simples: filterSimples === 'sim' ? true : (filterSimples === 'nao' ? false : null),
+      p_empresa_id: selectedCompany || null
     });
     
     if (error || !allData) {
