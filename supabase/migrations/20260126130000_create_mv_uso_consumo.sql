@@ -44,6 +44,8 @@ CREATE INDEX idx_mv_uso_consumo_agg_tipo ON extensions.mv_uso_consumo_aggregated
 GRANT SELECT ON extensions.mv_uso_consumo_aggregated TO authenticated;
 
 -- Create RPC function to access the view with RLS
+DROP FUNCTION IF EXISTS public.get_mv_uso_consumo_aggregated();
+
 CREATE OR REPLACE FUNCTION public.get_mv_uso_consumo_aggregated()
 RETURNS TABLE (
     filial_id uuid,

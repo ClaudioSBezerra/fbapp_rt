@@ -34,6 +34,9 @@ WITH CHECK (
 );
 
 -- Atualiza função de paginação para incluir is_simples e filtro
+DROP FUNCTION IF EXISTS public.get_mercadorias_participante_page(integer, integer, date, text, text);
+DROP FUNCTION IF EXISTS public.get_mercadorias_participante_page(integer, integer, date, text, text, boolean);
+
 CREATE OR REPLACE FUNCTION public.get_mercadorias_participante_page(
     p_limit integer DEFAULT 100, 
     p_offset integer DEFAULT 0, 
@@ -103,6 +106,9 @@ END;
 $function$;
 
 -- Atualiza função de totais para considerar filtro simples
+DROP FUNCTION IF EXISTS public.get_mercadorias_participante_totals(date, text);
+DROP FUNCTION IF EXISTS public.get_mercadorias_participante_totals(date, text, boolean);
+
 CREATE OR REPLACE FUNCTION public.get_mercadorias_participante_totals(
     p_mes_ano date DEFAULT NULL, 
     p_participante text DEFAULT NULL,
