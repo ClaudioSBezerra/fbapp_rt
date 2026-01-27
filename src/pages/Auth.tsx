@@ -50,7 +50,7 @@ export default function Auth() {
         .eq('user_id', user.id);
 
       if (userTenants && userTenants.length > 0) {
-        navigate('/dashboard');
+        navigate('/select-company');
       } else {
         navigate('/onboarding');
       }

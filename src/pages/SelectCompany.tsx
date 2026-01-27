@@ -91,7 +91,7 @@ export default function SelectCompany() {
 
   const handleSelect = (id: string) => {
     selectCompany(id);
-    navigate('/');
+    navigate('/dashboard');
   };
 
   if (loading) {
