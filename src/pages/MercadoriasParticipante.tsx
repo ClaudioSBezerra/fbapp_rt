@@ -13,7 +13,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
-import { Download, Users, HelpCircle, ChevronsUpDown, Check, ArrowDownRight, ArrowUpRight, RefreshCw } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Download, Users, HelpCircle, ChevronsUpDown, Check, ArrowDownRight, ArrowUpRight, RefreshCw, Upload } from 'lucide-react';
+import { SimplesNacionalImport } from '@/components/SimplesNacionalImport';
 import { exportToExcel } from '@/lib/exportToExcel';
 import { cn } from '@/lib/utils';
 import { formatDocumentoMasked } from '@/lib/formatFilial';
@@ -40,6 +42,7 @@ interface ParticipanteRow {
   cofins: number;
   icms: number;
   tipo: string;
+  is_simples: boolean;
 }
 
 interface TotalsFromBackend {
@@ -123,6 +126,7 @@ function ParticipanteTable({ data, tipo, aliquotas, selectedYear, isLoading }: P
           <TableRow className="text-xs">
             <TableHead className="text-xs">Participante</TableHead>
             <TableHead className="text-xs whitespace-nowrap">Mês/Ano</TableHead>
+            <TableHead className="text-center text-xs">Simples</TableHead>
             <TableHead className="text-right text-xs">Valor</TableHead>
             <TableHead className="text-right text-xs">ICMS</TableHead>
             <TableHead className="text-right text-xs whitespace-nowrap">
@@ -229,6 +233,9 @@ function ParticipanteTable({ data, tipo, aliquotas, selectedYear, isLoading }: P
                   </div>
                 </TableCell>
                 <TableCell className="text-xs whitespace-nowrap">{formatMesAno(row.mes_ano)}</TableCell>
+                <TableCell className="text-center text-xs">
+                  {row.is_simples ? <Badge variant="secondary" className="text-[10px] h-4 px-1">Sim</Badge> : '-'}
+                </TableCell>
                 <TableCell className="text-right font-mono text-xs">{formatCurrency(row.valor)}</TableCell>
                 <TableCell className="text-right font-mono text-xs">{formatCurrency(vlIcms)}</TableCell>
                 <TableCell className="text-right font-mono text-xs">{formatCurrency(vlIcmsProjetado)}</TableCell>
@@ -264,6 +271,7 @@ export default function MercadoriasParticipante() {
   const queryClient = useQueryClient();
   const [filterMesAno, setFilterMesAno] = useState<string>('all');
   const [filterParticipante, setFilterParticipante] = useState('');
+  const [filterSimples, setFilterSimples] = useState<string>('all');
   const [selectedYear, setSelectedYear] = useState(2027);
   const [openCombobox, setOpenCombobox] = useState(false);
   const [page, setPage] = useState(1);
@@ -284,14 +292,16 @@ export default function MercadoriasParticipante() {
   // Parâmetros de filtro para as queries
   const mesAnoParam = filterMesAno === 'all' ? null : filterMesAno;
   const participanteParam = filterParticipante || null;
+  const simplesParam = filterSimples === 'all' ? null : filterSimples === 'sim';
 
   // Buscar TOTAIS do backend (1 linha, sem limite)
   const { data: backendTotals, isLoading: isLoadingTotals } = useQuery({
-    queryKey: ['mercadorias-participante-totals', mesAnoParam, participanteParam],
+    queryKey: ['mercadorias-participante-totals', mesAnoParam, participanteParam, simplesParam],
     queryFn: async () => {
       const { data, error } = await supabase.rpc('get_mercadorias_participante_totals', {
         p_mes_ano: mesAnoParam,
-        p_participante: participanteParam
+        p_participante: participanteParam,
+        p_only_simples: simplesParam
       });
       if (error) throw error;
       return (data && data.length > 0 ? data[0] : null) as TotalsFromBackend | null;
@@ -300,13 +310,14 @@ export default function MercadoriasParticipante() {
 
   // Buscar dados paginados para a listagem (máximo 1000 registros no backend)
   const { data: participanteData = [], isLoading: isLoadingPage } = useQuery({
-    queryKey: ['mercadorias-participante-page', mesAnoParam, participanteParam, page],
+    queryKey: ['mercadorias-participante-page', mesAnoParam, participanteParam, simplesParam, page],
     queryFn: async () => {
       const { data, error } = await supabase.rpc('get_mercadorias_participante_page', {
         p_limit: PAGE_SIZE,
         p_offset: (page - 1) * PAGE_SIZE,
         p_mes_ano: mesAnoParam,
-        p_participante: participanteParam
+        p_participante: participanteParam,
+        p_only_simples: simplesParam
       });
       if (error) throw error;
       // Mapear resultado para interface esperada (ordem diferente no backend)
@@ -321,6 +332,7 @@ export default function MercadoriasParticipante() {
         pis: number;
         tipo: string;
         valor: number;
+        is_simples: boolean;
       }>).map(row => ({
         filial_id: row.filial_id,
         filial_cod_est: (row as any).filial_cod_est || null,
@@ -333,7 +345,8 @@ export default function MercadoriasParticipante() {
         pis: row.pis,
         cofins: row.cofins,
         icms: row.icms,
-        tipo: row.tipo
+        tipo: row.tipo,
+        is_simples: row.is_simples
       })) as ParticipanteRow[];
     }
   });
@@ -518,6 +531,20 @@ export default function MercadoriasParticipante() {
             <RefreshCw className="h-4 w-4 mr-2" />
             Atualizar
           </Button>
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="outline">
+                <Upload className="h-4 w-4 mr-2" />
+                Importar Simples
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[500px]">
+              <DialogHeader>
+                <DialogTitle>Importar Simples Nacional</DialogTitle>
+              </DialogHeader>
+              <SimplesNacionalImport />
+            </DialogContent>
+          </Dialog>
           <Button variant="outline" onClick={handleExport} disabled={totals.totalRegistros === 0}>
             <Download className="h-4 w-4 mr-2" />
             Exportar Excel
@@ -543,6 +570,21 @@ export default function MercadoriasParticipante() {
                       {formatMesAno(mes)}
                     </SelectItem>
                   ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Filtro Simples Nacional */}
+            <div className="space-y-1">
+              <Label className="text-xs">Simples Nacional</Label>
+              <Select value={filterSimples} onValueChange={(v) => handleFilterChange(setFilterSimples, v)}>
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue placeholder="Todos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  <SelectItem value="sim">Sim</SelectItem>
+                  <SelectItem value="nao">Não</SelectItem>
                 </SelectContent>
               </Select>
             </div>

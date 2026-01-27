@@ -42,6 +42,7 @@ interface DetailedRow {
   cod_part: string | null;
   participante_nome: string | null;
   participante_doc: string | null;
+  is_simples: boolean;
   valor: number;
   icms: number;
   pis: number;
@@ -70,6 +71,7 @@ export default function UsoConsumoImobilizado() {
   const [mesAnoSelecionado, setMesAnoSelecionado] = useState<string>('todos');
   const [cfopSelecionado, setCfopSelecionado] = useState<string>('todos');
   const [participanteSelecionado, setParticipanteSelecionado] = useState<string>('todos');
+  const [simplesSelecionado, setSimplesSelecionado] = useState<string>('todos');
   const [anoProjecao, setAnoProjecao] = useState<number>(2027);
   const [periodosDisponiveis, setPeriodosDisponiveis] = useState<string[]>([]);
 
@@ -130,9 +132,13 @@ export default function UsoConsumoImobilizado() {
       if (mesAnoSelecionado !== 'todos' && !row.mes_ano.startsWith(mesAnoSelecionado)) return false;
       if (cfopSelecionado !== 'todos' && row.cfop !== cfopSelecionado) return false;
       if (participanteSelecionado !== 'todos' && row.participante_nome !== participanteSelecionado) return false;
+      if (simplesSelecionado !== 'todos') {
+        const isSimples = simplesSelecionado === 'sim';
+        if (row.is_simples !== isSimples) return false;
+      }
       return true;
     });
-  }, [data, filialSelecionada, mesAnoSelecionado, cfopSelecionado, participanteSelecionado]);
+  }, [data, filialSelecionada, mesAnoSelecionado, cfopSelecionado, participanteSelecionado, simplesSelecionado]);
 
   // Extrair lista de participantes únicos
   const participantesUnicos = useMemo(() => {
@@ -253,6 +259,7 @@ export default function UsoConsumoImobilizado() {
             <TableHead className="min-w-[140px] text-xs">Filial</TableHead>
             <TableHead className="min-w-[120px] text-xs">Participante</TableHead>
             <TableHead className="text-xs whitespace-nowrap">Mês/Ano</TableHead>
+            <TableHead className="text-center text-xs">Simples</TableHead>
             <TableHead className="text-right text-xs">Valor</TableHead>
             <TableHead className="text-right text-xs">ICMS</TableHead>
             <TableHead className="text-right text-xs whitespace-nowrap">
@@ -325,6 +332,9 @@ export default function UsoConsumoImobilizado() {
                     </div>
                   </TableCell>
                   <TableCell className="text-xs whitespace-nowrap">{formatDate(row.mes_ano)}</TableCell>
+                  <TableCell className="text-center text-xs">
+                    {row.is_simples ? <Badge variant="secondary" className="text-[10px] h-4 px-1">Sim</Badge> : '-'}
+                  </TableCell>
                   <TableCell className="text-right font-mono text-xs">{formatNumber(row.valor)}</TableCell>
                   <TableCell className="text-right font-mono text-xs">{formatNumber(row.icms)}</TableCell>
                   <TableCell className="text-right font-mono text-xs">{formatNumber(proj.icmsProj)}</TableCell>
@@ -412,6 +422,17 @@ export default function UsoConsumoImobilizado() {
                   {p as string}
                 </SelectItem>
               ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={simplesSelecionado} onValueChange={setSimplesSelecionado}>
+            <SelectTrigger className="w-[150px] bg-background">
+              <SelectValue placeholder="Simples Nac." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Simples: Todos</SelectItem>
+              <SelectItem value="sim">Sim</SelectItem>
+              <SelectItem value="nao">Não</SelectItem>
             </SelectContent>
           </Select>
 

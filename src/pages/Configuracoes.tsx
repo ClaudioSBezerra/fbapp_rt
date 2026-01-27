@@ -39,6 +39,8 @@ interface Empresa {
   nome: string;
 }
 
+import { SimplesNacionalImport } from '@/components/SimplesNacionalImport';
+
 export default function Configuracoes() {
   const { user, updatePassword } = useAuth();
   const { isAdmin } = useRole();
@@ -508,6 +510,24 @@ export default function Configuracoes() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Importações */}
+      <Card className="border-border/50">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Settings className="h-5 w-5 text-muted-foreground" />
+            <div>
+              <CardTitle>Importação de Dados Auxiliares</CardTitle>
+              <CardDescription>
+                Importe arquivos complementares para cálculo de impostos.
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <SimplesNacionalImport />
+        </CardContent>
+      </Card>
 
       {/* Admin: User-Empresa Management */}
       {isAdmin && (
