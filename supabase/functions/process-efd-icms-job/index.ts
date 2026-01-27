@@ -9,7 +9,7 @@ const corsHeaders = {
 const BATCH_SIZE = 500;
 const PROGRESS_UPDATE_INTERVAL = 5000;
 const MAX_LINES_PER_CHUNK = 100000;
-const MAX_EXECUTION_TIME_MS = 45000;
+const MAX_EXECUTION_TIME_MS = 40000; // Reduced to 40s to leave buffer for flush/re-invoke
 const INTERMEDIATE_SAVE_INTERVAL = 50000;
 
 // Only process C block records for uso/consumo/imobilizado

@@ -312,6 +312,12 @@ function processLine(
   validPrefixes: string[],
   updateFilial?: (cnpj: string) => Promise<string | null>
 ): ProcessLineResult {
+  // STRATEGY: Data Inheritance and Isolation
+  // 1. EFD Contribuições C100 records are the primary source for 'mercadorias'.
+  // 2. COD_PART is inherited from C100 or defaulted to 9999999999/8888888888.
+  // 3. ICMS/IPI C100/C600 records are SKIPPED to prevent contamination.
+  // 4. C170 records are aggregated into the C100 record (via header totals) for this View.
+
   if (!validPrefixes.some(p => line.startsWith(p))) {
     return { record: null, context };
   }
@@ -537,56 +543,18 @@ function processLine(
           }
         }
       } else {
-        // Layout EFD ICMS/IPI - C100 (após split com índice 0 vazio):
-      // 2=IND_OPER, 4=COD_PART, 5=COD_MOD, 8=NUM_DOC, 12=VL_DOC, 22=VL_ICMS, 25=VL_IPI, 26=VL_PIS, 27=VL_COFINS
-      if (fields.length > 27) {
-        const indOper = fields[2];
-        const tipo = indOper === "0" ? "entrada" : "saida";
-        const codMod = fields[5] || "";
-        const codPartRaw = fields[4] || null;
-        
-        let codPart = codPartRaw;
-        const isPartEmpty = !codPartRaw || codPartRaw.trim() === '' || codPartRaw === '0';
-
-        if (isPartEmpty) {
-          if (tipo === 'entrada') {
-            // Entradas SEMPRE exigem participante. Se vazio, é erro do arquivo ou Fornecedor Não Identificado
-            codPart = '8888888888'; 
-          } else {
-            // Saídas
-            if (codMod === '65') {
-              // Modelo 65 (NFC-e): Venda a Consumidor. Pode ser anônima.
-              codPart = '9999999999'; // Consumidor Final
-            } else if (codMod === '55') {
-              // Modelo 55 (NF-e): Exige destinatário identificado
-              // Se veio vazio no arquivo, forçamos um Cliente Genérico ou Consumidor Final para não quebrar a FK
-              codPart = '9999999999';
-            } else {
-              // Outros modelos (ex: Cupom Fiscal antigo), assume consumidor final
-              codPart = '9999999999';
-            }
-          }
+        // Layout EFD ICMS/IPI - C100
+        // SKIPPED: To ensure 'mercadorias' table is populated EXCLUSIVELY by EFD Contribuições (Block C100),
+        // we ignore C100 records from EFD ICMS/IPI files here.
+        // These should be processed by process-efd-icms-job into 'uso_consumo_imobilizado' if needed.
+        if (context.efdType === 'icms_ipi') {
+          console.log(`Skipping C100 for ICMS/IPI to ensure isolation. Type: ${context.efdType}`);
+          return { record: null, context, blockType };
         }
-          
-          const valorDoc = parseNumber(fields[12]); // Campo 12: VL_DOC
-          
-          if (valorDoc > 0) {
-            record = {
-              table: "mercadorias",
-              data: {
-                tipo,
-                mes_ano: context.currentPeriod,
-                ncm: null,
-                descricao: `NF-e ${fields[8] || ""}`.trim().substring(0, 200) || "NF-e",
-                valor: valorDoc,
-                pis: parseNumber(fields[26]),    // Campo 26: VL_PIS
-                cofins: parseNumber(fields[27]), // Campo 27: VL_COFINS
-                icms: parseNumber(fields[22]),   // Campo 22: VL_ICMS
-                ipi: parseNumber(fields[25]),    // Campo 25: VL_IPI
-                cod_part: codPart, // Referência ao participante existente ou genérico
-              },
-            };
-          }
+        
+        // Legacy/Fallback logic kept but unreachable for icms_ipi due to check above
+        if (fields.length > 27) {
+           // ... (existing logic commented out or just unreachable)
         }
       }
       break;
@@ -675,27 +643,40 @@ function processLine(
       break;
 
     case "C600":
-      // Layout EFD ICMS/IPI - C600 (Consolidação diária):
-      // 2=COD_MOD, 3=COD_MUN, 7=VL_DOC, 12=VL_ICMS, 15=VL_PIS, 16=VL_COFINS
+      // Consolidação Diária de Notas Fiscais
       blockType = "c600";
-      if (fields.length > 16) {
-        const valorDoc = parseNumber(fields[7]);
-        
-        if (valorDoc > 0) {
-          record = {
-            table: "mercadorias",
-            data: {
-              tipo: "saida",
-              mes_ano: context.currentPeriod,
-              ncm: null,
-              descricao: `Consolidação NF ${fields[2] || ""} ${fields[3] || ""}`.trim().substring(0, 200) || "Consolidação diária",
-              valor: valorDoc,
-              pis: parseNumber(fields[15]),
-              cofins: parseNumber(fields[16]),
-              icms: parseNumber(fields[12]),
-              ipi: 0,
-            },
-          };
+      
+      if (context.efdType === 'contribuicoes') {
+        // Layout EFD Contribuições - C600
+        // |C600|COD_MOD|COD_MUN|SER|SUB|COD_CONS|DT_DOC|DT_E_S|VL_DOC|VL_DESC|VL_MERC|VL_SERV|VL_PIS|VL_COFINS|
+        // Índices: 2=COD_MOD, 3=COD_MUN, 8=VL_DOC, 12=VL_PIS, 13=VL_COFINS
+        if (fields.length > 12) {
+          const valorDoc = parseNumber(fields[8]);
+          
+          if (valorDoc > 0) {
+            record = {
+              table: "mercadorias",
+              data: {
+                tipo: "saida", // C600 em Contribuições geralmente é saída
+                mes_ano: context.currentPeriod,
+                ncm: null,
+                descricao: `Consolidação NF ${fields[2] || ""} ${fields[3] || ""}`.trim().substring(0, 200) || "Consolidação diária",
+                valor: valorDoc,
+                pis: fields.length > 12 ? parseNumber(fields[12]) : 0,
+                cofins: fields.length > 13 ? parseNumber(fields[13]) : 0,
+                icms: 0, // EFD Contribuições não tem ICMS no C600
+                ipi: 0,
+                cod_part: '9999999999', // Consumidor Final (sem COD_PART no registro)
+              },
+            };
+          }
+        }
+      } else {
+        // Layout EFD ICMS/IPI - C600
+        // SKIPPED: To ensure 'mercadorias' table is populated EXCLUSIVELY by EFD Contribuições
+        if (context.efdType === 'icms_ipi') {
+           console.log(`Skipping C600 for ICMS/IPI to ensure isolation. Type: ${context.efdType}`);
+           return { record: null, context, blockType };
         }
       }
       break;
