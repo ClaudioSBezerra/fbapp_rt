@@ -367,7 +367,17 @@ export default function Configuracoes() {
       
     } catch (error: any) {
       console.error('Error creating user:', error);
-      toast.error('Erro ao criar usuário: ' + (error.message || error));
+      
+      // Parse detailed error message if available
+      let errorMessage = error.message || error;
+      if (typeof errorMessage === 'string' && errorMessage.startsWith('{')) {
+          try {
+              const parsed = JSON.parse(errorMessage);
+              if (parsed.error) errorMessage = parsed.error;
+          } catch (e) { /* ignore */ }
+      }
+      
+      toast.error('Erro ao criar usuário: ' + errorMessage);
     } finally {
       setCreatingUser(false);
     }
@@ -551,7 +561,7 @@ export default function Configuracoes() {
                     Novo Usuário
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="sm:max-w-[500px]">
+                <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle>Criar Novo Usuário</DialogTitle>
                     <DialogDescription>
