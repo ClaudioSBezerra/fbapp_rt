@@ -79,6 +79,8 @@ const formatMesAno = (date: string) => {
   return date;
 };
 
+import { useAuth } from '@/hooks/useAuth';
+
 // Componente de tabela por participante
 interface ParticipanteTableProps {
   data: ParticipanteRow[];
@@ -269,6 +271,7 @@ const PAGE_SIZE = 100;
 // Componente principal
 export default function MercadoriasParticipante() {
   const queryClient = useQueryClient();
+  const { selectedCompany } = useAuth();
   const [filterMesAno, setFilterMesAno] = useState<string>('all');
   const [filterParticipante, setFilterParticipante] = useState('');
   const [filterSimples, setFilterSimples] = useState<string>('all');
@@ -296,12 +299,13 @@ export default function MercadoriasParticipante() {
 
   // Buscar TOTAIS do backend (1 linha, sem limite)
   const { data: backendTotals, isLoading: isLoadingTotals } = useQuery({
-    queryKey: ['mercadorias-participante-totals', mesAnoParam, participanteParam, simplesParam],
+    queryKey: ['mercadorias-participante-totals', mesAnoParam, participanteParam, simplesParam, selectedCompany],
     queryFn: async () => {
       const { data, error } = await supabase.rpc('get_mercadorias_participante_totals', {
         p_mes_ano: mesAnoParam,
         p_participante: participanteParam,
-        p_only_simples: simplesParam
+        p_only_simples: simplesParam,
+        p_empresa_id: selectedCompany
       });
       if (error) throw error;
       return (data && data.length > 0 ? data[0] : null) as TotalsFromBackend | null;
@@ -310,14 +314,15 @@ export default function MercadoriasParticipante() {
 
   // Buscar dados paginados para a listagem (máximo 1000 registros no backend)
   const { data: participanteData = [], isLoading: isLoadingPage } = useQuery({
-    queryKey: ['mercadorias-participante-page', mesAnoParam, participanteParam, simplesParam, page],
+    queryKey: ['mercadorias-participante-page', mesAnoParam, participanteParam, simplesParam, page, selectedCompany],
     queryFn: async () => {
       const { data, error } = await supabase.rpc('get_mercadorias_participante_page', {
         p_limit: PAGE_SIZE,
         p_offset: (page - 1) * PAGE_SIZE,
         p_mes_ano: mesAnoParam,
         p_participante: participanteParam,
-        p_only_simples: simplesParam
+        p_only_simples: simplesParam,
+        p_empresa_id: selectedCompany
       });
       if (error) throw error;
       // Mapear resultado para interface esperada (ordem diferente no backend)
@@ -353,9 +358,11 @@ export default function MercadoriasParticipante() {
 
   // Buscar meses disponíveis (função otimizada - retorna apenas meses únicos)
   const { data: mesesDisponiveis = [] } = useQuery({
-    queryKey: ['participante-meses'],
+    queryKey: ['participante-meses', selectedCompany],
     queryFn: async () => {
-      const { data, error } = await supabase.rpc('get_mercadorias_participante_meses');
+      const { data, error } = await supabase.rpc('get_mercadorias_participante_meses', {
+        p_empresa_id: selectedCompany
+      });
       if (error) throw error;
       return (data || []).map((r: { mes_ano: string }) => r.mes_ano);
     }
@@ -363,9 +370,11 @@ export default function MercadoriasParticipante() {
 
   // Buscar participantes únicos (função otimizada - retorna apenas participantes distintos)
   const { data: participantesUnicos = [] } = useQuery({
-    queryKey: ['participante-lista'],
+    queryKey: ['participante-lista', selectedCompany],
     queryFn: async () => {
-      const { data, error } = await supabase.rpc('get_mercadorias_participante_lista');
+      const { data, error } = await supabase.rpc('get_mercadorias_participante_lista', {
+        p_empresa_id: selectedCompany
+      });
       if (error) throw error;
       return (data || []) as { cod_part: string; nome: string; cnpj: string | null }[];
     }
