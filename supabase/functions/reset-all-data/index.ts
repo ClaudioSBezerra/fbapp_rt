@@ -33,11 +33,14 @@ Deno.serve(async (req) => {
     await supabaseAdmin.from("servicos").delete().neq("id", "00000000-0000-0000-0000-000000000000");
     results.servicos = 1;
 
-    await supabaseAdmin.from("participantes").delete().neq("id", "00000000-0000-0000-0000-000000000000");
-    results.participantes = 1;
+    await supabaseAdmin.from("uso_consumo_imobilizado").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    results.uso_consumo_imobilizado = 1;
 
     await supabaseAdmin.from("import_jobs").delete().neq("id", "00000000-0000-0000-0000-000000000000");
     results.import_jobs = 1;
+
+    await supabaseAdmin.from("participantes").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    results.participantes = 1;
 
     // 2. Estrutura organizacional
     await supabaseAdmin.from("filiais").delete().neq("id", "00000000-0000-0000-0000-000000000000");

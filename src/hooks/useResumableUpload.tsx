@@ -110,13 +110,13 @@ export function useResumableUpload(options: UseResumableUploadOptions) {
 
         const upload = new tus.Upload(file, {
           endpoint: uploadUrl,
-          retryDelays: [0, 1000, 3000, 5000, 10000], // Retry delays in ms
-          chunkSize: 6 * 1024 * 1024, // 6MB chunks (Safer for stability and progress tracking)
+          retryDelays: [0, 3000, 5000, 10000, 20000], // Increased retry delays
+          chunkSize: 50 * 1024 * 1024, // 50MB chunks (Reduced number of requests for large files)
           headers: {
             authorization: `Bearer ${session.access_token}`,
-            'x-upsert': 'true', // Changed to true to allow overwriting if needed, helps with retries
+            'x-upsert': 'true', 
           },
-          uploadDataDuringCreation: false, // Changed to false to prevent 413 on initial creation
+          uploadDataDuringCreation: false,
           removeFingerprintOnSuccess: true,
           metadata: {
             bucketName: bucketName,
@@ -126,7 +126,7 @@ export function useResumableUpload(options: UseResumableUploadOptions) {
             ...Object.fromEntries(
                 Object.entries(additionalMetadata as Record<string, string | number | null>)
                   .map(([k, v]) => [k, v === null ? '' : String(v)])
-              ), // Spread additional metadata ensuring strings
+              ), 
           },
           onError: (error) => {
             logger.error('TUS upload error', { error: error.message, originalError: error }, 'UploadHook');

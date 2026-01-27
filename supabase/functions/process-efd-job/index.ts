@@ -505,12 +505,15 @@ function processLine(
           const tipo = indOper === "0" ? "entrada" : "saida";
           const codPartRaw = fields[4] || null;
           
-          // Validação de COD_PART: Se não informado, enviar NULL
-          // Não aplicamos lógica de default para permitir importação bruta
-          // A View tratará de exibir "Consumidor Final" ou "Fornecedor Não Identificado"
+          // Validação de COD_PART: Se não informado, usar padrão
+          // Para permitir que vendas a consumidor final apareçam na View
           let codPart = codPartRaw;
           if (!codPartRaw || codPartRaw.trim() === '' || codPartRaw === '0') {
-             codPart = null; // Envia NULL explicitamente
+             if (tipo === 'saida') {
+               codPart = '9999999999'; // Consumidor Final
+             } else {
+               codPart = '8888888888'; // Fornecedor Não Identificado
+             }
           }
           
           const valorDoc = parseNumber(fields[12]); // Campo 12: VL_DOC
@@ -968,14 +971,22 @@ serve(async (req) => {
     console.log(`Job ${jobId}: Creating signed URL for ${job.file_path}`);
 
     // Helper function to create signed URL with retry logic
-    const createSignedUrlWithRetry = async (maxRetries: number = 3): Promise<string | null> => {
+    const createSignedUrlWithRetry = async (maxRetries: number = 5): Promise<string | null> => {
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
           console.log(`Job ${jobId}: Signed URL attempt ${attempt}/${maxRetries}`);
           
-          const { data, error } = await supabase.storage
+          // Add a timeout promise
+          const timeoutPromise = new Promise<{ data: any, error: any }>((_, reject) => 
+            setTimeout(() => reject(new Error("Request timed out")), 10000)
+          );
+
+          const signedUrlPromise = supabase.storage
             .from("efd-files")
             .createSignedUrl(job.file_path, 3600);
+            
+          const result = await Promise.race([signedUrlPromise, timeoutPromise]);
+          const { data, error } = result;
           
           if (error) {
             console.error(`Signed URL attempt ${attempt} failed:`, error);
@@ -986,8 +997,8 @@ serve(async (req) => {
             }
             
             if (attempt < maxRetries) {
-              const delay = 1000 * Math.pow(2, attempt - 1); // Exponential backoff: 1s, 2s, 4s
-              console.log(`Job ${jobId}: Waiting ${delay}ms before retry...`);
+              const delay = 2000 * Math.pow(2, attempt - 1) + (Math.random() * 1000); // Exponential backoff with jitter
+              console.log(`Job ${jobId}: Waiting ${Math.round(delay)}ms before retry...`);
               await new Promise(resolve => setTimeout(resolve, delay));
               continue;
             }
@@ -1001,7 +1012,7 @@ serve(async (req) => {
         } catch (e) {
           console.error(`Signed URL attempt ${attempt} threw exception:`, e);
           if (attempt < maxRetries) {
-            const delay = 1000 * Math.pow(2, attempt - 1);
+            const delay = 2000 * Math.pow(2, attempt - 1) + (Math.random() * 1000);
             await new Promise(resolve => setTimeout(resolve, delay));
           }
         }
@@ -1010,7 +1021,8 @@ serve(async (req) => {
     };
 
     // Create signed URL with retry logic
-    const signedUrl = await createSignedUrlWithRetry(3);
+    const maxRetries = 5;
+    const signedUrl = await createSignedUrlWithRetry(maxRetries);
 
     if (!signedUrl) {
       console.error("Failed to create signed URL after all retries");
@@ -1018,7 +1030,7 @@ serve(async (req) => {
         .from("import_jobs")
         .update({ 
           status: "failed", 
-          error_message: "Failed to create signed URL after 3 attempts. Please try importing the file again.",
+          error_message: `Failed to create signed URL after ${maxRetries} attempts. Please try importing the file again.`,
           completed_at: new Date().toISOString() 
         })
         .eq("id", jobId);

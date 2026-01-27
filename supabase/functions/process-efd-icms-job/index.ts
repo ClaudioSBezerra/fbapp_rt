@@ -177,17 +177,28 @@ serve(async (req) => {
     }
 
     // Create signed URL with retry logic
-    const createSignedUrlWithRetry = async (maxRetries: number = 3): Promise<string | null> => {
+    const createSignedUrlWithRetry = async (maxRetries: number = 5): Promise<string | null> => {
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
-          const { data, error } = await supabase.storage
+          // Add a timeout promise
+          const timeoutPromise = new Promise<{ data: any, error: any }>((_, reject) => 
+            setTimeout(() => reject(new Error("Request timed out")), 10000)
+          );
+
+          const signedUrlPromise = supabase.storage
             .from("efd-files")
             .createSignedUrl(job.file_path, 3600);
+            
+          const result = await Promise.race([signedUrlPromise, timeoutPromise]);
+          const { data, error } = result;
           
           if (error) {
             console.error(`Signed URL attempt ${attempt} failed:`, error);
             if (attempt < maxRetries) {
-              await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt - 1)));
+              // Exponential backoff with jitter: 2s, 4s, 8s... + jitter
+              const delay = 2000 * Math.pow(2, attempt - 1) + (Math.random() * 1000);
+              console.log(`Retrying in ${Math.round(delay)}ms...`);
+              await new Promise(resolve => setTimeout(resolve, delay));
               continue;
             }
             return null;
@@ -197,21 +208,23 @@ serve(async (req) => {
         } catch (e) {
           console.error(`Signed URL attempt ${attempt} threw exception:`, e);
           if (attempt < maxRetries) {
-            await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt - 1)));
+             const delay = 2000 * Math.pow(2, attempt - 1) + (Math.random() * 1000);
+             await new Promise(resolve => setTimeout(resolve, delay));
           }
         }
       }
       return null;
     };
 
-    const signedUrl = await createSignedUrlWithRetry(3);
+    const maxRetries = 5;
+    const signedUrl = await createSignedUrlWithRetry(maxRetries);
 
     if (!signedUrl) {
       await supabase
         .from("import_jobs")
         .update({ 
           status: "failed", 
-          error_message: "Failed to create signed URL after 3 attempts.",
+          error_message: `Failed to create signed URL after ${maxRetries} attempts.`,
           completed_at: new Date().toISOString() 
         })
         .eq("id", jobId);
@@ -708,9 +721,22 @@ async function processLine(
       }
 
       if (fields.length > 11) {
+        const indOper = fields[2] || "0";
+        let codPart = fields[4] || "";
+
+        // Validação de COD_PART: Se não informado, usar padrão
+        // Para garantir consistência com process-efd-job e evitar campos vazios
+        if (!codPart || codPart.trim() === '') {
+           if (indOper === '1') { // Saída
+             codPart = '9999999999'; // Consumidor Final
+           } else { // Entrada
+             codPart = '8888888888'; // Fornecedor Não Identificado
+           }
+        }
+
         context.currentC100 = {
-          indOper: fields[2] || "0",
-          codPart: fields[4] || "",
+          indOper,
+          codPart,
           numDoc: fields[8] || fields[9] || "",
           dtES: fields[11] || fields[10] || "",
         };
