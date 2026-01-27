@@ -349,6 +349,7 @@ export default function Configuracoes() {
       });
 
       if (error) throw error;
+      if (data && data.error) throw new Error(data.error);
 
       toast.success('Usuário criado com sucesso!');
       setShowNewUserDialog(false);
