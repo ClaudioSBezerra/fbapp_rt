@@ -19,6 +19,7 @@ import { SimplesNacionalImport } from '@/components/SimplesNacionalImport';
 import { exportToExcel } from '@/lib/exportToExcel';
 import { cn } from '@/lib/utils';
 import { formatDocumentoMasked } from '@/lib/formatFilial';
+import { toast } from 'sonner';
 
 interface Aliquota {
   ano: number;
@@ -276,7 +277,33 @@ export default function MercadoriasParticipante() {
   const [filterParticipante, setFilterParticipante] = useState('');
   const [filterSimples, setFilterSimples] = useState<string>('all');
   const [selectedYear, setSelectedYear] = useState(2027);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [openCombobox, setOpenCombobox] = useState(false);
+
+  const handleRefreshView = async () => {
+    setIsRefreshing(true);
+    toast.info("Atualizando dados do painel...");
+    
+    try {
+      const { error } = await supabase.functions.invoke('refresh-views', {
+        body: { view: 'mv_mercadorias_participante' }
+      });
+
+      if (error) throw error;
+
+      toast.success("Dados atualizados com sucesso!");
+      // Invalidar queries para recarregar a tela
+      queryClient.invalidateQueries({ queryKey: ['mercadorias-participante-totals'] });
+      queryClient.invalidateQueries({ queryKey: ['mercadorias-participante-lista'] });
+      queryClient.invalidateQueries({ queryKey: ['mercadorias-participante-meses'] });
+    } catch (error) {
+      console.error("Erro ao atualizar view:", error);
+      toast.error("Erro ao atualizar dados.");
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   const [page, setPage] = useState(1);
 
   // Buscar alíquotas
@@ -531,6 +558,14 @@ export default function MercadoriasParticipante() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button 
+            variant="outline" 
+            onClick={handleRefreshView} 
+            disabled={isRefreshing}
+          >
+            <RefreshCw className={cn("h-4 w-4 mr-2", isRefreshing && "animate-spin")} />
+            Atualizar Painel
+          </Button>
           <Dialog>
             <DialogTrigger asChild>
               <Button variant="outline">

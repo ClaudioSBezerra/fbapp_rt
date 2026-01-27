@@ -31,7 +31,16 @@ Deno.serve(async (req) => {
       auth: { persistSession: false }
     });
 
-    console.log("[refresh-views] Starting materialized views refresh...");
+    // Parse body (handle empty body gracefully)
+    let viewName: string | null = null;
+    try {
+      const body = await req.json();
+      viewName = body.view;
+    } catch (_) {
+      // ignore, body might be empty
+    }
+
+    console.log(`[refresh-views] Starting materialized views refresh. Specific view: ${viewName || 'ALL'}`);
 
     // Try to acquire advisory lock to prevent concurrent refreshes
     // Lock ID 999888777 is arbitrary but should be unique for this operation
@@ -55,9 +64,17 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Call the refresh function - this uses non-concurrent refresh which is RPC-compatible
-    console.log("[refresh-views] Calling refresh_materialized_views RPC...");
-    const { error: refreshError } = await supabase.rpc('refresh_materialized_views');
+    // Call the refresh function
+    let refreshError;
+    if (viewName) {
+      console.log(`[refresh-views] Calling refresh_specific_materialized_view RPC for ${viewName}...`);
+      const { error } = await supabase.rpc('refresh_specific_materialized_view', { p_view_name: viewName });
+      refreshError = error;
+    } else {
+      console.log("[refresh-views] Calling refresh_materialized_views RPC (ALL)...");
+      const { error } = await supabase.rpc('refresh_materialized_views');
+      refreshError = error;
+    }
 
     if (refreshError) {
       console.error("[refresh-views] Refresh failed:", refreshError);
@@ -84,14 +101,18 @@ Deno.serve(async (req) => {
     }
 
     // All views refreshed successfully
-    viewsRefreshed.push(
-      "mv_mercadorias_aggregated",
-      "mv_fretes_aggregated", 
-      "mv_energia_agua_aggregated",
-      "mv_servicos_aggregated",
-      "mv_mercadorias_participante",
-      "mv_dashboard_stats"
-    );
+    if (viewName) {
+      viewsRefreshed.push(viewName);
+    } else {
+      viewsRefreshed.push(
+        "mv_mercadorias_aggregated",
+        "mv_fretes_aggregated", 
+        "mv_energia_agua_aggregated",
+        "mv_servicos_aggregated",
+        "mv_mercadorias_participante",
+        "mv_dashboard_stats"
+      );
+    }
 
     // Release lock if we acquired it
     if (lockAcquired) {
