@@ -348,6 +348,7 @@ export default function MercadoriasParticipante() {
         p_offset: (page - 1) * PAGE_SIZE,
         p_mes_ano: mesAnoParam,
         p_participante: participanteParam,
+        p_tipo: null,
         p_only_simples: simplesParam,
         p_empresa_id: selectedCompany || null
       });
