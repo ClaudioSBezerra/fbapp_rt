@@ -155,9 +155,7 @@ const DemoSignup = () => {
         <Card className="border-2 shadow-lg">
           <CardHeader className="text-center pb-2">
             <div className="flex justify-center mb-4">
-              <div className="p-3 bg-primary rounded-xl">
-                <TrendingUp className="h-8 w-8 text-primary-foreground" />
-              </div>
+              <img src="/Logo.PNG" alt="Logo" className="h-16 w-16 object-contain" />
             </div>
             
             <Badge className="w-fit mx-auto mb-3 bg-accent/10 text-accent hover:bg-accent/20">
