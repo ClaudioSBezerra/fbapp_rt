@@ -72,12 +72,10 @@ export default function SelectCompany() {
         
         setEmpresas(empresasData);
         
-        // Auto-select if only one company (and not admin, or admin forcing selection?)
-        // If regular user has 1 company, auto select.
-        // If admin has 1 company, auto select.
-        if (empresasData.length === 1) {
-            handleSelect(empresasData[0].id);
-        }
+        // Auto-select removed to always allow company selection
+        // if (empresasData.length === 1) {
+        //     handleSelect(empresasData[0].id);
+        // }
 
       } catch (error) {
         console.error('Error fetching companies:', error);
