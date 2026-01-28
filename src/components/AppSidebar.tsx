@@ -147,11 +147,21 @@ export function AppSidebar() {
               
               {/* Empresa em itálico e negrito */}
               {empresas.length > 0 && (
-                <p className="font-semibold italic text-sidebar-foreground truncate">
-                  {isAdmin 
-                    ? `Todas (${empresas.length})` 
-                    : empresas.map(e => e.nome).join(', ')}
-                </p>
+                <div className="flex flex-col gap-1">
+                  <p className="font-semibold italic text-sidebar-foreground truncate">
+                    {isAdmin 
+                      ? `Todas (${empresas.length})` 
+                      : empresas.map(e => e.nome).join(', ')}
+                  </p>
+                  <NavLink 
+                    to="/select-company" 
+                    className="text-[10px] text-primary hover:underline flex items-center gap-1 w-fit"
+                    title="Trocar de empresa"
+                  >
+                    <Building2 className="h-3 w-3" />
+                    Trocar Empresa
+                  </NavLink>
+                </div>
               )}
             </div>
             

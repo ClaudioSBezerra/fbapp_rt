@@ -5,6 +5,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { Building2, LogOut, Loader2 } from 'lucide-react';
 import { useRole } from '@/hooks/useRole';
 
@@ -71,12 +72,10 @@ export default function SelectCompany() {
         
         setEmpresas(empresasData);
         
-        // Auto-select if only one company (and not admin, or admin forcing selection?)
-        // If regular user has 1 company, auto select.
-        // If admin has 1 company, auto select.
-        if (empresasData.length === 1) {
-            handleSelect(empresasData[0].id);
-        }
+        // Auto-select removed to always allow company selection
+        // if (empresasData.length === 1) {
+        //     handleSelect(empresasData[0].id);
+        // }
 
       } catch (error) {
         console.error('Error fetching companies:', error);
@@ -90,7 +89,7 @@ export default function SelectCompany() {
 
   const handleSelect = (id: string) => {
     selectCompany(id);
-    navigate('/');
+    navigate('/dashboard');
   };
 
   if (loading) {
@@ -102,8 +101,8 @@ export default function SelectCompany() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-      <Card className="w-full max-w-md">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-4 overflow-y-auto">
+      <Card className="w-full max-w-md my-auto">
         <CardHeader className="text-center">
           <div className="mx-auto bg-primary/10 p-3 rounded-full w-fit mb-2">
             <Building2 className="h-6 w-6 text-primary" />
@@ -120,19 +119,21 @@ export default function SelectCompany() {
                 <p className="text-sm mt-2">Entre em contato com o administrador.</p>
              </div>
           ) : (
-             <div className="space-y-2">
-                {empresas.map((empresa) => (
-                  <Button
-                    key={empresa.id}
-                    variant="outline"
-                    className="w-full justify-start h-auto py-4 text-left hover:bg-muted/50 transition-colors"
-                    onClick={() => handleSelect(empresa.id)}
-                  >
-                    <Building2 className="h-5 w-5 mr-3 text-muted-foreground" />
-                    <span className="font-medium">{empresa.nome}</span>
-                  </Button>
-                ))}
-             </div>
+             <ScrollArea className="h-[300px] w-full pr-4 rounded-md border p-2">
+               <div className="space-y-2">
+                  {empresas.map((empresa) => (
+                    <Button
+                      key={empresa.id}
+                      variant="outline"
+                      className="w-full justify-start h-auto py-4 text-left hover:bg-muted/50 transition-colors"
+                      onClick={() => handleSelect(empresa.id)}
+                    >
+                      <Building2 className="h-5 w-5 mr-3 text-muted-foreground" />
+                      <span className="font-medium">{empresa.nome}</span>
+                    </Button>
+                  ))}
+               </div>
+             </ScrollArea>
           )}
           
           <div className="pt-4 border-t mt-4">
