@@ -79,11 +79,7 @@ export function AppSidebar() {
       <SidebarHeader className="border-b border-sidebar-border p-4">
         <div className="flex items-center gap-3">
           <div className="shrink-0">
-<<<<<<< HEAD
-             <img src="/logo.png" alt="Logo" className="h-10 w-auto object-contain" />
-=======
             <img src="/Logo.PNG" alt="Logo" className="h-10 w-10 object-contain" />
->>>>>>> backup/janeiro_2026
           </div>
           {!collapsed && (
             <div className="flex-1 min-w-0">
