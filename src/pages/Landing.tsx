@@ -66,8 +66,8 @@ const Landing = () => {
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-primary rounded-lg">
-                <TrendingUp className="h-5 w-5 text-primary-foreground" />
+              <div className="shrink-0">
+                <img src="/Logo.PNG" alt="Logo" className="h-10 w-10 object-contain" />
               </div>
               <div>
                 <h1 className="font-semibold text-foreground">Reforma Tributária</h1>

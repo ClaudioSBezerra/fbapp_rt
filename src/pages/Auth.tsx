@@ -178,8 +178,8 @@ export default function Auth() {
     <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4 overflow-y-auto">
       <div className="w-full max-w-md animate-fade-in my-auto">
         <div className="flex items-center justify-center gap-3 mb-8">
-          <div className="p-3 bg-primary rounded-xl">
-            <TrendingUp className="h-8 w-8 text-primary-foreground" />
+          <div className="shrink-0">
+            <img src="/Logo.PNG" alt="Logo" className="h-16 w-16 object-contain" />
           </div>
           <div>
             <h1 className="text-2xl font-bold text-foreground">Reforma Tributária</h1>

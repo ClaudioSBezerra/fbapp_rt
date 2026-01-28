@@ -258,29 +258,6 @@ serve(async (req) => {
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-              .from("filiais")
-              .select("id")
-              .eq("cnpj", header.cnpj)
-              .maybeSingle();
-              
-            if (duplicateFilial) {
-              filialId = duplicateFilial.id;
-              console.log(`Recovered existing filial: ${filialId}`);
-            } else {
-              console.error("Filial exists but could not be retrieved:", err);
-              return new Response(
-                JSON.stringify({ error: "Filial exists but could not be retrieved: " + errorMessage }),
-                { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-              );
-            }
-         } else {
-           console.error("Error creating filial:", err);
-           return new Response(
-             JSON.stringify({ error: "Failed to create filial: " + errorMessage }),
-             { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-           );
-         }
-      }
     }
 
     // Create import job (FAST)
